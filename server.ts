@@ -617,18 +617,30 @@ const wsServerConfig: any = {
       // Get or create WebSocket connection to game server
       let gameServerWs = clientGameServerConnections.get(clientId);
 
-      if (!gameServerWs || gameServerWs.readyState !== 1) {
+      // Only create new connection if none exists or existing one is closed
+      if (!gameServerWs || gameServerWs.readyState === WebSocket.CLOSED || gameServerWs.readyState === WebSocket.CLOSING) {
         // Create new WebSocket connection to game server
         const gameServerUrl = `ws://${server.host}:${server.wsPort}`;
         console.log(`[Gateway] Creating proxy connection to game server: ${gameServerUrl}`);
 
-        gameServerWs = new WebSocket(gameServerUrl);
+        // Create WebSocket with explicit User-Agent header required by game server
+        gameServerWs = new WebSocket(gameServerUrl, {
+          headers: {
+            "User-Agent": "Frostfire-Forge-Gateway/1.0"
+          }
+        });
+
+        // Queue to store messages while connection is establishing
+        const messageQueue: (string | Buffer)[] = [message];
 
         gameServerWs.onopen = () => {
           console.log(`[Gateway] Proxy connection established for client ${clientId}`);
-          // Forward the initial message
-          if (gameServerWs.readyState === 1) {
-            gameServerWs.send(message);
+          // Forward all queued messages
+          while (messageQueue.length > 0) {
+            const queuedMessage = messageQueue.shift();
+            if (gameServerWs && gameServerWs.readyState === 1 && queuedMessage) {
+              gameServerWs.send(queuedMessage);
+            }
           }
         };
 
@@ -652,11 +664,18 @@ const wsServerConfig: any = {
         };
 
         clientGameServerConnections.set(clientId, gameServerWs);
-      } else {
-        // Connection already exists, forward the message
-        if (gameServerWs.readyState === 1) {
-          gameServerWs.send(message);
+
+        // Store message queue on the WebSocket for access by subsequent messages
+        (gameServerWs as any).messageQueue = messageQueue;
+      } else if (gameServerWs.readyState === WebSocket.CONNECTING) {
+        // Connection is still establishing, queue the message
+        const messageQueue = (gameServerWs as any).messageQueue;
+        if (messageQueue) {
+          messageQueue.push(message);
         }
+      } else if (gameServerWs.readyState === WebSocket.OPEN) {
+        // Connection is open, forward the message immediately
+        gameServerWs.send(message);
       }
     },
     open(ws: any) {
