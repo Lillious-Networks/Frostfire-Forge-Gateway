@@ -625,14 +625,15 @@ const wsServerConfig: any = {
       }
 
       // Send server assignment to client with backpressure handling
+      // Note: Clients should connect to the gateway's ports, not the game server's internal ports
       handleBackpressure(ws, () => {
         ws.send(JSON.stringify({
           type: "server_assignment",
           clientId: clientId,
           server: {
             host: server.host,
-            port: server.port,
-            wsPort: server.wsPort
+            port: config.port,        // Gateway's HTTP port (external)
+            wsPort: config.wsPort     // Gateway's WebSocket port (external)
           }
         }));
       });
