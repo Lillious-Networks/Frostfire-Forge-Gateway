@@ -15,7 +15,8 @@ const packetQueue = new Map<string, (() => void)[]>();
 
 interface GameServer {
   id: string;
-  host: string;
+  host: string;           // Internal hostname for gateway to proxy to
+  publicHost: string;     // External hostname for clients to connect to
   port: number;
   wsPort: number;
   lastHeartbeat: number;
@@ -318,7 +319,7 @@ const serverConfig: any = {
     if (url.pathname === "/register" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, host, port, wsPort, maxConnections, authKey } = body;
+        const { id, host, publicHost, port, wsPort, maxConnections, authKey } = body;
 
         // Validate authentication key
         if (authKey !== config.authKey) {
@@ -343,6 +344,7 @@ const serverConfig: any = {
         const server: GameServer = {
           id,
           host,
+          publicHost: publicHost || host,  // Use publicHost if provided, fallback to host
           port,
           wsPort,
           lastHeartbeat: Date.now(),
@@ -443,6 +445,7 @@ const serverConfig: any = {
       const servers = Array.from(gameServers.values()).map(s => ({
         id: s.id,
         host: s.host,
+        publicHost: s.publicHost,
         port: s.port,
         wsPort: s.wsPort,
         activeConnections: s.activeConnections,
@@ -631,7 +634,7 @@ const wsServerConfig: any = {
           type: "server_assignment",
           clientId: clientId,
           server: {
-            host: server.host,
+            host: server.publicHost,  // External hostname for clients
             port: config.port,        // Gateway's HTTP port (external)
             wsPort: config.wsPort     // Gateway's WebSocket port (external)
           }
