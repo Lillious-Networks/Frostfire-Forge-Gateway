@@ -40,13 +40,20 @@ interface GatewayConfig {
 
 // Load config from file
 const configFile = await Bun.file("./config.json").json();
+
+// Determine port based on environment variables
+const useSSL = process.env.WEBSRV_USESSL === "true" || process.env.WEBSRV_USESSL === "1";
+const httpPort = parseInt(process.env.WEBSRV_PORT || "") || configFile.gateway.port || 80;
+const httpsPort = parseInt(process.env.WEBSRV_PORTSSL || "") || 443;
+const serverPort = useSSL ? httpsPort : httpPort;
+
 const config: GatewayConfig = {
-  port: configFile.gateway.port || 8080,
+  port: serverPort,
   wsPort: configFile.gateway.wsPort || 9000,
   heartbeatInterval: configFile.gateway.heartbeatInterval || 5000,
   serverTimeout: configFile.gateway.serverTimeout || 15000,
   sessionTimeout: configFile.gateway.sessionTimeout || 1800000,
-  authKey: configFile.gateway.authKey || "change-this-secret-key"
+  authKey: process.env.GATEWAY_AUTH_KEY || configFile.gateway.authKey || "change-this-secret-key"
 };
 
 // Store registered game servers
@@ -301,10 +308,10 @@ function handleBackpressure(ws: any, action: () => void, retryCount = 0) {
 /**
  * HTTP Server for game server registration
  */
-Bun.serve({
+const serverConfig: any = {
   port: config.port,
   hostname: "0.0.0.0",
-  async fetch(req) {
+  async fetch(req: any) {
     const url = new URL(req.url);
 
     // Server registration endpoint
@@ -490,7 +497,7 @@ Bun.serve({
       let isNewSession = false;
 
       if (httpSessionMatch) {
-        httpSessionId = httpSessionMatch[1];
+        httpSessionId = httpSessionMatch[1] as string;
         // Try to get the server for this HTTP session
         const session = clientSessions.get(httpSessionId);
         if (session) {
@@ -542,7 +549,26 @@ Bun.serve({
 
     return new Response("Gateway Load Balancer", { status: 200 });
   }
-});
+};
+
+// Add SSL/TLS configuration if enabled
+if (useSSL) {
+  const certPath = process.env.WEBSRV_CERT_PATH || "./cert.pem";
+  const keyPath = process.env.WEBSRV_KEY_PATH || "./key.pem";
+
+  try {
+    serverConfig.tls = {
+      cert: Bun.file(certPath),
+      key: Bun.file(keyPath),
+    };
+    console.log(`[Gateway] SSL enabled with cert: ${certPath}`);
+  } catch (error) {
+    console.error(`[Gateway] Failed to load SSL certificates. Falling back to HTTP.`);
+    console.error(`[Gateway] Make sure ${certPath} and ${keyPath} exist.`);
+  }
+}
+
+Bun.serve(serverConfig);
 
 /**
  * Extract client ID from URL query parameters or generate one
@@ -560,11 +586,11 @@ function getClientId(url: URL): string {
 /**
  * WebSocket Server for client connections with sticky session support
  */
-Bun.serve({
+const wsServerConfig: any = {
   port: config.wsPort,
   hostname: "0.0.0.0",
   websocket: {
-    message(ws: any, message) {
+    message(ws: any, message: string) {
       // Forward message to the assigned game server
       // This is a simple pass-through implementation
       // Use backpressure handling when sending
@@ -627,7 +653,7 @@ Bun.serve({
       }
     },
   },
-  fetch(req, server) {
+  fetch(req: any, server: any) {
     // Extract client ID from URL query params
     const url = new URL(req.url);
     const clientId = getClientId(url);
@@ -642,8 +668,17 @@ Bun.serve({
     }
     return new Response("Gateway WebSocket Server", { status: 200 });
   }
-});
+};
 
-console.log(`[Gateway] HTTP Server running on http://localhost:${config.port}`);
-console.log(`[Gateway] WebSocket Server running on ws://localhost:${config.wsPort}`);
+// Add SSL/TLS configuration to WebSocket server if enabled
+if (useSSL && serverConfig.tls) {
+  wsServerConfig.tls = serverConfig.tls;
+}
+
+Bun.serve(wsServerConfig);
+
+const protocol = useSSL ? 'https' : 'http';
+const wsProtocol = useSSL ? 'wss' : 'ws';
+console.log(`[Gateway] HTTP Server running on ${protocol}://localhost:${config.port}`);
+console.log(`[Gateway] WebSocket Server running on ${wsProtocol}://localhost:${config.wsPort}`);
 console.log(`[Gateway] Waiting for game servers to register...`);

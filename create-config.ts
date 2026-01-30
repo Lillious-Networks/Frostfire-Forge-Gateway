@@ -9,35 +9,33 @@ import { existsSync } from "fs";
 
 const configPath = "./config.json";
 
-// Check if config already exists
-if (existsSync(configPath)) {
-  console.log("\n⚠️  config.json already exists!");
-  console.log("Do you want to overwrite it? This will generate a new auth key.");
-  console.log("Press Ctrl+C to cancel, or press Enter to continue...\n");
-
-  // Wait for user input
-  await new Promise<void>((resolve) => {
-    process.stdin.once("data", () => {
-      resolve();
-    });
-  });
-}
-
 // Generate a secure random auth key
 function generateAuthKey(): string {
   const bytes = crypto.randomUUID() + "-" + crypto.randomUUID();
   return bytes;
 }
 
-const authKey = generateAuthKey();
+// Use environment variable if available, otherwise generate a new key
+const authKey = process.env.GATEWAY_AUTH_KEY || generateAuthKey();
+
+// Get ports from environment variables or use defaults
+const port = parseInt(process.env.WEBSRV_PORT || "") || 8080;
+const wsPort = parseInt(process.env.WS_PORT || "") || 9000;
+const heartbeatInterval = parseInt(process.env.HEARTBEAT_INTERVAL || "") || 5000;
+const serverTimeout = parseInt(process.env.SERVER_TIMEOUT || "") || 15000;
+const sessionTimeout = parseInt(process.env.SESSION_TIMEOUT || "") || 1800000;
+
+if (existsSync(configPath)) {
+  console.log("⚠️  config.json already exists - overwriting...");
+}
 
 const config = {
   gateway: {
-    port: 8080,
-    wsPort: 9000,
-    heartbeatInterval: 5000,
-    serverTimeout: 15000,
-    sessionTimeout: 1800000,
+    port: port,
+    wsPort: wsPort,
+    heartbeatInterval: heartbeatInterval,
+    serverTimeout: serverTimeout,
+    sessionTimeout: sessionTimeout,
     authKey: authKey
   },
   loadBalancing: {
