@@ -573,9 +573,8 @@ Bun.serve({
       });
     },
     open(ws: any) {
-      // Extract clientId from the WebSocket URL
-      const wsUrl = new URL(ws.url || '');
-      const clientId = wsUrl.searchParams.get('clientId') || `client-${crypto.randomUUID()}`;
+      // Extract clientId from the WebSocket data passed during upgrade
+      const clientId = ws.data?.clientId || `client-${crypto.randomUUID()}`;
 
       // Store clientId on ws for later use
       ws.clientId = clientId;
@@ -637,8 +636,8 @@ Bun.serve({
     const wsUrl = new URL(req.url);
     wsUrl.searchParams.set('clientId', clientId);
 
-    // Upgrade to WebSocket
-    if (server.upgrade(req)) {
+    // Upgrade to WebSocket with clientId in data
+    if (server.upgrade(req, { data: { clientId } as any })) {
       return;
     }
     return new Response("Gateway WebSocket Server", { status: 200 });
