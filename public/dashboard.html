@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gateway Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e27;
+            color: #e5e7eb;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #151932;
+            border-bottom: 1px solid #1f2544;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .header-controls {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .logout-button {
+            background: rgba(99, 102, 241, 0.1);
+            color: #818cf8;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .logout-button:hover {
+            background: rgba(99, 102, 241, 0.2);
+            border-color: rgba(99, 102, 241, 0.3);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .graphs-section {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .graph-card {
+            background: #151932;
+            border: 1px solid #1f2544;
+            border-radius: 8px;
+            padding: 14px;
+            position: relative;
+        }
+
+        .graph-card h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .graph-container {
+            background: linear-gradient(180deg, #0a0e27 0%, #0d1129 100%);
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            padding: 8px;
+            height: 180px;
+            position: relative;
+        }
+
+        .graph-svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .graph-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            color: #9ca3af;
+            font-weight: 600;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            box-shadow: 0 0 4px currentColor;
+        }
+
+        .server-indicator {
+            position: absolute;
+            top: 50%;
+            left: 8px;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            box-shadow: 0 0 6px currentColor;
+        }
+
+        .stats-overview {
+            margin-bottom: 20px;
+        }
+
+        .overview-card {
+            background: #151932;
+            border: 1px solid #1f2544;
+            border-radius: 8px;
+            padding: 16px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px 32px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .overview-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 0 1 auto;
+        }
+
+        .overview-label {
+            font-size: 11px;
+            color: #a5b4fc;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            white-space: nowrap;
+        }
+
+        .overview-label.healthy {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.1) 100%);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .overview-label.degraded {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .overview-label.alert {
+            background: linear-gradient(135deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%);
+            color: #fca5a5;
+            border: 1px solid rgba(220, 38, 38, 0.4);
+        }
+
+        .overview-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .servers-section {
+            background: #151932;
+            border: 1px solid #1f2544;
+            border-radius: 8px;
+            padding: 18px;
+        }
+
+        .servers-section h2 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 14px;
+            color: #fff;
+        }
+
+        #servers-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .server-card {
+            background: linear-gradient(135deg, #1f2544 0%, #1a1f3a 100%);
+            border: 1px solid rgba(99, 102, 241, 0.1);
+            border-radius: 8px;
+            padding: 12px 14px 12px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .server-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .server-card:hover {
+            border-color: rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .server-card:hover::before {
+            opacity: 1;
+        }
+
+        .server-card.degraded {
+            border-color: rgba(245, 158, 11, 0.3);
+            background: linear-gradient(135deg, #2a2015 0%, #1f1915 100%);
+        }
+
+        .server-card.degraded::before {
+            background: linear-gradient(90deg, #f59e0b, #f97316);
+            opacity: 1;
+        }
+
+        .server-card.alert {
+            border-color: rgba(220, 38, 38, 0.3);
+            background: linear-gradient(135deg, #2a1515 0%, #1f1515 100%);
+        }
+
+        .server-card.alert::before {
+            background: linear-gradient(90deg, #dc2626, #b91c1c);
+            opacity: 1;
+        }
+
+        .server-info {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .server-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: 0.3px;
+        }
+
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            white-space: nowrap;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        }
+
+        .status-badge.healthy {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.1) 100%);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .status-badge.degraded {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.1) 100%);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .status-badge.alert {
+            background: linear-gradient(135deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%);
+            color: #fca5a5;
+            border: 1px solid rgba(220, 38, 38, 0.4);
+        }
+
+        .server-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .metric {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 6px 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .metric-label {
+            font-size: 9px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 700;
+        }
+
+        .metric-value {
+            color: #fff;
+            font-weight: 700;
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .metric-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 3px;
+            box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        .metric-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #8b5cf6);
+            transition: width 0.3s ease;
+            box-shadow: 0 0 4px rgba(99, 102, 241, 0.5);
+        }
+
+        .metric-bar-fill.warning {
+            background: linear-gradient(90deg, #f59e0b, #f97316);
+            box-shadow: 0 0 4px rgba(245, 158, 11, 0.5);
+        }
+
+        .metric-bar-fill.danger {
+            background: linear-gradient(90deg, #dc2626, #b91c1c);
+            box-shadow: 0 0 4px rgba(220, 38, 38, 0.5);
+        }
+
+        .no-servers {
+            text-align: center;
+            padding: 32px;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 32px;
+            color: #6b7280;
+            font-size: 13px;
+        }
+
+        .error {
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+            color: #fca5a5;
+            padding: 12px 14px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 12px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .updating {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0e27;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2d3357;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3d4367;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .graphs-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            #servers-container {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 12px;
+            }
+
+            .header {
+                padding: 10px 16px;
+            }
+
+            .header h1 {
+                font-size: 16px;
+            }
+
+            .overview-card {
+                padding: 12px 16px;
+                gap: 16px;
+            }
+
+            .overview-item {
+                min-width: 120px;
+            }
+
+            .overview-label {
+                font-size: 10px;
+                padding: 3px 8px;
+            }
+
+            .overview-value {
+                font-size: 22px;
+            }
+
+            .graphs-section {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .graph-card {
+                padding: 12px;
+            }
+
+            .graph-card h3 {
+                font-size: 12px;
+            }
+
+            .graph-container {
+                height: 150px;
+            }
+
+            #servers-container {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .server-card {
+                padding: 10px 12px 10px 20px;
+            }
+
+            .server-name {
+                font-size: 13px;
+            }
+
+            .status-badge {
+                font-size: 8px;
+                padding: 2px 6px;
+            }
+
+            .metric-label {
+                font-size: 8px;
+            }
+
+            .metric-value {
+                font-size: 12px;
+            }
+
+            .servers-section {
+                padding: 14px;
+            }
+
+            .servers-section h2 {
+                font-size: 14px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header {
+                flex-direction: column;
+                gap: 8px;
+                padding: 12px;
+            }
+
+            .header h1 {
+                font-size: 14px;
+            }
+
+            .logout-button {
+                font-size: 11px;
+                padding: 5px 10px;
+            }
+
+            .overview-card {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+
+            .overview-item {
+                min-width: auto;
+                justify-content: space-between;
+            }
+
+            .overview-label {
+                font-size: 9px;
+                padding: 3px 7px;
+            }
+
+            .overview-value {
+                font-size: 24px;
+            }
+
+            .graph-container {
+                height: 120px;
+            }
+
+            .graph-legend {
+                font-size: 9px;
+            }
+
+            .server-metrics {
+                gap: 8px;
+            }
+
+            .metric {
+                padding: 5px 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Gateway Dashboard</h1>
+        <div class="header-controls">
+            <button class="logout-button" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="error-container"></div>
+
+        <div class="stats-overview">
+            <div class="overview-card">
+                <div class="overview-item">
+                    <span class="overview-label">Servers</span>
+                    <span class="overview-value" id="total-servers">-</span>
+                </div>
+                <div class="overview-item">
+                    <span class="overview-label">Connections</span>
+                    <span class="overview-value" id="total-connections">-</span>
+                </div>
+                <div class="overview-item">
+                    <span class="overview-label healthy">Healthy</span>
+                    <span class="overview-value" id="healthy-servers">-</span>
+                </div>
+                <div class="overview-item">
+                    <span class="overview-label degraded">Degraded</span>
+                    <span class="overview-value" id="degraded-servers">-</span>
+                </div>
+                <div class="overview-item">
+                    <span class="overview-label alert">Alert</span>
+                    <span class="overview-value" id="alert-servers">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="graphs-section">
+            <div class="graph-card">
+                <h3>CPU Usage</h3>
+                <div class="graph-container">
+                    <svg class="graph-svg" id="cpu-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
+                </div>
+                <div class="graph-legend" id="cpu-legend"></div>
+            </div>
+            <div class="graph-card">
+                <h3>RAM Usage</h3>
+                <div class="graph-container">
+                    <svg class="graph-svg" id="ram-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
+                </div>
+                <div class="graph-legend" id="ram-legend"></div>
+            </div>
+            <div class="graph-card">
+                <h3>Latency</h3>
+                <div class="graph-container">
+                    <svg class="graph-svg" id="latency-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
+                </div>
+                <div class="graph-legend" id="latency-legend"></div>
+            </div>
+        </div>
+
+        <div class="servers-section">
+            <h2>Connected Servers</h2>
+            <div id="servers-container">
+                <div class="loading">Loading server data...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Server colors for graphs
+        const serverColors = [
+            '#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4',
+            '#8b5cf6', '#f97316', '#14b8a6', '#a855f7', '#3b82f6'
+        ];
+        const colorMap = new Map();
+        let colorIndex = 0;
+
+        // Historical data storage (last 60 data points)
+        const historySize = 60;
+        const cpuHistory = new Map();
+        const ramHistory = new Map();
+        const latencyHistory = new Map();
+
+        function getServerColor(serverId) {
+            if (!colorMap.has(serverId)) {
+                colorMap.set(serverId, serverColors[colorIndex % serverColors.length]);
+                colorIndex++;
+            }
+            return colorMap.get(serverId);
+        }
+
+        function addDataPoint(map, serverId, value) {
+            if (!map.has(serverId)) {
+                map.set(serverId, []);
+            }
+            const history = map.get(serverId);
+            history.push(value);
+            if (history.length > historySize) {
+                history.shift();
+            }
+        }
+
+        function drawGraph(svgId, dataMap, maxValue = 100) {
+            const svg = document.getElementById(svgId);
+            svg.innerHTML = '';
+
+            const width = 400;
+            const height = 150;
+            const paddingLeft = 35;
+            const paddingRight = 5;
+            const paddingTop = 5;
+            const paddingBottom = 5;
+
+            // Draw grid lines and Y-axis labels
+            for (let i = 0; i <= 4; i++) {
+                const y = paddingTop + (height - paddingTop - paddingBottom) * (i / 4);
+                const value = maxValue - (maxValue * (i / 4));
+
+                // Grid line
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', paddingLeft);
+                line.setAttribute('y1', y);
+                line.setAttribute('x2', width - paddingRight);
+                line.setAttribute('y2', y);
+                line.setAttribute('stroke', 'rgba(255, 255, 255, 0.05)');
+                line.setAttribute('stroke-width', '1');
+                svg.appendChild(line);
+
+                // Y-axis label
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', paddingLeft - 8);
+                label.setAttribute('y', y + 4);
+                label.setAttribute('text-anchor', 'end');
+                label.setAttribute('fill', '#6b7280');
+                label.setAttribute('font-size', '10');
+                label.setAttribute('font-family', 'Inter, sans-serif');
+                label.textContent = Math.round(value);
+                svg.appendChild(label);
+            }
+
+            // Draw lines for each server
+            for (const [serverId, data] of dataMap) {
+                if (data.length < 2) continue;
+
+                const color = getServerColor(serverId);
+                const points = data.map((value, index) => {
+                    const x = paddingLeft + (width - paddingLeft - paddingRight) * (index / (historySize - 1));
+                    const y = height - paddingBottom - (height - paddingTop - paddingBottom) * (value / maxValue);
+                    return `${x},${y}`;
+                }).join(' ');
+
+                // Add a subtle shadow/glow effect
+                const glowPolyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                glowPolyline.setAttribute('points', points);
+                glowPolyline.setAttribute('fill', 'none');
+                glowPolyline.setAttribute('stroke', color);
+                glowPolyline.setAttribute('stroke-width', '4');
+                glowPolyline.setAttribute('opacity', '0.2');
+                glowPolyline.setAttribute('stroke-linecap', 'round');
+                glowPolyline.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(glowPolyline);
+
+                // Main line
+                const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                polyline.setAttribute('points', points);
+                polyline.setAttribute('fill', 'none');
+                polyline.setAttribute('stroke', color);
+                polyline.setAttribute('stroke-width', '2');
+                polyline.setAttribute('opacity', '0.9');
+                polyline.setAttribute('stroke-linecap', 'round');
+                polyline.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(polyline);
+            }
+        }
+
+        function updateLegend(legendId, dataMap) {
+            const legend = document.getElementById(legendId);
+            legend.innerHTML = '';
+
+            for (const [serverId] of dataMap) {
+                const color = getServerColor(serverId);
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <span class="legend-dot" style="background: ${color}; color: ${color};"></span>
+                    <span>${serverId}</span>
+                `;
+                legend.appendChild(item);
+            }
+        }
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/stats');
+
+                if (response.status === 401) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch stats');
+                }
+
+                const data = await response.json();
+                updateDashboard(data);
+                clearError();
+            } catch (error) {
+                showError('Failed to fetch server data: ' + error.message);
+            }
+        }
+
+        function getServerStatus(cpuPercentage, ramPercentage, connectionsPercentage) {
+            // Alert: Any metric over 80%
+            if (cpuPercentage > 80 || ramPercentage > 80 || connectionsPercentage > 80) {
+                return 'alert';
+            }
+            // Degraded: Any metric between 60-80%
+            if (cpuPercentage > 60 || ramPercentage > 60 || connectionsPercentage > 60) {
+                return 'degraded';
+            }
+            // Healthy: All metrics under 60%
+            return 'healthy';
+        }
+
+        function updateDashboard(data) {
+            const serversContainer = document.getElementById('servers-container');
+
+            if (data.servers.length === 0) {
+                serversContainer.innerHTML = '<div class="no-servers">No servers registered yet</div>';
+                document.getElementById('total-servers').textContent = '0';
+                document.getElementById('healthy-servers').textContent = '0';
+                document.getElementById('degraded-servers').textContent = '0';
+                document.getElementById('alert-servers').textContent = '0';
+                document.getElementById('total-connections').textContent = '0';
+                return;
+            }
+
+            // Calculate server statuses
+            let healthyCount = 0;
+            let degradedCount = 0;
+            let alertCount = 0;
+
+            const serversWithStatus = data.servers.map(server => {
+                const cpuPercentage = server.cpuUsage || 0;
+                const ramPercentage = server.ramTotal > 0
+                    ? ((server.ramUsage / server.ramTotal) * 100)
+                    : 0;
+                const connectionsPercentage = ((server.activeConnections / server.maxConnections) * 100);
+
+                const status = getServerStatus(cpuPercentage, ramPercentage, connectionsPercentage);
+
+                if (status === 'healthy') healthyCount++;
+                else if (status === 'degraded') degradedCount++;
+                else if (status === 'alert') alertCount++;
+
+                // Add data points to history
+                addDataPoint(cpuHistory, server.id, cpuPercentage);
+                addDataPoint(ramHistory, server.id, ramPercentage);
+                addDataPoint(latencyHistory, server.id, server.latency || 0);
+
+                return { ...server, calculatedStatus: status, cpuPercentage, ramPercentage, connectionsPercentage };
+            });
+
+            // Update graphs
+            const maxLatency = Math.max(...Array.from(latencyHistory.values()).flat(), 100);
+            drawGraph('cpu-graph', cpuHistory, 100);
+            drawGraph('ram-graph', ramHistory, 100);
+            drawGraph('latency-graph', latencyHistory, maxLatency);
+
+            // Update legends
+            updateLegend('cpu-legend', cpuHistory);
+            updateLegend('ram-legend', ramHistory);
+            updateLegend('latency-legend', latencyHistory);
+
+            // Calculate total connections across all servers
+            const totalConnections = data.servers.reduce((sum, server) => sum + (server.activeConnections || 0), 0);
+
+            // Update summary stats
+            document.getElementById('total-servers').textContent = data.totalServers;
+            document.getElementById('healthy-servers').textContent = healthyCount;
+            document.getElementById('degraded-servers').textContent = degradedCount;
+            document.getElementById('alert-servers').textContent = alertCount;
+            document.getElementById('total-connections').textContent = totalConnections;
+
+            // Render server cards
+            serversContainer.innerHTML = serversWithStatus.map(server => {
+                const cpuClass = server.cpuPercentage > 80 ? 'danger' : server.cpuPercentage > 60 ? 'warning' : '';
+                const ramClass = server.ramPercentage > 80 ? 'danger' : server.ramPercentage > 60 ? 'warning' : '';
+                const connClass = server.connectionsPercentage > 80 ? 'danger' : server.connectionsPercentage > 60 ? 'warning' : '';
+                const serverColor = getServerColor(server.id);
+
+                return `
+                    <div class="server-card ${server.calculatedStatus}">
+                        <div class="server-indicator" style="background: ${serverColor}; color: ${serverColor};"></div>
+                        <div class="server-info">
+                            <span class="server-name">${server.id}</span>
+                            <span class="status-badge ${server.calculatedStatus}">${server.calculatedStatus}</span>
+                        </div>
+                        <div class="server-metrics">
+                            <div class="metric">
+                                <span class="metric-label">CPU</span>
+                                <span class="metric-value">${server.cpuPercentage.toFixed(0)}%</span>
+                                <div class="metric-bar"><div class="metric-bar-fill ${cpuClass}" style="width: ${server.cpuPercentage}%"></div></div>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">RAM</span>
+                                <span class="metric-value">${server.ramPercentage.toFixed(0)}%</span>
+                                <div class="metric-bar"><div class="metric-bar-fill ${ramClass}" style="width: ${server.ramPercentage}%"></div></div>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Connections</span>
+                                <span class="metric-value">${server.activeConnections}/${server.maxConnections}</span>
+                                <div class="metric-bar"><div class="metric-bar-fill ${connClass}" style="width: ${server.connectionsPercentage}%"></div></div>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Latency</span>
+                                <span class="metric-value">${server.latency}ms</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function formatTimestamp(timestamp) {
+            const diff = Date.now() - timestamp;
+            const seconds = Math.floor(diff / 1000);
+
+            if (seconds < 60) return `${seconds}s ago`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            return `${Math.floor(seconds / 3600)}h ago`;
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        function clearError() {
+            document.getElementById('error-container').innerHTML = '';
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            window.location.href = '/';
+        }
+
+        fetchStats();
+        setInterval(fetchStats, 1000);
+    </script>
+</body>
+</html>

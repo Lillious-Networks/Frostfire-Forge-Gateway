@@ -22,6 +22,10 @@ interface GameServer {
   lastHeartbeat: number;
   activeConnections: number;
   maxConnections: number;
+  cpuUsage?: number;      // CPU usage percentage (0-100)
+  ramUsage?: number;      // RAM usage in MB
+  ramTotal?: number;      // Total RAM in MB
+  latency?: number;       // Latency to server in ms
 }
 
 interface ClientSession {
@@ -75,6 +79,10 @@ const migrationHistory: Array<{
   toServer: string;
   clientCount: number;
 }> = [];
+
+// Dashboard authentication sessions: sessionToken → expiryTime
+const dashboardSessions: Map<string, number> = new Map();
+const DASHBOARD_SESSION_TIMEOUT = 3600000; // 1 hour
 
 /**
  * Get the next available server using round-robin load balancing
@@ -378,7 +386,7 @@ const serverConfig: any = {
     if (url.pathname === "/heartbeat" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, activeConnections, authKey } = body;
+        const { id, activeConnections, cpuUsage, ramUsage, ramTotal, authKey } = body;
 
         // Validate authentication key
         if (authKey !== config.authKey) {
@@ -390,8 +398,21 @@ const serverConfig: any = {
 
         const server = gameServers.get(id);
         if (server) {
+          const previousHeartbeat = server.lastHeartbeat;
           server.lastHeartbeat = Date.now();
           server.activeConnections = activeConnections || 0;
+
+          // Update metrics if provided
+          if (cpuUsage !== undefined) server.cpuUsage = cpuUsage;
+          if (ramUsage !== undefined) server.ramUsage = ramUsage;
+          if (ramTotal !== undefined) server.ramTotal = ramTotal;
+
+          // Calculate latency based on heartbeat interval
+          if (previousHeartbeat > 0) {
+            const expectedInterval = config.heartbeatInterval;
+            const actualInterval = server.lastHeartbeat - previousHeartbeat;
+            server.latency = Math.abs(actualInterval - expectedInterval);
+          }
 
           return new Response(JSON.stringify({ success: true }), {
             headers: { "Content-Type": "application/json" }
@@ -443,6 +464,141 @@ const serverConfig: any = {
       }
     }
 
+    // Dashboard login endpoint
+    if (url.pathname === "/api/login" && req.method === "POST") {
+      try {
+        const body = await req.json();
+        const { authKey } = body;
+
+        if (authKey === config.authKey) {
+          // Generate session token
+          const sessionToken = crypto.randomUUID();
+          dashboardSessions.set(sessionToken, Date.now() + DASHBOARD_SESSION_TIMEOUT);
+
+          return new Response(JSON.stringify({ success: true, sessionToken }), {
+            headers: {
+              "Content-Type": "application/json",
+              "Set-Cookie": `dashboard_session=${sessionToken}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+            }
+          });
+        }
+
+        return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ error: "Invalid request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // Dashboard logout endpoint
+    if (url.pathname === "/api/logout" && req.method === "POST") {
+      const cookies = req.headers.get('cookie') || '';
+      const sessionMatch = cookies.match(/dashboard_session=([^;]+)/);
+      if (sessionMatch) {
+        dashboardSessions.delete(sessionMatch[1]);
+      }
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Set-Cookie": "dashboard_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Strict"
+        }
+      });
+    }
+
+    // Dashboard stats endpoint (requires authentication)
+    if (url.pathname === "/api/stats" && req.method === "GET") {
+      const cookies = req.headers.get('cookie') || '';
+      const sessionMatch = cookies.match(/dashboard_session=([^;]+)/);
+
+      if (!sessionMatch) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      const sessionToken = sessionMatch[1];
+      const sessionExpiry = dashboardSessions.get(sessionToken);
+
+      if (!sessionExpiry || Date.now() > sessionExpiry) {
+        dashboardSessions.delete(sessionToken);
+        return new Response(JSON.stringify({ error: "Session expired" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      // Extend session
+      dashboardSessions.set(sessionToken, Date.now() + DASHBOARD_SESSION_TIMEOUT);
+
+      const servers = Array.from(gameServers.values()).map(s => ({
+        id: s.id,
+        host: s.host,
+        publicHost: s.publicHost,
+        port: s.port,
+        wsPort: s.wsPort,
+        activeConnections: s.activeConnections,
+        maxConnections: s.maxConnections,
+        lastHeartbeat: s.lastHeartbeat,
+        cpuUsage: s.cpuUsage || 0,
+        ramUsage: s.ramUsage || 0,
+        ramTotal: s.ramTotal || 0,
+        latency: s.latency || 0,
+        status: (Date.now() - s.lastHeartbeat) < config.serverTimeout ? 'healthy' : 'unhealthy'
+      }));
+
+      return new Response(JSON.stringify({
+        timestamp: Date.now(),
+        totalServers: gameServers.size,
+        healthyServers: servers.filter(s => s.status === 'healthy').length,
+        totalActiveSessions: clientSessions.size,
+        totalMigrations: totalMigrations,
+        recentMigrations: migrationHistory.slice(-10),
+        servers
+      }), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
+    // Dashboard page (requires authentication)
+    if (url.pathname === "/dashboard" && req.method === "GET") {
+      const cookies = req.headers.get('cookie') || '';
+      const sessionMatch = cookies.match(/dashboard_session=([^;]+)/);
+
+      if (!sessionMatch) {
+        // Redirect to login
+        return Response.redirect("/", 302);
+      }
+
+      const sessionToken = sessionMatch[1];
+      const sessionExpiry = dashboardSessions.get(sessionToken);
+
+      if (!sessionExpiry || Date.now() > sessionExpiry) {
+        dashboardSessions.delete(sessionToken);
+        return Response.redirect("/", 302);
+      }
+
+      // Serve dashboard HTML
+      const dashboardHTML = await Bun.file("./public/dashboard.html").text();
+      return new Response(dashboardHTML, {
+        headers: { "Content-Type": "text/html" }
+      });
+    }
+
+    // Login page
+    if (url.pathname === "/" && req.method === "GET") {
+      const loginHTML = await Bun.file("./public/login.html").text();
+      return new Response(loginHTML, {
+        headers: { "Content-Type": "text/html" }
+      });
+    }
+
     // Status endpoint
     if (url.pathname === "/status" && req.method === "GET") {
       const servers = Array.from(gameServers.values()).map(s => ({
@@ -486,8 +642,8 @@ const serverConfig: any = {
 
     // Proxy ALL HTTP requests to game servers except gateway-specific routes
     // Gateway-specific routes that should NOT be proxied
-    const gatewayRoutes = ['/register', '/heartbeat', '/unregister', '/status', '/debug'];
-    const isGatewayRoute = gatewayRoutes.some(route => url.pathname.startsWith(route));
+    const gatewayRoutes = ['/register', '/heartbeat', '/unregister', '/status', '/debug', '/api', '/dashboard'];
+    const isGatewayRoute = gatewayRoutes.some(route => url.pathname.startsWith(route)) || url.pathname === '/';
 
     if (!isGatewayRoute) {
       const availableServers = Array.from(gameServers.values());
@@ -628,7 +784,7 @@ const wsServerConfig: any = {
           headers: {
             "User-Agent": "Frostfire-Forge-Gateway/1.0"
           }
-        });
+        } as any);
 
         // Queue to store messages while connection is establishing
         const messageQueue: (string | Buffer)[] = [message];

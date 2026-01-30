@@ -21,8 +21,8 @@ const authKey = process.env.GATEWAY_AUTH_KEY || generateAuthKey();
 // Get ports from environment variables or use defaults
 const port = parseInt(process.env.WEBSRV_PORT || "") || 8080;
 const wsPort = parseInt(process.env.WS_PORT || "") || 9000;
-const heartbeatInterval = parseInt(process.env.HEARTBEAT_INTERVAL || "") || 5000;
-const serverTimeout = parseInt(process.env.SERVER_TIMEOUT || "") || 15000;
+const heartbeatInterval = parseInt(process.env.HEARTBEAT_INTERVAL || "") || 1000;
+const serverTimeout = parseInt(process.env.SERVER_TIMEOUT || "") || 3000;
 const sessionTimeout = parseInt(process.env.SESSION_TIMEOUT || "") || 1800000;
 
 if (existsSync(configPath)) {

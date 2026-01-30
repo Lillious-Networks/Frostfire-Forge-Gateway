@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gateway Dashboard - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0e27;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: #151932;
+            border: 1px solid #1f2544;
+            border-radius: 12px;
+            padding: 32px;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .login-header h1 {
+            color: #fff;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .login-header p {
+            color: #6b7280;
+            font-size: 12px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            color: #9ca3af;
+            font-weight: 500;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 10px 12px;
+            background: #1f2544;
+            border: 1px solid #2d3357;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #6366f1;
+            background: #252b4a;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        input[type="password"]::placeholder {
+            color: #4b5563;
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 10px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .login-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .login-button:active {
+            transform: translateY(0);
+        }
+
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            background: rgba(220, 38, 38, 0.1);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+            color: #fca5a5;
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 18px;
+            font-size: 12px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .footer {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>Gateway Dashboard</h1>
+            <p>Enter authentication key to continue</p>
+        </div>
+
+        <div id="error-message" class="error-message"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="auth-key">Authentication Key</label>
+                <input
+                    type="password"
+                    id="auth-key"
+                    name="auth-key"
+                    placeholder="Enter your gateway auth key"
+                    autocomplete="off"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="login-button" id="login-button">
+                Login
+            </button>
+        </form>
+    </div>
+
+    <div class="footer">
+        Gateway Load Balancer
+    </div>
+
+    <script>
+        const form = document.getElementById('login-form');
+        const authKeyInput = document.getElementById('auth-key');
+        const loginButton = document.getElementById('login-button');
+        const errorMessage = document.getElementById('error-message');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const authKey = authKeyInput.value.trim();
+
+            if (!authKey) {
+                showError('Please enter an authentication key');
+                return;
+            }
+
+            loginButton.disabled = true;
+            loginButton.textContent = 'Logging in...';
+            errorMessage.classList.remove('show');
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ authKey })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = '/dashboard';
+                } else {
+                    showError(data.error || 'Login failed');
+                    loginButton.disabled = false;
+                    loginButton.textContent = 'Login';
+                }
+            } catch (error) {
+                showError('Network error. Please try again.');
+                loginButton.disabled = false;
+                loginButton.textContent = 'Login';
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+
+        authKeyInput.focus();
+    </script>
+</body>
+</html>

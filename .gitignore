@@ -1,6 +1,7 @@
 node_modules
 config.json
 .env*
+!.env.gateway.example
 .VSCodeCounter
 bun.lockb
 .vscode/
