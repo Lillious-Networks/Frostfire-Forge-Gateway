@@ -58,13 +58,23 @@ await Bun.write(configPath, JSON.stringify(config, null, 2));
 
 console.log("✅ Gateway configuration created successfully!\n");
 console.log("📁 File: config.json");
-console.log("🔑 Auth Key: " + authKey);
-console.log("\n⚠️  IMPORTANT: Copy this auth key to your game server settings:");
-console.log(`\n  src/config/settings.json:\n`);
-console.log(`  "gateway": {`);
-console.log(`    "enabled": true,`);
-console.log(`    "url": "http://your-gateway-url:8080",`);
-console.log(`    "heartbeatInterval": 5000,`);
-console.log(`    "authKey": "${authKey}"`);
-console.log(`  }`);
-console.log("\n🔒 Keep this key secret!\n");
+
+// Only show auth key if not running in CI environment
+const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+
+if (!isCI && !process.env.GATEWAY_AUTH_KEY) {
+  // Only show the key if it was randomly generated (not from environment)
+  console.log("🔑 Auth Key: " + authKey);
+  console.log("\n⚠️  IMPORTANT: Copy this auth key to your game server settings:");
+  console.log(`\n  src/config/settings.json:\n`);
+  console.log(`  "gateway": {`);
+  console.log(`    "enabled": true,`);
+  console.log(`    "url": "http://your-gateway-url:${port}",`);
+  console.log(`    "heartbeatInterval": ${heartbeatInterval},`);
+  console.log(`    "authKey": "${authKey}"`);
+  console.log(`  }`);
+  console.log("\n🔒 Keep this key secret!\n");
+} else {
+  console.log("🔑 Auth Key: [Using environment variable - hidden for security]");
+  console.log("✅ Config generated with environment-provided credentials\n");
+}
