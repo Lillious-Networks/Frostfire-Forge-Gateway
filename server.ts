@@ -65,8 +65,8 @@ const config: GatewayConfig = {
 const gameServers: Map<string, GameServer> = new Map();
 let roundRobinIndex = 0;
 
-// Store client-to-gameserver WebSocket connections
-const clientGameServerConnections: Map<string, any> = new Map();
+// Note: Gateway does NOT proxy WebSocket connections
+// Clients connect directly to game servers after receiving assignment
 
 // Sticky session tracking: clientId → ClientSession
 const clientSessions: Map<string, ClientSession> = new Map();
@@ -753,86 +753,9 @@ const wsServerConfig: any = {
   hostname: "0.0.0.0",
   websocket: {
     message(ws: any, message: string | Buffer) {
-      const clientId = ws.clientId;
-      if (!clientId) return;
-
-      // Get the session to find which game server this client is assigned to
-      const session = clientSessions.get(clientId);
-      if (!session) {
-        console.warn(`[Gateway] No session found for client ${clientId}`);
-        return;
-      }
-
-      // Get the game server
-      const server = gameServers.get(session.serverId);
-      if (!server) {
-        console.warn(`[Gateway] Game server ${session.serverId} not found for client ${clientId}`);
-        return;
-      }
-
-      // Get or create WebSocket connection to game server
-      let gameServerWs = clientGameServerConnections.get(clientId);
-
-      // Only create new connection if none exists or existing one is closed
-      if (!gameServerWs || gameServerWs.readyState === WebSocket.CLOSED || gameServerWs.readyState === WebSocket.CLOSING) {
-        // Create new WebSocket connection to game server
-        const gameServerUrl = `ws://${server.host}:${server.wsPort}`;
-        console.log(`[Gateway] Creating proxy connection to game server: ${gameServerUrl}`);
-
-        // Create WebSocket with explicit User-Agent header required by game server
-        gameServerWs = new WebSocket(gameServerUrl, {
-          headers: {
-            "User-Agent": "Frostfire-Forge-Gateway/1.0"
-          }
-        } as any);
-
-        // Queue to store messages while connection is establishing
-        const messageQueue: (string | Buffer)[] = [message];
-
-        gameServerWs.onopen = () => {
-          console.log(`[Gateway] Proxy connection established for client ${clientId}`);
-          // Forward all queued messages
-          while (messageQueue.length > 0) {
-            const queuedMessage = messageQueue.shift();
-            if (gameServerWs && gameServerWs.readyState === 1 && queuedMessage) {
-              gameServerWs.send(queuedMessage);
-            }
-          }
-        };
-
-        gameServerWs.onmessage = (event: MessageEvent) => {
-          // Forward messages from game server back to client
-          if (ws.readyState === 1) {
-            handleBackpressure(ws, () => {
-              ws.send(event.data);
-            });
-          }
-        };
-
-        gameServerWs.onclose = () => {
-          console.log(`[Gateway] Game server connection closed for client ${clientId}`);
-          clientGameServerConnections.delete(clientId);
-        };
-
-        gameServerWs.onerror = (error: any) => {
-          console.error(`[Gateway] Game server connection error for client ${clientId}:`, error);
-          clientGameServerConnections.delete(clientId);
-        };
-
-        clientGameServerConnections.set(clientId, gameServerWs);
-
-        // Store message queue on the WebSocket for access by subsequent messages
-        (gameServerWs as any).messageQueue = messageQueue;
-      } else if (gameServerWs.readyState === WebSocket.CONNECTING) {
-        // Connection is still establishing, queue the message
-        const messageQueue = (gameServerWs as any).messageQueue;
-        if (messageQueue) {
-          messageQueue.push(message);
-        }
-      } else if (gameServerWs.readyState === WebSocket.OPEN) {
-        // Connection is open, forward the message immediately
-        gameServerWs.send(message);
-      }
+      // Gateway does not handle messages - clients connect directly to game servers
+      // This should not be called in normal operation
+      console.warn(`[Gateway] Unexpected message received from client ${ws.clientId} - clients should connect directly to game servers`);
     },
     open(ws: any) {
       // Extract clientId from the WebSocket data passed during upgrade
@@ -861,23 +784,23 @@ const wsServerConfig: any = {
       }
 
       // Send server assignment to client with backpressure handling
-      // Note: Clients should connect to the gateway's ports, not the game server's internal ports
+      // Clients should disconnect from gateway and connect directly to assigned server
       handleBackpressure(ws, () => {
         ws.send(JSON.stringify({
           type: "server_assignment",
           clientId: clientId,
           server: {
             host: server.publicHost,  // External hostname for clients
-            port: config.port,        // Gateway's HTTP port (external)
-            wsPort: config.wsPort     // Gateway's WebSocket port (external)
+            port: server.port,        // Game server's HTTP port
+            wsPort: server.wsPort     // Game server's WebSocket port
           }
         }));
       });
 
-      console.log(`[Gateway] Client ${clientId} assigned to server: ${server.id} (${server.host}:${server.wsPort})`);
+      console.log(`[Gateway] Client ${clientId} assigned to server: ${server.id} (${server.publicHost}:${server.wsPort})`);
 
-      // Client should now disconnect from gateway and connect to assigned server
-      // In a more sophisticated implementation, the gateway could proxy the connection
+      // Client should now disconnect from gateway and connect to assigned server directly
+      // Gateway does NOT proxy connections - clients connect directly to game servers
     },
     close(ws: any) {
       const clientId = ws.clientId;
@@ -885,16 +808,9 @@ const wsServerConfig: any = {
         // Clean up packet queue
         packetQueue.delete(clientId);
 
-        // Close game server connection if it exists
-        const gameServerWs = clientGameServerConnections.get(clientId);
-        if (gameServerWs) {
-          gameServerWs.close();
-          clientGameServerConnections.delete(clientId);
-        }
-
-        console.log(`[Gateway] Client disconnected: ${clientId}`);
+        console.log(`[Gateway] Client disconnected from gateway: ${clientId}`);
       } else {
-        console.log("[Gateway] Client disconnected");
+        console.log("[Gateway] Client disconnected from gateway");
       }
     },
   },
