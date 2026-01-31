@@ -1,0 +1,33 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTP_PORT: ${HTTP_PORT:-9999}
+        HTTPS_PORT: ${HTTPS_PORT:-443}
+        WS_PORT: ${WS_PORT:-9000}
+    container_name: frostfire-gateway
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-9999}:${HTTP_PORT:-9999}"
+      - "${WS_PORT:-9000}:${WS_PORT:-9000}"
+    env_file:
+      - .env.gateway
+    environment:
+      - GATEWAY_AUTH_KEY=${GATEWAY_AUTH_KEY}
+    volumes:
+      - ./config.json:/app/config.json:ro
+    networks:
+      - frostfire-network-dev
+      - frostfire-network
+
+networks:
+  # Connect to dev network (from Frostfire-Forge project)
+  frostfire-network-dev:
+    external: true
+    name: frostfire-forge_frostfire-network-dev
+  # Connect to prod network (from Frostfire-Forge project)
+  frostfire-network:
+    external: true
+    name: frostfire-forge_frostfire-network

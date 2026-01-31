@@ -330,27 +330,91 @@ docker run -d \
 
 ### Docker Compose
 
-```yaml
-version: '3.8'
+**Local Development:**
 
+```bash
+# Copy example env file
+cp .env.gateway.example .env.gateway
+
+# Edit .env.gateway with your settings
+nano .env.gateway
+
+# Build and start
+docker compose build
+docker compose up -d
+
+# View logs
+docker compose logs -f gateway
+
+# Stop
+docker compose down
+```
+
+The included `docker-compose.yml` connects the gateway to external networks used by game servers:
+
+```yaml
 services:
   gateway:
-    image: frostfire-gateway
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTP_PORT: ${HTTP_PORT:-9999}
+        HTTPS_PORT: ${HTTPS_PORT:-443}
+        WS_PORT: ${WS_PORT:-9000}
+    container_name: frostfire-gateway
+    restart: unless-stopped
     ports:
-      - "8000:8000"
-      - "9000:9000"
-    environment:
-      - GATEWAY_AUTH_KEY=${GATEWAY_AUTH_KEY}
+      - "${HTTP_PORT:-9999}:${HTTP_PORT:-9999}"
+      - "${WS_PORT:-9000}:${WS_PORT:-9000}"
     env_file:
       - .env.gateway
-    restart: unless-stopped
+    environment:
+      - GATEWAY_AUTH_KEY=${GATEWAY_AUTH_KEY}
+    volumes:
+      - ./config.json:/app/config.json:ro
     networks:
-      - app-network
+      - frostfire-network-dev
+      - frostfire-network
 
 networks:
-  app-network:
-    driver: bridge
+  # Connect to dev network (from Frostfire-Forge project)
+  frostfire-network-dev:
+    external: true
+    name: frostfire-forge_frostfire-network-dev
+  # Connect to prod network (from Frostfire-Forge project)
+  frostfire-network:
+    external: true
+    name: frostfire-forge_frostfire-network
 ```
+
+### GitHub Actions Deployment
+
+The gateway includes a GitHub Actions workflow (`.github/workflows/release.yml`) for automated deployment:
+
+**Triggers:**
+- Push to `main` or `development` branches
+- Manual workflow dispatch
+
+**Features:**
+- Pre-build Docker cleanup
+- Automatic image building
+- Current image backup before deployment
+- Automatic rollback on verification failure
+- Health check verification
+- Post-deployment cleanup
+
+**Required Secrets:**
+- `GATEWAY_AUTH_KEY`: Shared authentication key for server registration
+
+**Deployment Flow:**
+1. Build new Docker image
+2. Backup currently running image
+3. Stop current container
+4. Start new container
+5. Verify gateway is running (checks for "Gateway Load Balancer", "HTTP Server running", "WebSocket Server running" in logs)
+6. If verification fails, automatically rollback to backup image
+7. Clean up old images on success
 
 ---
 

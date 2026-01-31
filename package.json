@@ -4,7 +4,7 @@
   "description": "Load balancer gateway for Frostfire Forge game servers",
   "main": "server.ts",
   "scripts": {
-    "start": "bun run server.ts",
+    "start": "bun --env-file=.env.gateway run server.ts",
     "dev": "bun --watch server.ts",
     "test": "bun run test-gateway.ts",
     "create-config": "bun run create-config.ts"
