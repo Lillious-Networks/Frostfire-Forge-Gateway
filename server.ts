@@ -97,7 +97,7 @@ function getNextServer(): GameServer | null {
   }
 
   const server = availableServers[roundRobinIndex % availableServers.length];
-  roundRobinIndex = (roundRobinIndex + 1) % availableServers.length;
+  roundRobinIndex++;
 
   return server;
 }
