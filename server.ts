@@ -387,7 +387,7 @@ const serverConfig: any = {
       const requestReceived = Date.now();
       try {
         const body = await req.json();
-        const { id, activeConnections, cpuUsage, ramUsage, ramTotal, authKey, timestamp } = body;
+        const { id, activeConnections, cpuUsage, ramUsage, ramTotal, authKey, timestamp, rtt } = body;
 
         // Validate authentication key
         if (authKey !== config.authKey) {
@@ -407,9 +407,9 @@ const serverConfig: any = {
           if (ramUsage !== undefined) server.ramUsage = ramUsage;
           if (ramTotal !== undefined) server.ramTotal = ramTotal;
 
-          // Calculate actual network latency if timestamp provided
-          if (timestamp !== undefined) {
-            server.latency = requestReceived - timestamp;
+          // Use RTT provided by client (more accurate, clock-independent)
+          if (rtt !== undefined) {
+            server.latency = Math.round(rtt / 2); // Half of round-trip time
           }
 
           return new Response(JSON.stringify({
