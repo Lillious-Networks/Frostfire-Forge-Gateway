@@ -273,19 +273,6 @@ Backend servers must send heartbeats at intervals <= `HEARTBEAT_INTERVAL`. Serve
 
 ## 🐳 Docker Deployment
 
-### Using Pre-built Image
-
-```bash
-docker pull ghcr.io/lillious-networks/frostfire-gateway:latest
-
-docker run -d \
-  -p 8000:8000 \
-  -p 9000:9000 \
-  -e GATEWAY_AUTH_KEY=your_secret_key \
-  --name gateway \
-  ghcr.io/lillious-networks/frostfire-gateway:latest
-```
-
 ### Building Custom Image
 
 **Dockerfile:**
