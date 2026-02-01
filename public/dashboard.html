@@ -283,10 +283,17 @@
             font-size: 14px;
             font-weight: 700;
             color: #fff;
+            letter-spacing: 0.3px;
+        }
+
+        .server-host {
+            font-size: 10px;
+            color: #9ca3af;
+            margin-top: 2px;
+            font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            letter-spacing: 0.3px;
         }
 
         .status-badge {
@@ -500,6 +507,10 @@
                 font-size: 13px;
             }
 
+            .server-host {
+                font-size: 9px;
+            }
+
             .status-badge {
                 font-size: 8px;
                 padding: 2px 6px;
@@ -563,6 +574,14 @@
             }
 
             .graph-legend {
+                font-size: 9px;
+            }
+
+            .server-name {
+                font-size: 12px;
+            }
+
+            .server-host {
                 font-size: 9px;
             }
 
@@ -872,7 +891,10 @@
                     <div class="server-card ${server.calculatedStatus}">
                         <div class="server-indicator" style="background: ${serverColor}; color: ${serverColor};"></div>
                         <div class="server-info">
-                            <span class="server-name">${server.id}</span>
+                            <div>
+                                <div class="server-name">${server.id}</div>
+                                <div class="server-host">${server.publicHost || server.host}</div>
+                            </div>
                             <span class="status-badge ${server.calculatedStatus}">${server.calculatedStatus}</span>
                         </div>
                         <div class="server-metrics">
