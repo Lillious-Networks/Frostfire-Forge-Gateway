@@ -384,9 +384,10 @@ const serverConfig: any = {
 
     // Server heartbeat endpoint
     if (url.pathname === "/heartbeat" && req.method === "POST") {
+      const requestReceived = Date.now();
       try {
         const body = await req.json();
-        const { id, activeConnections, cpuUsage, ramUsage, ramTotal, authKey } = body;
+        const { id, activeConnections, cpuUsage, ramUsage, ramTotal, authKey, timestamp } = body;
 
         // Validate authentication key
         if (authKey !== config.authKey) {
@@ -398,7 +399,6 @@ const serverConfig: any = {
 
         const server = gameServers.get(id);
         if (server) {
-          const previousHeartbeat = server.lastHeartbeat;
           server.lastHeartbeat = Date.now();
           server.activeConnections = activeConnections || 0;
 
@@ -407,14 +407,15 @@ const serverConfig: any = {
           if (ramUsage !== undefined) server.ramUsage = ramUsage;
           if (ramTotal !== undefined) server.ramTotal = ramTotal;
 
-          // Calculate latency based on heartbeat interval
-          if (previousHeartbeat > 0) {
-            const expectedInterval = config.heartbeatInterval;
-            const actualInterval = server.lastHeartbeat - previousHeartbeat;
-            server.latency = Math.abs(actualInterval - expectedInterval);
+          // Calculate actual network latency if timestamp provided
+          if (timestamp !== undefined) {
+            server.latency = requestReceived - timestamp;
           }
 
-          return new Response(JSON.stringify({ success: true }), {
+          return new Response(JSON.stringify({
+            success: true,
+            timestamp: Date.now() // Send back timestamp for RTT calculation
+          }), {
             headers: { "Content-Type": "application/json" }
           });
         }
