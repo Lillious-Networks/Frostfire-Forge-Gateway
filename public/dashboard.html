@@ -887,12 +887,17 @@
                 const connClass = server.connectionsPercentage > 80 ? 'danger' : server.connectionsPercentage > 60 ? 'warning' : '';
                 const serverColor = getServerColor(server.id);
 
+                // Extract subdomain and capitalize first letter
+                const hostname = server.publicHost || server.host;
+                const subdomain = hostname.split('.')[0];
+                const displayName = subdomain.charAt(0).toUpperCase() + subdomain.slice(1);
+
                 return `
                     <div class="server-card ${server.calculatedStatus}">
                         <div class="server-indicator" style="background: ${serverColor}; color: ${serverColor};"></div>
                         <div class="server-info">
                             <div>
-                                <div class="server-name">${server.id}</div>
+                                <div class="server-name">${displayName}</div>
                                 <div class="server-host">${server.publicHost || server.host}</div>
                             </div>
                             <span class="status-badge ${server.calculatedStatus}">${server.calculatedStatus}</span>
