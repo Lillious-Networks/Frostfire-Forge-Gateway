@@ -310,6 +310,7 @@ docker build \
 docker run -d \
   -p 8000:8000 \
   -p 9000:9000 \
+  -p 9999:9999 \
   --env-file .env.gateway \
   --name gateway \
   frostfire-gateway
@@ -565,7 +566,7 @@ The gateway includes a **real-time monitoring dashboard** protected by authentic
 
 **Access the dashboard:**
 ```
-1. Navigate to: http://gateway:8000/
+1. Navigate to: http://gateway:9999/
 2. Enter your GATEWAY_AUTH_KEY
 3. View real-time server metrics
 ```
