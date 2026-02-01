@@ -600,24 +600,25 @@ const serverConfig: any = {
       });
     }
 
-    // Status endpoint
+    // Status endpoint (public - only player-relevant info)
     if (url.pathname === "/status" && req.method === "GET") {
-      const servers = Array.from(gameServers.values()).map(s => ({
-        id: s.id,
-        host: s.host,
-        publicHost: s.publicHost,
-        port: s.port,
-        wsPort: s.wsPort,
-        activeConnections: s.activeConnections,
-        maxConnections: s.maxConnections,
-        lastHeartbeat: s.lastHeartbeat
-      }));
+      const servers = Array.from(gameServers.values()).map(s => {
+        const isHealthy = (Date.now() - s.lastHeartbeat) < config.serverTimeout;
+        const isFull = s.activeConnections >= s.maxConnections;
+
+        return {
+          id: s.id,
+          publicHost: s.publicHost,
+          wsPort: s.wsPort,
+          activeConnections: s.activeConnections,
+          maxConnections: s.maxConnections,
+          latency: s.latency || 0,
+          status: !isHealthy ? 'offline' : (isFull ? 'full' : 'online')
+        };
+      });
 
       return new Response(JSON.stringify({
         totalServers: gameServers.size,
-        totalActiveSessions: clientSessions.size,
-        totalMigrations: totalMigrations,
-        recentMigrations: migrationHistory.slice(-10), // Last 10 migrations
         servers
       }), {
         headers: { "Content-Type": "application/json" }
@@ -844,3 +845,5 @@ const wsProtocol = useSSL ? 'wss' : 'ws';
 console.log(`[Gateway] HTTP Server running on ${protocol}://localhost:${config.port}`);
 console.log(`[Gateway] WebSocket Server running on ${wsProtocol}://localhost:${config.wsPort}`);
 console.log(`[Gateway] Waiting for game servers to register...`);
+
+export {}
