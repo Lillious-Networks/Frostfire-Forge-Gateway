@@ -326,6 +326,21 @@ const serverConfig: any = {
   async fetch(req: any) {
     const url = new URL(req.url);
 
+    // CORS headers for all responses
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    };
+
+    // Handle CORS preflight requests
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
+    }
+
     // Server registration endpoint
     if (url.pathname === "/register" && req.method === "POST") {
       try {
@@ -621,7 +636,10 @@ const serverConfig: any = {
         totalServers: gameServers.size,
         servers
       }), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders
+        }
       });
     }
 
@@ -638,7 +656,10 @@ const serverConfig: any = {
         totalSessions: clientSessions.size,
         sessions: sessions
       }, null, 2), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json",
+          ...corsHeaders
+        }
       });
     }
 
