@@ -17,7 +17,7 @@ concurrency:
 jobs:
   publish-docker:
     name: Build and Publish Docker Image
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     environment: gateway
     steps:
       - name: Checkout Repository
