@@ -1,6 +1,10 @@
 FROM oven/bun:canary AS base
 WORKDIR /app
 
+FROM base AS envcopy
+WORKDIR /app
+COPY .env.development .env.development
+
 FROM base AS deps
 COPY package.json bun.lockb* ./
 RUN bun install --frozen-lockfile --production
@@ -15,6 +19,7 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app .
+COPY --from=envcopy /app/.env.development .env.development
 
 ARG VERSION=unknown
 ARG BUILD_DATE=unknown
