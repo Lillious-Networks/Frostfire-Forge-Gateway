@@ -119,13 +119,13 @@ export function requestTilesetViaWS(tilesetName: string): Promise<any> {
       data: { name: tilesetName }
     });
 
-    // Timeout after 10 seconds
+    // Timeout after 1 minute
     setTimeout(() => {
       if (pendingTilesetRequests.has(tilesetName)) {
         pendingTilesetRequests.delete(tilesetName);
         reject(new Error("Tileset request timeout"));
       }
-    }, 10000);
+    }, 60000);
   });
 }
 
