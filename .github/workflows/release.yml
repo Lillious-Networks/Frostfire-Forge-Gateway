@@ -7,7 +7,7 @@ permissions:
 on:
   push:
     branches:
-      - main
+      - development
   workflow_dispatch:
 
 concurrency:
@@ -18,10 +18,48 @@ jobs:
   publish-docker:
     name: Build and Publish Docker Image
     runs-on: ubuntu-latest
-    environment: gateway
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Create environment file
+        run: |
+          if [ -d ".env.development" ]; then
+            echo ".env.development is a directory. Removing it."
+            rm -rf .env.development
+          fi
+
+          if [ -f ".env.development" ]; then
+            echo ".env.development file exists. Removing it."
+            rm .env.development
+          fi
+
+          echo 'DATABASE_ENGINE=mysql' >> .env.development
+          echo 'DATABASE_HOST="${{ secrets.DATABASE_HOST }}"' >> .env.development
+          echo 'DATABASE_NAME="${{ secrets.DATABASE_NAME }}"' >> .env.development
+          echo 'DATABASE_PASSWORD="${{ secrets.DATABASE_PASSWORD }}"' >> .env.development
+          echo 'DATABASE_USER="${{ secrets.DATABASE_USER }}"' >> .env.development
+          echo 'DATABASE_PORT="${{ secrets.DATABASE_PORT }}"' >> .env.development
+          echo 'SQL_SSL_MODE=DISABLED' >> .env.development
+          echo 'EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}"' >> .env.development
+          echo 'EMAIL_SERVICE="${{ secrets.EMAIL_SERVICE }}"' >> .env.development
+          echo 'EMAIL_USER="${{ secrets.EMAIL_USER }}"' >> .env.development
+          echo 'EMAIL_TEST="${{ secrets.EMAIL_TEST }}"' >> .env.development
+          echo 'WEBSRV_PORT=8080' >> .env.development
+          echo 'WEBSRV_USESSL=false' >> .env.development
+          echo 'DOMAIN="${{ secrets.DOMAIN }}"' >> .env.development
+          echo 'GATEWAY_PORT=9999' >> .env.development
+          echo 'GATEWAY_USESSL=false' >> .env.development
+          echo 'GATEWAY_AUTH_KEY="${{ secrets.GATEWAY_AUTH_KEY }}"' >> .env.development
+          echo 'HEARTBEAT_INTERVAL=30000' >> .env.development
+          echo 'SERVER_TIMEOUT=90000' >> .env.development
+          echo 'SESSION_TIMEOUT=1800000' >> .env.development
+          echo 'GATEWAY_ENABLED=true' >> .env.development
+          echo 'GATEWAY_URL="${{ secrets.GATEWAY_URL }}"' >> .env.development
+          echo 'VERSION="dev"' >> .env.development
+          echo 'GAME_NAME="Frostfire Forge - Development"' >> .env.development
+          echo 'LOG_LEVEL=debug' >> .env.development
+          echo 'CACHE="memory"' >> .env.development
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -41,32 +79,20 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Generate Gateway Config
-        env:
-          WEBSRV_PORT: 9999
-          WS_PORT: 9000
-          GATEWAY_AUTH_KEY: ${{ secrets.GATEWAY_AUTH_KEY }}
-          HEARTBEAT_INTERVAL: 5000
-          SERVER_TIMEOUT: 15000
-          SESSION_TIMEOUT: 1800000
-        run: |
-          bun run create-config
+            type=raw,value=dev
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile.dev
+          target: build
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
           build-args: |
-            GATEWAY_AUTH_KEY=${{ secrets.GATEWAY_AUTH_KEY }}
+            VERSION=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}

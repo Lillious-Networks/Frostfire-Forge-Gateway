@@ -640,7 +640,7 @@
                 <div class="graph-legend" id="cpu-legend"></div>
             </div>
             <div class="graph-card">
-                <h3>RAM Usage</h3>
+                <h3>RAM Usage (MB)</h3>
                 <div class="graph-container">
                     <svg class="graph-svg" id="ram-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
                 </div>
@@ -807,13 +807,13 @@
             }
         }
 
-        function getServerStatus(cpuPercentage, ramPercentage, connectionsPercentage) {
+        function getServerStatus(cpuPercentage, connectionsPercentage) {
             // Alert: Any metric over 80%
-            if (cpuPercentage > 80 || ramPercentage > 80 || connectionsPercentage > 80) {
+            if (cpuPercentage > 80 || connectionsPercentage > 80) {
                 return 'alert';
             }
             // Degraded: Any metric between 60-80%
-            if (cpuPercentage > 60 || ramPercentage > 60 || connectionsPercentage > 60) {
+            if (cpuPercentage > 60 || connectionsPercentage > 60) {
                 return 'degraded';
             }
             // Healthy: All metrics under 60%
@@ -840,12 +840,10 @@
 
             const serversWithStatus = data.servers.map(server => {
                 const cpuPercentage = server.cpuUsage || 0;
-                const ramPercentage = server.ramTotal > 0
-                    ? ((server.ramUsage / server.ramTotal) * 100)
-                    : 0;
+                const ramUsageMB = server.ramUsage || 0;
                 const connectionsPercentage = ((server.activeConnections / server.maxConnections) * 100);
 
-                const status = getServerStatus(cpuPercentage, ramPercentage, connectionsPercentage);
+                const status = getServerStatus(cpuPercentage, connectionsPercentage);
 
                 if (status === 'healthy') healthyCount++;
                 else if (status === 'degraded') degradedCount++;
@@ -853,16 +851,17 @@
 
                 // Add data points to history
                 addDataPoint(cpuHistory, server.id, cpuPercentage);
-                addDataPoint(ramHistory, server.id, ramPercentage);
+                addDataPoint(ramHistory, server.id, ramUsageMB);
                 addDataPoint(latencyHistory, server.id, server.latency || 0);
 
-                return { ...server, calculatedStatus: status, cpuPercentage, ramPercentage, connectionsPercentage };
+                return { ...server, calculatedStatus: status, cpuPercentage, ramUsageMB, connectionsPercentage };
             });
 
             // Update graphs
             const maxLatency = Math.max(...Array.from(latencyHistory.values()).flat(), 100);
+            const maxRam = Math.max(...Array.from(ramHistory.values()).flat(), 500);
             drawGraph('cpu-graph', cpuHistory, 100);
-            drawGraph('ram-graph', ramHistory, 100);
+            drawGraph('ram-graph', ramHistory, maxRam);
             drawGraph('latency-graph', latencyHistory, maxLatency);
 
             // Update legends
@@ -883,7 +882,6 @@
             // Render server cards
             serversContainer.innerHTML = serversWithStatus.map(server => {
                 const cpuClass = server.cpuPercentage > 80 ? 'danger' : server.cpuPercentage > 60 ? 'warning' : '';
-                const ramClass = server.ramPercentage > 80 ? 'danger' : server.ramPercentage > 60 ? 'warning' : '';
                 const connClass = server.connectionsPercentage > 80 ? 'danger' : server.connectionsPercentage > 60 ? 'warning' : '';
                 const serverColor = getServerColor(server.id);
 
@@ -910,8 +908,7 @@
                             </div>
                             <div class="metric">
                                 <span class="metric-label">RAM</span>
-                                <span class="metric-value">${server.ramPercentage.toFixed(0)}%</span>
-                                <div class="metric-bar"><div class="metric-bar-fill ${ramClass}" style="width: ${server.ramPercentage}%"></div></div>
+                                <span class="metric-value">${server.ramUsageMB.toFixed(0)} MB</span>
                             </div>
                             <div class="metric">
                                 <span class="metric-label">Connections</span>

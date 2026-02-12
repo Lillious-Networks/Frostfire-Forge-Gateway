@@ -1,0 +1,32 @@
+FROM oven/bun:canary AS base
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json bun.lockb* ./
+RUN bun install --frozen-lockfile --production
+
+FROM base AS build
+COPY package.json bun.lockb* ./
+RUN bun install --frozen-lockfile
+COPY . .
+
+FROM base AS production
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=build /app .
+
+ARG VERSION=unknown
+ARG BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.title="Frostfire Forge Gateway" \
+      org.opencontainers.image.description="Authentication and load balancing gateway for Frostfire Forge"
+
+EXPOSE 8080 9999
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD bun -e "fetch('http://localhost:9999/status').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+
+CMD ["bun", "run", "start.ts"]

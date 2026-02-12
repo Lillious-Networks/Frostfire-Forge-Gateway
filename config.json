@@ -1,0 +1,24 @@
+{
+  "gateway": {
+    "port": 9999,
+    "heartbeatInterval": 30000,
+    "serverTimeout": 90000,
+    "sessionTimeout": 300000,
+    "authKey": "7316720e-239e-4dcf-ac82-a7662061a327-ae311b44-8846-4f64-947c-8f8fc288374c",
+    "enabled": true,
+    "url": "http://127.0.0.1:9999"
+  },
+  "loadBalancing": {
+    "strategy": "least-connections",
+    "maxConnectionsPerServer": 1000
+  },
+  "sessions": {
+    "enabled": true,
+    "timeout": 300000,
+    "cleanupInterval": 60000
+  },
+  "logging": {
+    "enabled": true,
+    "level": "debug"
+  }
+}

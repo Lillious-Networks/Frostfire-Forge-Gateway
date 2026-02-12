@@ -1,0 +1,51 @@
+# Node modules (will be installed in container)
+node_modules/
+bun.lockb
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Environment files (use secrets management instead)
+.env*
+!.env.example
+!.env.gateway.example
+
+# Build artifacts
+dist/
+build/
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+
+# Test files
+test/
+tests/
+*.test.ts
+*.spec.ts
+
+# CI/CD
+.github/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp

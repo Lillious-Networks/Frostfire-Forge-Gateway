@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: frostfire-gateway-prod
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "9999:9999"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - ENV_FILE=.env.production
+      - TZ=UTC
+    volumes:
+      - ./certs:/app/certs:ro
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:9999/status').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - gateway-network
+
+networks:
+  gateway-network:
+    driver: bridge

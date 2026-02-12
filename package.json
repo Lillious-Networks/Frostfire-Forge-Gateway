@@ -2,12 +2,16 @@
   "name": "frostfire-gateway",
   "version": "1.0.0",
   "description": "Load balancer gateway for Frostfire Forge game servers",
-  "main": "server.ts",
+  "module": "gateway-server.ts",
   "scripts": {
-    "start": "bun --env-file=.env.gateway run server.ts",
-    "dev": "bun --watch server.ts",
-    "test": "bun run test-gateway.ts",
-    "create-config": "bun run create-config.ts"
+    "start": "ENV_FILE=.env.production bun run start.ts",
+    "start-dev": "ENV_FILE=.env.development bun run start.ts",
+    "start-gateway": "bun --env-file=.env.production gateway-server.ts",
+    "start-webserver": "bun run transpile-production && bun --env-file=.env.production webserver.ts",
+    "transpile-production": "bun --env-file=.env.production ./utility/transpiler.ts",
+    "dev": "bun --watch --env-file=.env.production gateway-server.ts",
+    "dev-webserver": "bun --watch --env-file=.env.production webserver.ts",
+    "create-config": "bun --env-file=.env.production run ./utility/create-config.ts"
   },
   "keywords": [
     "gateway",
@@ -17,12 +21,16 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "bun-types": "latest"
+    "@types/bun": "^1.3.8",
+    "@types/node": "^25.2.2"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.9.3"
   },
+  "type": "module",
+  "private": true,
   "dependencies": {
-    "@types/bun": "^1.3.8"
+    "@types/nodemailer": "^7.0.9",
+    "nodemailer": "^8.0.1"
   }
 }

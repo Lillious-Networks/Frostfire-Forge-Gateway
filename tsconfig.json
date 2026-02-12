@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "types": [
+      "node",
+      "bun"
+    ],
+    // Enable latest features
+    "lib": ["ESNext", "DOM"],
+    "target": "es2022",
+    "module": "es2022",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": true,
+
+    // Best practices
+    "strict": true,
+    "alwaysStrict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": true,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+  }
+}

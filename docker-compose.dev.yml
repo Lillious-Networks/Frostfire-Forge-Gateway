@@ -1,0 +1,27 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    container_name: frostfire-gateway-dev
+    command: ["bun", "--watch", "run", "start.ts"]
+    ports:
+      - "8080:8080"
+      - "443:443"
+      - "9999:9999"
+    env_file:
+      - .env.development
+    environment:
+      - NODE_ENV=development
+      - ENV_FILE=.env.development
+      - TZ=UTC
+    volumes:
+      - .:/app
+      - /app/node_modules
+    networks:
+      - gateway-network
+
+networks:
+  gateway-network:
+    driver: bridge
