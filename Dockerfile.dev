@@ -28,8 +28,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app .
 COPY --from=envcopy /app/.env.development .env.development
 
-RUN bun --env-file=.env.development ./utility/create-config.ts
-
 EXPOSE 8080 9999
 
 CMD ["bun", "run", "development"]

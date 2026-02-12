@@ -5,8 +5,7 @@
   "module": "gateway-server.ts",
   "scripts": {
     "production": "bun --env-file=.env.production start.ts",
-    "development": "bun --env-file=.env.development start.ts",
-    "create-config": "bun --env-file=.env.production ./utility/create-config.ts"
+    "development": "bun --env-file=.env.development start.ts"
   },
   "keywords": [
     "gateway",
