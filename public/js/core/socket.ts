@@ -268,20 +268,7 @@ async function connectThroughGateway(gatewayUrl: string, clientId: string): Prom
     }, 10000);
 
     // Convert HTTP gateway URL to WebSocket URL
-    // Use config.WEBSOCKET_URL base and GATEWAY_WS_PORT for gateway connection
-    let wsUrl = config.WEBSOCKET_URL || "ws://localhost";
-
-    // Parse the URL to use gateway WebSocket port
-    try {
-      const parsedUrl = new URL(wsUrl);
-      // Use gateway WebSocket port (9000), not game engine port
-      parsedUrl.port = config.GATEWAY_WS_PORT || '9000';
-      wsUrl = parsedUrl.toString();
-    } catch (e) {
-      // Fallback if URL parsing fails - extract base URL without port
-      const baseUrl = wsUrl.split(':').slice(0, 2).join(':'); // ws://hostname
-      wsUrl = `${baseUrl}:${config.GATEWAY_WS_PORT || '9000'}`;
-    }
+    let wsUrl = gatewayUrl.replace('http://', 'ws://').replace('https://', 'wss://');
 
     const url = new URL(wsUrl);
     url.searchParams.set('clientId', clientId);
@@ -348,30 +335,28 @@ async function initializeSocket() {
 
   isReconnecting = true;
 
-  const gatewayEnabled = config.GATEWAY_ENABLED === 'true';
   const gatewayUrl = config.GATEWAY_URL;
 
-  if (gatewayEnabled && gatewayUrl) {
-    try {
-      const clientId = getClientId();
-      socket = await connectThroughGateway(gatewayUrl, clientId);
-    } catch (error) {
-      console.warn('[Gateway] Gateway connection failed, using direct connection:', error);
-      // Fallback to direct connection
-      const socketUrl = config.WEBSOCKET_URL || "ws://localhost:3000";
-      socket = new WebSocket(socketUrl);
-    }
-  } else {
-    // Direct connection (no gateway)
-    const socketUrl = config.WEBSOCKET_URL || "ws://localhost:3000";
-    socket = new WebSocket(socketUrl);
+  if (!gatewayUrl) {
+    console.error('[Gateway] No gateway URL configured');
+    isReconnecting = false;
+    throw new Error('Gateway URL not configured');
+  }
+
+  try {
+    const clientId = getClientId();
+    socket = await connectThroughGateway(gatewayUrl, clientId);
+  } catch (error) {
+    console.error('[Gateway] Gateway connection failed:', error);
+    isReconnecting = false;
+    throw error;
   }
 
   socket.binaryType = "arraybuffer";
   setupSocketHandlers();
 
-  // If using gateway, socket is already open - manually trigger initialization
-  if (gatewayEnabled && socket.readyState === WebSocket.OPEN) {
+  // Socket is already open from gateway - manually trigger initialization
+  if (socket.readyState === WebSocket.OPEN) {
     initializeConnection();
   }
 
