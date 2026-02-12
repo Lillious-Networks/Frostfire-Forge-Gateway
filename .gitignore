@@ -24,7 +24,7 @@ config/
 !config/assets.json
 .env*
 !.env.example
-assets/tilesets/*
-!assets/tilesets/tiles.png
-!assets/tilesets/MystcialValley_Environment.png
-!assets/tilesets/MystcialValley_Structures.png
+public/tilesets/*
+!public/tilesets/tiles.png
+!public/tilesets/MystcialValley_Environment.png
+!public/tilesets/MystcialValley_Structures.png
