@@ -55,7 +55,7 @@ jobs:
           echo 'SERVER_TIMEOUT=90000' >> .env.development
           echo 'SESSION_TIMEOUT=1800000' >> .env.development
           echo 'GATEWAY_ENABLED=true' >> .env.development
-          echo 'GATEWAY_URL="${{ secrets.GATEWAY_URL }}"' >> .env.development
+          echo 'GATEWAY_URL=${{ secrets.GATEWAY_URL }}' >> .env.development
           echo 'VERSION="dev"' >> .env.development
           echo 'GAME_NAME="Frostfire Forge - Development"' >> .env.development
           echo 'LOG_LEVEL=debug' >> .env.development

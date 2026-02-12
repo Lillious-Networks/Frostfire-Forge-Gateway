@@ -233,8 +233,8 @@ async function connectThroughGateway(gatewayUrl: string, clientId: string): Prom
     console.log(`[Gateway] User selected server: ${selectedServerId}`);
 
     try {
-      // Fetch server details from gateway (use public /status endpoint)
-      const response = await fetch(`${gatewayUrl}/status`);
+      // Fetch server details from webserver's gateway API endpoint
+      const response = await fetch('/api/gateway/servers');
       if (!response.ok) {
         throw new Error('Failed to fetch server list');
       }
@@ -260,62 +260,38 @@ async function connectThroughGateway(gatewayUrl: string, clientId: string): Prom
     }
   }
 
-  // Normal gateway assignment (round-robin)
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      gatewayWs.close();
-      reject(new Error('Gateway connection timeout'));
-    }, 10000);
+  // Normal gateway assignment (round-robin) - fetch from webserver API
+  try {
+    const response = await fetch('/api/gateway/servers');
+    if (!response.ok) {
+      throw new Error('Failed to fetch server list from gateway');
+    }
 
-    // Convert HTTP gateway URL to WebSocket URL
-    let wsUrl = gatewayUrl.replace('http://', 'ws://').replace('https://', 'wss://');
+    const data = await response.json();
 
-    const url = new URL(wsUrl);
-    url.searchParams.set('clientId', clientId);
+    if (!data.servers || data.servers.length === 0) {
+      throw new Error('No game servers available');
+    }
 
-    const gatewayWs = new WebSocket(url.toString());
+    // Filter for healthy servers only
+    const healthyServers = data.servers.filter((s: any) => s.status === 'online' || s.status === 'healthy');
 
-    gatewayWs.onmessage = (event) => {
-      clearTimeout(timeout);
+    if (healthyServers.length === 0) {
+      throw new Error('No healthy game servers available');
+    }
 
-      try {
-        const data = JSON.parse(event.data);
+    // Pick first healthy server (server-side can implement round-robin if needed)
+    const server = healthyServers[0];
 
-        if (data.type === 'server_assignment') {
-          // Store the clientId returned by gateway
-          localStorage.setItem('gateway_clientId', data.clientId);
+    // Connect directly to the assigned game server
+    const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}`;
+    console.log(`[Gateway] Connecting to assigned server: ${gameServerWsUrl}`);
 
-          // Close gateway connection
-          gatewayWs.close();
-
-          // Connect directly to the assigned game server
-          const gameServerWsUrl = `${data.server.host.startsWith('ws') ? '' : 'ws://'}${data.server.host}:${data.server.wsPort}`;
-          console.log(`[Gateway] Connecting to assigned server: ${gameServerWsUrl}`);
-
-          const gameServerWs = new WebSocket(gameServerWsUrl);
-          resolve(gameServerWs);
-        } else if (data.type === 'error') {
-          gatewayWs.close();
-          reject(new Error(`Gateway error: ${data.message}`));
-        }
-      } catch (error) {
-        gatewayWs.close();
-        reject(new Error(`Failed to parse gateway message: ${error}`));
-      }
-    };
-
-    gatewayWs.onerror = (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    };
-
-    gatewayWs.onclose = (event) => {
-      clearTimeout(timeout);
-      if (event.code !== 1000) {
-        reject(new Error(`Gateway closed: ${event.code}`));
-      }
-    };
-  });
+    const gameServerWs = new WebSocket(gameServerWsUrl);
+    return gameServerWs;
+  } catch (error) {
+    throw new Error(`Gateway assignment failed: ${error}`);
+  }
 }
 
 // Reconnection tracking
