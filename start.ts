@@ -31,7 +31,7 @@ if (!configJsonExists || !settingsJsonExists) {
   }
   console.log("⚙️  Generating configuration files...");
 
-  const configProc = Bun.spawn(["bun", `--env-file=${envFile}`, "create-config.ts"], {
+  const configProc = Bun.spawn(["bun", `--env-file=${envFile}`, "./utility/create-config.ts"], {
     stdout: "inherit",
     stderr: "inherit"
   });
