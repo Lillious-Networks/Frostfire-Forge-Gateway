@@ -76,6 +76,9 @@ function sendRequest(data: any) {
 const pendingMapChunkRequests = new Map<string, {resolve: (data: any) => void, reject: (error: Error) => void}>();
 const pendingTilesetRequests = new Map<string, {resolve: (data: any) => void, reject: (error: Error) => void}>();
 
+// Tileset streaming state
+const tilesetChunks = new Map<string, {chunks: string[], totalChunks: number, received: number}>();
+
 // Request map chunk via WebSocket
 export function requestMapChunkViaWS(mapName: string, chunkX: number, chunkY: number, chunkSize: number): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -2613,7 +2616,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "TILESET": {
-      // Resolve pending tileset request
+      // Handle errors
       if (data.error) {
         console.error(`Tileset error: ${data.error}`);
         const name = pendingTilesetRequests.keys().next().value;
@@ -2622,12 +2625,44 @@ socket.onmessage = async (event) => {
           if (resolver) {
             resolver.reject(new Error(data.error));
             pendingTilesetRequests.delete(name);
+            tilesetChunks.delete(name);
           }
         }
         break;
       }
 
-      if (data.tileset) {
+      // Handle chunked streaming
+      if (data.chunkIndex !== undefined) {
+        const tilesetName = data.name;
+
+        // Metadata packet (chunkIndex === -1)
+        if (data.chunkIndex === -1) {
+          tilesetChunks.set(tilesetName, {
+            chunks: new Array(data.totalChunks),
+            totalChunks: data.totalChunks,
+            received: 0
+          });
+        } else {
+          // Data chunk
+          const state = tilesetChunks.get(tilesetName);
+          if (state) {
+            state.chunks[data.chunkIndex] = data.data;
+            state.received++;
+
+            // All chunks received - reassemble
+            if (state.received === state.totalChunks) {
+              const completeData = state.chunks.join('');
+              const resolver = pendingTilesetRequests.get(tilesetName);
+              if (resolver) {
+                resolver.resolve({ name: tilesetName, data: completeData });
+                pendingTilesetRequests.delete(tilesetName);
+              }
+              tilesetChunks.delete(tilesetName);
+            }
+          }
+        }
+      } else if (data.tileset) {
+        // Legacy non-chunked response (for backward compatibility)
         const resolver = pendingTilesetRequests.get(data.tileset.name);
         if (resolver) {
           resolver.resolve(data.tileset);

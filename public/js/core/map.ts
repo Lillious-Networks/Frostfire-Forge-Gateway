@@ -260,9 +260,12 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
   const tilesetPromises = tilesets.map(async (tileset) => {
     const name = tileset.image.split("/").pop();
 
-    // Request tileset via WebSocket
-    const { requestTilesetViaWS } = await import('./socket.js');
-    const tilesetData = await requestTilesetViaWS(name);
+    // Request tileset via HTTP from gateway
+    const response = await fetch(`/tileset?name=${encodeURIComponent(name)}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch tileset ${name}: ${response.statusText}`);
+    }
+    const tilesetData = await response.json();
     const compressedBase64 = tilesetData.data;
     const compressedBytes = base64ToUint8Array(compressedBase64);
     // @ts-expect-error - pako is not defined because it is loaded in the index.html
@@ -391,15 +394,13 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
       // Use cached data
       chunkData = cachedChunkData;
     } else {
-      // Request from server via WebSocket
+      // Request from gateway via HTTP
       try {
-        const { requestMapChunkViaWS } = await import('./socket.js');
-        chunkData = await requestMapChunkViaWS(
-          window.mapData.name,
-          chunkX,
-          chunkY,
-          window.mapData.chunkSize
-        ) as ChunkData;
+        const response = await fetch(`/map-chunk?map=${encodeURIComponent(window.mapData.name)}&x=${chunkX}&y=${chunkY}&size=${window.mapData.chunkSize}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch chunk: ${response.statusText}`);
+        }
+        chunkData = await response.json() as ChunkData;
 
         // Save to localStorage cache
         saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);

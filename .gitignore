@@ -21,5 +21,10 @@ certs/*.jks
 certs/*.jceks
 certs/*.ca-bundle
 config/
+!config/assets.json
 .env*
 !.env.example
+assets/tilesets/*
+!assets/tilesets/tiles.png
+!assets/tilesets/MystcialValley_Environment.png
+!assets/tilesets/MystcialValley_Structures.png
