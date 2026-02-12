@@ -2210,9 +2210,9 @@ socket.onmessage = async (event) => {
       break;
     }
     case "MUSIC": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
-      const name = data.name;
-      await playMusic(name);
+      // const data = JSON.parse(packet.decode(event.data))["data"];
+      // const name = data.name;
+      // await playMusic(name);
       break;
     }
     case "INSPECTPLAYER": {

@@ -1,14 +1,6 @@
 import { getUserHasInteracted } from "./input.js";
 import { musicSlider, effectsSlider, mutedCheckbox } from "./ui.js";
 
-async function fetchAudio(url: string): Promise<ArrayBuffer> {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch audio: ${response.statusText}`);
-    }
-    return await response.arrayBuffer();
-}
-
 function fadeInMusic(music: HTMLAudioElement, targetVolume: number, duration: number = 2000): void {
     const startTime = performance.now();
     const startVolume = 0;
@@ -30,38 +22,8 @@ function fadeInMusic(music: HTMLAudioElement, targetVolume: number, duration: nu
 }
 
 export async function playMusic(name: string): Promise<void> {
-    // Keep retrying until the user has interacted with the page
-    if (!getUserHasInteracted()) {
-        setTimeout(() => {
-            playMusic(name);
-        }, 100);
-        return; // Safari will not allow autoplay without gesture
-    }
-
-    const audio = await fetchAudio(`/music?name=${encodeURIComponent(name)}`);
-    const music = new Audio(URL.createObjectURL(new Blob([audio], { type: 'audio/mpeg' })));
-    if (!music) return;
-
-    // Calculate target volume based on slider and muted state
-    const musicVolume = Number(musicSlider.value);
-    const targetVolume = mutedCheckbox.checked || musicVolume === 0 ? 0 : musicVolume / 100;
-
-    // Start at volume 0 for fade-in
-    music.volume = 0;
-    music.loop = true;
-
-    // Play the audio
-    try {
-        await music.play();
-
-        // Fade in the music
-        fadeInMusic(music, targetVolume, 2000);
-
-        // Start interval if needed (for UI updates or other logic)
-        startMusicInterval(music);
-    } catch (err) {
-        console.error("Audio play failed:", err);
-    }
+    // Music disabled - gateway does not serve audio files
+    return;
 }
 
 function startMusicInterval(music: any) {
