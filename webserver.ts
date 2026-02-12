@@ -198,7 +198,7 @@ const routes = {
         };
 
         // Extract chunk data from each layer
-        for (const layer of mapData.layers) {
+        mapData.layers.forEach((layer: any, index: number) => {
           if (layer.type === "tilelayer" && layer.data) {
             const chunkLayerData: number[] = [];
 
@@ -216,12 +216,21 @@ const routes = {
               }
             }
 
+            // Get zIndex from layer properties or use layer index as fallback
+            let zIndex = layer.zIndex;
+            if (zIndex === undefined) {
+              zIndex = index;
+            }
+
             chunk.layers.push({
               name: layer.name,
-              data: chunkLayerData
+              zIndex: zIndex,
+              data: chunkLayerData,
+              width: chunkSize,
+              height: chunkSize
             });
           }
-        }
+        });
 
         return new Response(JSON.stringify(chunk), {
           status: 200,
