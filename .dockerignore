@@ -7,10 +7,8 @@ bun.lockb
 .github/
 .gitignore
 
-# Environment files (use secrets management instead)
-.env*
-!.env.example
-!.env.gateway.example
+.env.production
+.env.local
 
 # Build artifacts
 dist/
