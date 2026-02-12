@@ -4,14 +4,9 @@
   "description": "Load balancer gateway for Frostfire Forge game servers",
   "module": "gateway-server.ts",
   "scripts": {
-    "start": "ENV_FILE=.env.production bun run start.ts",
-    "start-dev": "ENV_FILE=.env.development bun run start.ts",
-    "start-gateway": "bun --env-file=.env.production gateway-server.ts",
-    "start-webserver": "bun run transpile-production && bun --env-file=.env.production webserver.ts",
-    "transpile-production": "bun --env-file=.env.production ./utility/transpiler.ts",
-    "dev": "bun --watch --env-file=.env.production gateway-server.ts",
-    "dev-webserver": "bun --watch --env-file=.env.production webserver.ts",
-    "create-config": "bun --env-file=.env.production run ./utility/create-config.ts"
+    "production": "bun --env-file=.env.production start.ts",
+    "development": "bun --env-file=.env.development start.ts",
+    "create-config": "bun --env-file=.env.production ./utility/create-config.ts"
   },
   "keywords": [
     "gateway",
