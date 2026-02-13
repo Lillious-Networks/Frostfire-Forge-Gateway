@@ -18,6 +18,7 @@ jobs:
   publish-docker:
     name: Build and Publish Docker Image
     runs-on: ubuntu-latest
+    environment: development
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
