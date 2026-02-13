@@ -21,9 +21,63 @@ function fadeInMusic(music: HTMLAudioElement, targetVolume: number, duration: nu
     requestAnimationFrame(updateVolume);
 }
 
+let currentMusic: HTMLAudioElement | null = null;
+
 export async function playMusic(name: string): Promise<void> {
-    // Music disabled - gateway does not serve audio files
-    return;
+    // Keep retrying until the user has interacted with the page
+    if (!getUserHasInteracted()) {
+        setTimeout(() => {
+            playMusic(name);
+        }, 100);
+        return;
+    }
+
+    // Stop current music if playing
+    if (currentMusic) {
+        currentMusic.pause();
+        currentMusic = null;
+    }
+
+    try {
+        // Add .mp3 extension if not present
+        const musicFileName = name.endsWith('.mp3') ? name : `${name}.mp3`;
+
+        // Fetch music from gateway
+        const response = await fetch(`/music?name=${encodeURIComponent(musicFileName)}`);
+        if (!response.ok) {
+            console.error(`Failed to fetch music: ${response.statusText}`);
+            return;
+        }
+
+        // Create audio element from blob
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const music = new Audio(url);
+
+        // Set initial volume and loop
+        music.loop = true;
+        music.volume = 0;
+
+        // Start playing
+        await music.play();
+
+        // Store reference to current music
+        currentMusic = music;
+
+        // Fade in the music
+        const targetVolume = mutedCheckbox.checked ? 0 : Number(musicSlider.value) / 100;
+        fadeInMusic(music, targetVolume);
+
+        // Start volume monitoring interval
+        startMusicInterval(music);
+
+        // Clean up blob URL when music ends (shouldn't happen with loop=true, but good practice)
+        music.addEventListener('ended', () => {
+            URL.revokeObjectURL(url);
+        });
+    } catch (error) {
+        console.error("Failed to play music:", error);
+    }
 }
 
 function startMusicInterval(music: any) {

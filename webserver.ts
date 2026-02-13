@@ -245,6 +245,57 @@ const routes = {
       }
     }
   },
+  "/music": {
+    GET: async (req: Request) => {
+      const url = new URL(req.url);
+      const name = url.searchParams.get("name");
+
+      if (!name) {
+        return new Response(JSON.stringify({ error: "Missing music name" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      try {
+        // Ensure filename is safe (no path traversal)
+        const safeName = path.basename(name);
+        const musicPath = path.join(import.meta.dir, "public", "music", safeName);
+
+        if (!fs.existsSync(musicPath)) {
+          return new Response(JSON.stringify({ error: "Music file not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Read and serve the music file directly
+        const musicData = fs.readFileSync(musicPath);
+
+        // Determine content type based on file extension
+        let contentType = "audio/mpeg";
+        if (safeName.endsWith(".ogg")) {
+          contentType = "audio/ogg";
+        } else if (safeName.endsWith(".wav")) {
+          contentType = "audio/wav";
+        }
+
+        return new Response(musicData, {
+          status: 200,
+          headers: {
+            "Content-Type": contentType,
+            "Cache-Control": "public, max-age=86400" // Cache for 24 hours
+          }
+        });
+      } catch (error: any) {
+        log.error(`Error serving music: ${error.message}`);
+        return new Response(JSON.stringify({ error: "Internal server error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+  },
   "/realm-selection": realmselection_html,
 } as Record<string, any>;
 
@@ -273,6 +324,7 @@ Bun.serve({
       "/api/gateway/servers": routes["/api/gateway/servers"],
       "/tileset": routes["/tileset"],
       "/map-chunk": routes["/map-chunk"],
+      "/music": routes["/music"],
     },
   async fetch(req: Request, server: any) {
     const url = tryParseURL(req.url);
