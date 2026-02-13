@@ -9,6 +9,7 @@ import * as settings from "./config/settings.json";
 import path from "path";
 import fs from "fs";
 import zlib from "zlib";
+import crypto from "crypto";
 import animator_html from "./public/animator.html";
 import connectiontest_html from "./public/connection-test.html";
 import login_html from "./public/index.html";
@@ -107,6 +108,41 @@ const routes = {
         return new Response(JSON.stringify({
           message: "Failed to fetch servers",
           servers: []
+        }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+  },
+  "/api/gateway/connection-token": {
+    GET: async (req: Request) => {
+      try {
+        // Generate a unique connection token
+        const token = crypto.randomBytes(32).toString("hex");
+        const timestamp = Date.now();
+        const expiresAt = timestamp + (60 * 1000); // Token expires in 60 seconds
+
+        // Sign the token with shared secret
+        const sharedSecret = process.env.GATEWAY_GAME_SERVER_SECRET || "default-secret-change-me";
+        const signature = crypto
+          .createHmac("sha256", sharedSecret)
+          .update(`${token}:${timestamp}:${expiresAt}`)
+          .digest("hex");
+
+        return new Response(JSON.stringify({
+          token,
+          timestamp,
+          expiresAt,
+          signature
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error: any) {
+        log.error(`Failed to generate connection token: ${error.message}`);
+        return new Response(JSON.stringify({
+          message: "Failed to generate connection token"
         }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
@@ -245,57 +281,6 @@ const routes = {
       }
     }
   },
-  "/music": {
-    GET: async (req: Request) => {
-      const url = new URL(req.url);
-      const name = url.searchParams.get("name");
-
-      if (!name) {
-        return new Response(JSON.stringify({ error: "Missing music name" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      try {
-        // Ensure filename is safe (no path traversal)
-        const safeName = path.basename(name);
-        const musicPath = path.join(import.meta.dir, "public", "music", safeName);
-
-        if (!fs.existsSync(musicPath)) {
-          return new Response(JSON.stringify({ error: "Music file not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        // Read and serve the music file directly
-        const musicData = fs.readFileSync(musicPath);
-
-        // Determine content type based on file extension
-        let contentType = "audio/mpeg";
-        if (safeName.endsWith(".ogg")) {
-          contentType = "audio/ogg";
-        } else if (safeName.endsWith(".wav")) {
-          contentType = "audio/wav";
-        }
-
-        return new Response(musicData, {
-          status: 200,
-          headers: {
-            "Content-Type": contentType,
-            "Cache-Control": "public, max-age=86400" // Cache for 24 hours
-          }
-        });
-      } catch (error: any) {
-        log.error(`Error serving music: ${error.message}`);
-        return new Response(JSON.stringify({ error: "Internal server error" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-  },
   "/realm-selection": realmselection_html,
 } as Record<string, any>;
 
@@ -322,9 +307,9 @@ Bun.serve({
       "/login": routes["/login"],
       "/verify": routes["/verify"],
       "/api/gateway/servers": routes["/api/gateway/servers"],
+      "/api/gateway/connection-token": routes["/api/gateway/connection-token"],
       "/tileset": routes["/tileset"],
       "/map-chunk": routes["/map-chunk"],
-      "/music": routes["/music"],
     },
   async fetch(req: Request, server: any) {
     const url = tryParseURL(req.url);

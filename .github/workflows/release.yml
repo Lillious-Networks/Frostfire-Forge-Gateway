@@ -51,6 +51,7 @@ jobs:
           echo 'GATEWAY_PORT=9999' >> .env.development
           echo 'GATEWAY_USESSL=false' >> .env.development
           echo 'GATEWAY_AUTH_KEY="${{ secrets.GATEWAY_AUTH_KEY }}"' >> .env.development
+          echo 'GATEWAY_GAME_SERVER_SECRET="${{ secrets.GATEWAY_GAME_SERVER_SECRET }}"' >> .env.development
           echo 'HEARTBEAT_INTERVAL=30000' >> .env.development
           echo 'SERVER_TIMEOUT=90000' >> .env.development
           echo 'SESSION_TIMEOUT=1800000' >> .env.development

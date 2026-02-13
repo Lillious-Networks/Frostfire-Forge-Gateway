@@ -198,37 +198,22 @@ const setupEquipmentSlotHandlers = () => {
 };
 
 /**
- * Get or generate client ID for sticky sessions
+ * Connect through gateway to a selected or assigned game server
  */
-function getClientId(): string {
-  // ALWAYS prefer username from cookie if available (for sticky sessions)
-  const username = getCookie('username');
-  if (username) {
-    const userClientId = `user-${username}`;
-    localStorage.setItem('gateway_clientId', userClientId);
-    return userClientId;
-  }
-
-  // For guest users, try to get from localStorage
-  let clientId = localStorage.getItem('gateway_clientId');
-  if (!clientId) {
-    // Generate a unique ID for new guests (browser-compatible)
-    if (window.crypto && window.crypto.randomUUID) {
-      clientId = `client-${window.crypto.randomUUID()}`;
-    } else {
-      // Fallback for older browsers
-      clientId = `client-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+async function connectThroughGateway(gatewayUrl: string): Promise<WebSocket> {
+  // First, get a connection token from the gateway
+  let connectionToken;
+  try {
+    const tokenResponse = await fetch('/api/gateway/connection-token');
+    if (!tokenResponse.ok) {
+      throw new Error('Failed to obtain connection token from gateway');
     }
-    localStorage.setItem('gateway_clientId', clientId);
+    connectionToken = await tokenResponse.json();
+    console.log('[Gateway] Obtained connection token');
+  } catch (error) {
+    throw new Error(`Failed to obtain connection token: ${error}`);
   }
 
-  return clientId;
-}
-
-/**
- * Connect through gateway with sticky sessions or to a selected server
- */
-async function connectThroughGateway(gatewayUrl: string, clientId: string): Promise<WebSocket> {
   // Check if user selected a specific server
   const selectedServerId = localStorage.getItem('selectedServerId');
 
@@ -246,9 +231,9 @@ async function connectThroughGateway(gatewayUrl: string, clientId: string): Prom
       const server = data.servers.find((s: any) => s.id === selectedServerId);
 
       if (server) {
-        // Connect directly to the selected server
-        const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}`;
-        console.log(`[Gateway] Connecting to selected server: ${gameServerWsUrl}`);
+        // Connect directly to the selected server with token
+        const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
+        console.log(`[Gateway] Connecting to selected server with auth token: ${server.publicHost}:${server.wsPort}`);
 
         const gameServerWs = new WebSocket(gameServerWsUrl);
         return gameServerWs;
@@ -286,9 +271,9 @@ async function connectThroughGateway(gatewayUrl: string, clientId: string): Prom
     // Pick first healthy server (server-side can implement round-robin if needed)
     const server = healthyServers[0];
 
-    // Connect directly to the assigned game server
-    const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}`;
-    console.log(`[Gateway] Connecting to assigned server: ${gameServerWsUrl}`);
+    // Connect directly to the assigned game server with token
+    const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
+    console.log(`[Gateway] Connecting to assigned server with auth token: ${server.publicHost}:${server.wsPort}`);
 
     const gameServerWs = new WebSocket(gameServerWsUrl);
     return gameServerWs;
@@ -323,8 +308,7 @@ async function initializeSocket() {
   }
 
   try {
-    const clientId = getClientId();
-    socket = await connectThroughGateway(gatewayUrl, clientId);
+    socket = await connectThroughGateway(gatewayUrl);
   } catch (error) {
     console.error('[Gateway] Gateway connection failed:', error);
     isReconnecting = false;
@@ -2202,20 +2186,6 @@ socket.onmessage = async (event) => {
       if (data.id === cachedPlayerId) {
         updateXp(data.xp, data.level, data.max_xp);
       }
-      break;
-    }
-    case "AUDIO": {
-      const name = JSON.parse(packet.decode(event.data))["name"];
-      const data = JSON.parse(packet.decode(event.data))["data"];
-      const pitch = JSON.parse(packet.decode(event.data))["pitch"] || 1;
-      const timestamp = JSON.parse(packet.decode(event.data))["timestamp"];
-      playAudio(name, data.data.data, pitch, timestamp);
-      break;
-    }
-    case "MUSIC": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
-      const name = data.name;
-      await playMusic(name);
       break;
     }
     case "INSPECTPLAYER": {
