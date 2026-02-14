@@ -86,12 +86,12 @@ const routes = {
 
       try {
         // Fetch server list from gateway (use public /status endpoint)
-        // If gatewayUrl is localhost/127.0.0.1, use HTTP to avoid certificate issues
+        // Since webserver and gateway run on same machine, use localhost HTTP to avoid redirect/cert issues
         let fetchUrl = gatewayUrl;
-        if (fetchUrl.includes('127.0.0.1') || fetchUrl.includes('localhost')) {
-          // Use HTTP for local requests
-          fetchUrl = fetchUrl.replace('https://', 'http://').replace(':9998', ':9999');
-        }
+
+        // Always use localhost HTTP for internal communication
+        const gatewayPort = process.env.GATEWAY_PORT || "9999";
+        fetchUrl = `http://localhost:${gatewayPort}`;
 
         const response = await fetch(`${fetchUrl}/status`, {
           method: "GET",
