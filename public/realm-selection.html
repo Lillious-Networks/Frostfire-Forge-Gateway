@@ -275,20 +275,28 @@
                     const protocol = server.useSSL ? 'https' : 'http';
                     const url = `${protocol}://${server.publicHost}:${server.wsPort}/ping`;
 
+                    console.log(`[Ping] Measuring ${server.id} at ${url}`);
+
                     const start = performance.now();
                     const response = await fetch(url, {
                         method: 'GET',
-                        cache: 'no-cache'
+                        cache: 'no-cache',
+                        mode: 'cors'
                     });
 
+                    const end = performance.now();
+                    console.log(`[Ping] ${server.id} response status: ${response.status}`);
+
                     if (response.ok) {
-                        const end = performance.now();
                         const ping = Math.round(end - start);
+                        console.log(`[Ping] ${server.id} = ${ping}ms`);
                         serverPings.set(server.id, ping);
                         return ping;
+                    } else {
+                        console.error(`[Ping] ${server.id} returned status ${response.status}`);
                     }
                 } catch (error) {
-                    console.error(`Failed to ping ${server.id}:`, error);
+                    console.error(`[Ping] Failed to ping ${server.id}:`, error);
                 }
                 return null;
             }
