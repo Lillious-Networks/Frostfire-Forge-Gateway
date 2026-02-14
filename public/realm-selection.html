@@ -303,8 +303,9 @@
 
             async function measureAllPings() {
                 console.log('[Ping] measureAllPings called, servers:', servers);
-                // Measure ping for all online servers
-                const onlineServers = servers.filter(s => s.status === 'online' || s.status === 'full');
+                console.log('[Ping] Server statuses:', servers.map(s => ({ id: s.id, status: s.status })));
+                // Measure ping for all online servers (exclude offline only)
+                const onlineServers = servers.filter(s => s.status !== 'offline');
                 console.log('[Ping] Online servers to ping:', onlineServers.length, onlineServers);
                 await Promise.all(onlineServers.map(server => measureServerPing(server)));
                 console.log('[Ping] All pings completed, re-rendering');
