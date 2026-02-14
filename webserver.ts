@@ -72,7 +72,7 @@ const routes = {
     GET: async () => {
       // Check if gateway is enabled
       const gatewayEnabled = (settings as any).gateway?.enabled;
-      const gatewayUrl = (settings as any).gateway?.url;
+      const gatewayUrl = process.env.GATEWAY_URL || (settings as any).gateway?.url;
 
       if (!gatewayEnabled || !gatewayUrl) {
         return new Response(JSON.stringify({
@@ -86,7 +86,14 @@ const routes = {
 
       try {
         // Fetch server list from gateway (use public /status endpoint)
-        const response = await fetch(`${gatewayUrl}/status`, {
+        // If gatewayUrl is localhost/127.0.0.1, use HTTP to avoid certificate issues
+        let fetchUrl = gatewayUrl;
+        if (fetchUrl.includes('127.0.0.1') || fetchUrl.includes('localhost')) {
+          // Use HTTP for local requests
+          fetchUrl = fetchUrl.replace('https://', 'http://').replace(':9998', ':9999');
+        }
+
+        const response = await fetch(`${fetchUrl}/status`, {
           method: "GET",
           headers: { "Content-Type": "application/json" }
         });
