@@ -593,7 +593,25 @@ if (useSSL) {
 Bun.serve(serverConfig);
 
 const protocol = useSSL ? 'https' : 'http';
-console.log(`[Gateway] HTTP Server running on ${protocol}://localhost:${config.port}`);
+console.log(`[Gateway] Gateway Server running on ${protocol}://localhost:${config.port}`);
 console.log(`[Gateway] Waiting for game servers to register...`);
+
+// If HTTPS is enabled, also start an HTTP server that redirects to HTTPS
+if (useSSL) {
+  const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
+  Bun.serve({
+    hostname: "0.0.0.0",
+    port: httpPort,
+    fetch(req: Request) {
+      const url = new URL(req.url);
+      // Redirect to HTTPS with the SSL port
+      const sslPort = config.port === 443 ? "" : `:${config.port}`;
+      const httpsUrl = `https://${url.hostname}${sslPort}${url.pathname}${url.search}`;
+      console.log(`[Gateway] Redirecting HTTP request to: ${httpsUrl}`);
+      return Response.redirect(httpsUrl, 301);
+    }
+  });
+  console.log(`[Gateway] HTTP redirect server running on http://localhost:${httpPort}`);
+}
 
 export {}
