@@ -75,15 +75,16 @@ const settings = {
     level: process.env.LOG_LEVEL || "debug"
   },
   gateway: {
-    enabled: true,
-    url: `http://127.0.0.1:${gatewayPort}`
+    enabled: process.env.GATEWAY_ENABLED === "true" || true,
+    url: process.env.GATEWAY_URL || `http://localhost:${gatewayPort}`
   },
   "2fa": {
     enabled: false
   },
   guest_mode: {
     enabled: true
-  }
+  },
+  default_map: "overworld.json",
 };
 
 // Write config files
