@@ -603,7 +603,7 @@ const protocol = useSSL ? 'https' : 'http';
 console.log(`[Gateway] Gateway Server running on ${protocol}://localhost:${config.port}`);
 console.log(`[Gateway] Waiting for game servers to register...`);
 
-// If HTTPS is enabled, also start an HTTP server that redirects to HTTPS
+// If HTTPS is enabled, also start an HTTP server that handles localhost health checks and redirects external traffic to HTTPS
 if (useSSL) {
   const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
   Bun.serve({
@@ -612,23 +612,36 @@ if (useSSL) {
     fetch(req: Request) {
       const url = new URL(req.url);
 
-      // Allow certain endpoints to be accessed via HTTP for internal/localhost requests
-      // This prevents redirect loops and certificate issues for health checks
+      // Handle health check endpoints directly for localhost to avoid certificate issues
       const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-      const allowedPaths = ['/status', '/health'];
-      const isAllowedPath = allowedPaths.some(path => url.pathname === path);
 
-      if (isLocalhost && isAllowedPath) {
-        // Forward to the HTTPS server on localhost (no cert validation issues for localhost)
-        const localUrl = `https://localhost:${config.port}${url.pathname}${url.search}`;
-        return fetch(localUrl, {
-          method: req.method,
-          headers: req.headers,
-          // Bun accepts self-signed certs on localhost by default
+      if (isLocalhost && url.pathname === '/status' && req.method === 'GET') {
+        // Serve status directly for localhost requests
+        const servers = Array.from(gameServers.values()).map(s => {
+          const isHealthy = (Date.now() - s.lastHeartbeat) < config.serverTimeout;
+          const isFull = s.activeConnections >= s.maxConnections;
+
+          return {
+            id: s.id,
+            publicHost: s.publicHost,
+            port: s.port,
+            wsPort: s.wsPort,
+            activeConnections: s.activeConnections,
+            maxConnections: s.maxConnections,
+            status: !isHealthy ? 'unhealthy' : isFull ? 'full' : 'available'
+          };
+        });
+
+        return new Response(JSON.stringify({
+          totalServers: gameServers.size,
+          servers
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
         });
       }
 
-      // Redirect to HTTPS with the SSL port
+      // Redirect all other requests to HTTPS
       const sslPort = config.port === 443 ? "" : `:${config.port}`;
       const httpsUrl = `https://${url.hostname}${sslPort}${url.pathname}${url.search}`;
       console.log(`[Gateway] Redirecting HTTP request to: ${httpsUrl}`);
