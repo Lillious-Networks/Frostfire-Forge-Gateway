@@ -65,6 +65,11 @@ jobs:
           echo 'LOG_LEVEL=debug' >> .env.development
           echo 'CACHE="memory"' >> .env.development
 
+      - name: Create certificate directories
+        run: |
+          mkdir -p src/certs/gateway
+          mkdir -p src/certs/webserver
+
       - name: Create Gateway Certificate Chain
         working-directory: src/certs/gateway
         run: |
