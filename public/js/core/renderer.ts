@@ -375,11 +375,9 @@ function animationLoop() {
     else if (keys.has("KeyS")) dir = "DOWN";
     else if (keys.has("KeyA")) dir = "LEFT";
     else if (keys.has("KeyD")) dir = "RIGHT";
-    if (dir && dir !== lastDirection && !pendingRequest) {
-      pendingRequest = true;
+    if (dir && dir !== lastDirection) {
       sendRequest({ type: "MOVEXY", data: dir });
       lastDirection = dir;
-      setTimeout(() => (pendingRequest = false), 50);
     }
   } else if (getIsMoving() && !getIsKeyPressed()) {
     if (lastDirection !== "") sendRequest({ type: "MOVEXY", data: "ABORT" });
