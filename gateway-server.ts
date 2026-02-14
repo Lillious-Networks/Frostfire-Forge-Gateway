@@ -611,6 +611,23 @@ if (useSSL) {
     port: httpPort,
     fetch(req: Request) {
       const url = new URL(req.url);
+
+      // Allow certain endpoints to be accessed via HTTP for internal/localhost requests
+      // This prevents redirect loops and certificate issues for health checks
+      const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      const allowedPaths = ['/status', '/health'];
+      const isAllowedPath = allowedPaths.some(path => url.pathname === path);
+
+      if (isLocalhost && isAllowedPath) {
+        // Forward to the HTTPS server on localhost (no cert validation issues for localhost)
+        const localUrl = `https://localhost:${config.port}${url.pathname}${url.search}`;
+        return fetch(localUrl, {
+          method: req.method,
+          headers: req.headers,
+          // Bun accepts self-signed certs on localhost by default
+        });
+      }
+
       // Redirect to HTTPS with the SSL port
       const sslPort = config.port === 443 ? "" : `:${config.port}`;
       const httpsUrl = `https://${url.hostname}${sslPort}${url.pathname}${url.search}`;
