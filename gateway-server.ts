@@ -575,8 +575,8 @@ const serverConfig: any = {
 
 // Add SSL/TLS configuration if enabled
 if (useSSL) {
-  const certPath = process.env.WEBSRV_CERT_PATH || "./gateway/cert.pem";
-  const keyPath = process.env.WEBSRV_KEY_PATH || "./gateway/key.pem";
+  const certPath = process.env.GATEWAY_CERT_PATH || "./src/certs/gateway/cert.pem";
+  const keyPath = process.env.GATEWAY_KEY_PATH || "./src/certs/gateway/key.pem";
 
   try {
     serverConfig.tls = {

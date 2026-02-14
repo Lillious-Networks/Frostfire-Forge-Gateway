@@ -39,8 +39,8 @@ if (security.length > 0) {
 
 // Assets are loaded by game servers, not the gateway
 
-const _cert = path.join(import.meta.dir, "./certs/webserver/cert.pem");
-const _key = path.join(import.meta.dir, "./certs/webserver/key.pem");
+const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "./src/certs/webserver/cert.pem");
+const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "./src/certs/webserver/key.pem");
 const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
 
 const routes = {
