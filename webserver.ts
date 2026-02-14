@@ -358,8 +358,10 @@ Bun.serve({
     return Response.redirect("/", 301);
   },
   ...(_https ? {
-      cert: fs.readFileSync(_cert),
-      key: fs.readFileSync(_key),
+      tls: {
+        cert: fs.readFileSync(_cert),
+        key: fs.readFileSync(_key),
+      }
     }
   : {}),
 });
