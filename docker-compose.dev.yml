@@ -8,6 +8,8 @@ services:
     ports:
       - "8080:8080"
       - "9999:9999"
+      - "8443:8443"
+      - "9998:9998"
     volumes:
       - ./.env.development:/app/.env.development:ro
     env_file:
