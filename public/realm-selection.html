@@ -302,13 +302,17 @@
             }
 
             async function measureAllPings() {
+                console.log('[Ping] measureAllPings called, servers:', servers);
                 // Measure ping for all online servers
                 const onlineServers = servers.filter(s => s.status === 'online' || s.status === 'full');
+                console.log('[Ping] Online servers to ping:', onlineServers.length, onlineServers);
                 await Promise.all(onlineServers.map(server => measureServerPing(server)));
+                console.log('[Ping] All pings completed, re-rendering');
                 renderServers(); // Re-render with updated pings
             }
 
             async function loadServers() {
+                console.log('[Realm] Loading servers...');
                 try {
                     const response = await fetch('/api/gateway/servers');
 
@@ -317,11 +321,13 @@
                     }
 
                     const data = await response.json();
+                    console.log('[Realm] Received server data:', data);
                     servers = data.servers;
 
                     renderServers();
 
                     // Start measuring pings in background
+                    console.log('[Realm] Starting ping measurement...');
                     measureAllPings();
                 } catch (error) {
                     document.getElementById('loading-message').innerHTML =
