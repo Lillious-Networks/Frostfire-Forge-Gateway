@@ -268,6 +268,37 @@
 
             let selectedServerId = null;
             let servers = [];
+            let serverPings = new Map(); // Store measured pings for each server
+
+            async function measureServerPing(server) {
+                try {
+                    const protocol = server.useSSL ? 'https' : 'http';
+                    const url = `${protocol}://${server.publicHost}:${server.wsPort}/ping`;
+
+                    const start = performance.now();
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        cache: 'no-cache'
+                    });
+
+                    if (response.ok) {
+                        const end = performance.now();
+                        const ping = Math.round(end - start);
+                        serverPings.set(server.id, ping);
+                        return ping;
+                    }
+                } catch (error) {
+                    console.error(`Failed to ping ${server.id}:`, error);
+                }
+                return null;
+            }
+
+            async function measureAllPings() {
+                // Measure ping for all online servers
+                const onlineServers = servers.filter(s => s.status === 'online' || s.status === 'full');
+                await Promise.all(onlineServers.map(server => measureServerPing(server)));
+                renderServers(); // Re-render with updated pings
+            }
 
             async function loadServers() {
                 try {
@@ -281,6 +312,9 @@
                     servers = data.servers;
 
                     renderServers();
+
+                    // Start measuring pings in background
+                    measureAllPings();
                 } catch (error) {
                     document.getElementById('loading-message').innerHTML =
                         `<span style="color: #fca5a5;">Failed to load realms. <a href="#" onclick="location.reload()">Retry</a> or <a href="#" id="skip-link-error">skip</a>.</span>`;
@@ -320,9 +354,11 @@
                         statusText = 'Full';
                     }
 
-                    const latencyDisplay = (server.latency !== undefined && server.latency !== null)
-                        ? `${server.latency}ms`
-                        : 'unknown';
+                    // Use client-measured ping if available, otherwise show "measuring..."
+                    const clientPing = serverPings.get(server.id);
+                    const latencyDisplay = clientPing !== undefined
+                        ? `${clientPing}ms`
+                        : (status === 'offline' ? 'offline' : '<span style="color: #6366f1;">measuring...</span>');
 
                     return `
                         <div class="realm-card ${status === 'offline' ? 'disabled' : ''}" data-server-id="${server.id}" ${status === 'offline' ? 'style="pointer-events: none; opacity: 0.5;"' : ''}>
