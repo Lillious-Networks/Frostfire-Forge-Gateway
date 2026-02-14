@@ -47,10 +47,12 @@ jobs:
           echo 'EMAIL_USER="${{ secrets.EMAIL_USER }}"' >> .env.development
           echo 'EMAIL_TEST="${{ secrets.EMAIL_TEST }}"' >> .env.development
           echo 'WEBSRV_PORT=8080' >> .env.development
-          echo 'WEBSRV_USESSL=false' >> .env.development
+          echo 'WEBSRV_USESSL=true' >> .env.development
+          echo 'WEBSRV_PORTSSL=8443' >> .env.development
           echo 'DOMAIN="${{ secrets.DOMAIN }}"' >> .env.development
           echo 'GATEWAY_PORT=9999' >> .env.development
-          echo 'GATEWAY_USESSL=false' >> .env.development
+          echo 'GATEWAY_PORTSSL=9998' >> .env.development
+          echo 'GATEWAY_USESSL=true' >> .env.development
           echo 'GATEWAY_AUTH_KEY="${{ secrets.GATEWAY_AUTH_KEY }}"' >> .env.development
           echo 'GATEWAY_GAME_SERVER_SECRET="${{ secrets.GATEWAY_GAME_SERVER_SECRET }}"' >> .env.development
           echo 'HEARTBEAT_INTERVAL=30000' >> .env.development
@@ -62,6 +64,30 @@ jobs:
           echo 'GAME_NAME="Frostfire Forge - Development"' >> .env.development
           echo 'LOG_LEVEL=debug' >> .env.development
           echo 'CACHE="memory"' >> .env.development
+
+      - name: Create Gateway Certificate Chain
+        working-directory: src/certs/gateway
+        run: |
+          # Create CA Bundle using GATEWAY_CERT_CA_BUNDLE secret
+          echo "${{ secrets.GATEWAY_CERT_CA_BUNDLE }}" > cert.ca-bundle
+
+          # Create pem
+          echo "${{ secrets.GATEWAY_CERT_PEM }}" > cert.pem
+
+          # Create private key
+          echo "${{ secrets.GATEWAY_CERT_PRIVATE_KEY }}" > key.pem
+
+      - name: Create Web Server Certificate Chain
+        working-directory: src/certs/webserver
+        run: |
+          # Create CA Bundle using WEBSERVER_CERT_CA_BUNDLE secret
+          echo "${{ secrets.WEBSERVER_CERT_CA_BUNDLE }}" > cert.ca-bundle
+
+          # Create pem
+          echo "${{ secrets.WEBSERVER_CERT_PEM }}" > cert.pem
+
+          # Create private key
+          echo "${{ secrets.WEBSERVER_CERT_PRIVATE_KEY }}" > key.pem
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
