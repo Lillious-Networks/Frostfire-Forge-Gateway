@@ -1,0 +1,226 @@
+#realm-container {
+    background: rgba(31, 41, 55, 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    max-width: 600px;
+    width: 100%;
+}
+
+#realm-title {
+    color: #e8eaf6;
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+
+#realm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.realm-card {
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.8) 0%, rgba(31, 41, 55, 0.6) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: 8px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.realm-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #8b5cf6, #6366f1);
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.realm-card:hover {
+    border-color: rgba(139, 92, 246, 0.4);
+    background: linear-gradient(135deg, rgba(31, 41, 55, 0.9) 0%, rgba(31, 41, 55, 0.7) 100%);
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.2);
+    transform: translateY(-2px);
+}
+
+.realm-card:hover::before {
+    opacity: 1;
+}
+
+.realm-card.selected {
+    border-color: rgba(139, 92, 246, 0.6);
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(31, 41, 55, 0.8) 100%);
+}
+
+.realm-card.selected::before {
+    opacity: 1;
+}
+
+.realm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.realm-name {
+    color: #e8eaf6;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.realm-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.realm-status {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.realm-latency {
+    color: #9ca3af;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.realm-status.healthy {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.realm-status.degraded {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.realm-status.alert {
+    background: rgba(220, 38, 38, 0.2);
+    color: #fca5a5;
+    border: 1px solid rgba(220, 38, 38, 0.4);
+}
+
+.realm-metrics {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.realm-metric {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.realm-metric-label {
+    color: #9ca3af;
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.realm-metric-value {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+#continue-button {
+    width: 100%;
+    padding: 14px 20px;
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    color: white;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    margin-top: 10px;
+}
+
+#continue-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+    box-shadow: 0 8px 32px rgba(139, 92, 246, 0.4);
+    transform: translateY(-2px);
+}
+
+#continue-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#loading-message {
+    text-align: center;
+    color: #9ca3af;
+    font-size: 14px;
+    padding: 40px 20px;
+}
+
+#skip-link {
+    width: 100%;
+    padding: 12px 20px;
+    background: transparent;
+    color: #9ca3af;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(156, 163, 175, 0.2);
+    margin-top: 10px;
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+#skip-link:hover {
+    color: #c4b5fd;
+    border-color: rgba(139, 92, 246, 0.3);
+    background: rgba(139, 92, 246, 0.05);
+    transform: translateY(-1px);
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.3);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.5);
+}
