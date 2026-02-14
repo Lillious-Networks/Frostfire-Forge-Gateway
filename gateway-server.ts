@@ -577,16 +577,23 @@ const serverConfig: any = {
 if (useSSL) {
   const certPath = process.env.GATEWAY_CERT_PATH || "./src/certs/gateway/cert.pem";
   const keyPath = process.env.GATEWAY_KEY_PATH || "./src/certs/gateway/key.pem";
+  const caPath = process.env.GATEWAY_CA_PATH || "./src/certs/gateway/cert.ca-bundle";
 
   try {
+    // Read certificate and CA bundle, concatenate them for full chain
+    const cert = await Bun.file(certPath).text();
+    const ca = await Bun.file(caPath).text();
+    const fullChain = cert + "\n" + ca;
+
     serverConfig.tls = {
-      cert: Bun.file(certPath),
+      cert: fullChain,
       key: Bun.file(keyPath),
     };
-    console.log(`[Gateway] SSL enabled with cert: ${certPath}`);
+    console.log(`[Gateway] SSL enabled with cert: ${certPath} and CA bundle: ${caPath}`);
   } catch (error) {
     console.error(`[Gateway] Failed to load SSL certificates. Falling back to HTTP.`);
-    console.error(`[Gateway] Make sure ${certPath} and ${keyPath} exist.`);
+    console.error(`[Gateway] Make sure ${certPath}, ${keyPath}, and ${caPath} exist.`);
+    console.error(`[Gateway] Error: ${error}`);
   }
 }
 

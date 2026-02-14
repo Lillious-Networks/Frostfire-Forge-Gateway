@@ -41,6 +41,7 @@ if (security.length > 0) {
 
 const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "./src/certs/webserver/cert.pem");
 const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "./src/certs/webserver/key.pem");
+const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "./src/certs/webserver/cert.ca-bundle");
 const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
 
 const routes = {
@@ -359,7 +360,9 @@ Bun.serve({
   },
   ...(_https ? {
       tls: {
-        cert: fs.readFileSync(_cert),
+        cert: fs.existsSync(_ca)
+          ? fs.readFileSync(_cert) + "\n" + fs.readFileSync(_ca)
+          : fs.readFileSync(_cert),
         key: fs.readFileSync(_key),
       }
     }
