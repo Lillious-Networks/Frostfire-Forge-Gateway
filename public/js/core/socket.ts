@@ -232,7 +232,9 @@ async function connectThroughGateway(gatewayUrl: string): Promise<WebSocket> {
 
       if (server) {
         // Connect directly to the selected server with token
-        const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
+        // Use wss:// if page is loaded over https://, otherwise use ws://
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : wsProtocol}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
         console.log(`[Gateway] Connecting to selected server with auth token: ${server.publicHost}:${server.wsPort}`);
 
         const gameServerWs = new WebSocket(gameServerWsUrl);
@@ -272,7 +274,9 @@ async function connectThroughGateway(gatewayUrl: string): Promise<WebSocket> {
     const server = healthyServers[0];
 
     // Connect directly to the assigned game server with token
-    const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : 'ws://'}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
+    // Use wss:// if page is loaded over https://, otherwise use ws://
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : wsProtocol}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
     console.log(`[Gateway] Connecting to assigned server with auth token: ${server.publicHost}:${server.wsPort}`);
 
     const gameServerWs = new WebSocket(gameServerWsUrl);
