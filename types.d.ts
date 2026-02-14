@@ -4,6 +4,7 @@ interface GameServer {
   publicHost: string;     // External hostname for clients to connect to
   port: number;           // HTTP port
   wsPort: number;         // WebSocket port
+  useSSL: boolean;        // Whether WebSocket uses SSL (wss://)
   lastHeartbeat: number;
   activeConnections: number;
   maxConnections: number;

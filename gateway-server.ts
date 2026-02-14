@@ -183,7 +183,7 @@ const serverConfig: any = {
     if (url.pathname === "/register" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, host, publicHost, port, wsPort, maxConnections, authKey } = body;
+        const { id, host, publicHost, port, wsPort, useSSL, maxConnections, authKey } = body;
 
         // Validate authentication key
         if (authKey !== config.authKey) {
@@ -211,6 +211,7 @@ const serverConfig: any = {
           publicHost: publicHost || host,  // Use publicHost if provided, fallback to host
           port,
           wsPort,
+          useSSL: useSSL === true, // Explicitly check for true, default to false
           lastHeartbeat: Date.now(),
           activeConnections: existingServer?.activeConnections || 0, // Preserve connection count
           maxConnections: maxConnections || 1000
@@ -219,9 +220,9 @@ const serverConfig: any = {
         gameServers.set(id, server);
 
         if (isReRegistration) {
-          console.log(`[Gateway] Server re-registered: ${id} (${host}:${port}, ws:${wsPort})`);
+          console.log(`[Gateway] Server re-registered: ${id} (${host}:${port}, ${useSSL ? 'wss' : 'ws'}:${wsPort})`);
         } else {
-          console.log(`[Gateway] Server registered: ${id} (${host}:${port}, ws:${wsPort})`);
+          console.log(`[Gateway] Server registered: ${id} (${host}:${port}, ${useSSL ? 'wss' : 'ws'}:${wsPort})`);
         }
 
         return new Response(JSON.stringify({ success: true, serverId: id }), {
@@ -460,6 +461,7 @@ const serverConfig: any = {
           publicHost: s.publicHost,
           port: s.port,
           wsPort: s.wsPort,
+          useSSL: s.useSSL,
           activeConnections: s.activeConnections,
           maxConnections: s.maxConnections,
           latency: s.latency || 0,
@@ -626,6 +628,7 @@ if (useSSL) {
             publicHost: s.publicHost,
             port: s.port,
             wsPort: s.wsPort,
+            useSSL: s.useSSL,
             activeConnections: s.activeConnections,
             maxConnections: s.maxConnections,
             status: !isHealthy ? 'unhealthy' : isFull ? 'full' : 'available'
