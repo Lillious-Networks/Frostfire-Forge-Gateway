@@ -1245,9 +1245,11 @@ socket.onmessage = async (event) => {
     case "LOAD_MAP":
       {
         loaded = await loadMap(data);
+        console.log(`[Loading] Map loaded: ${loaded}, Sprite loaded: ${selfPlayerSpriteLoaded}`);
 
         // Check if we should hide loading screen now (in case sprite loaded first)
         if (loaded && selfPlayerSpriteLoaded) {
+          console.log('[Loading] Both conditions met, hiding loading screen');
           hideLoadingScreen();
         }
 
@@ -2715,9 +2717,11 @@ export let selfPlayerSpriteLoaded: boolean = false;
 
 export function setSelfPlayerSpriteLoaded(value: boolean) {
   selfPlayerSpriteLoaded = value;
+  console.log(`[Loading] Self-player sprite loaded: ${value}, Map loaded: ${loaded}`);
 
   // Check if we should hide loading screen now
   if (value && loaded) {
+    console.log('[Loading] Both conditions met, hiding loading screen');
     hideLoadingScreen();
   }
 }
