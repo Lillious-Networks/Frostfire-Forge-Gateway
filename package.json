@@ -1,11 +1,11 @@
 {
   "name": "frostfire-gateway",
   "version": "1.0.0",
-  "description": "Load balancer gateway for Frostfire Forge game servers",
-  "module": "gateway-server.ts",
+  "description": "Reverse proxy gateway for Frostfire Forge game servers",
+  "module": "src/start.ts",
   "scripts": {
-    "production": "bun --env-file=.env.production start.ts",
-    "development": "bun --env-file=.env.development start.ts"
+    "production": "bun --env-file=.env.production src/start.ts",
+    "development": "bun --env-file=.env.development src/start.ts"
   },
   "keywords": [
     "gateway",

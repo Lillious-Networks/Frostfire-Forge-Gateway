@@ -1,7 +1,7 @@
 import path from "path";
 import fs from "fs";
-import * as settings from "../config/settings.json";
 
+const logLevel = process.env.LOG_LEVEL || "info";
 
 const types = {
   info: "\x1b[97m",
@@ -43,24 +43,24 @@ const log = {
     log.createLogFile(`${msg}`, "info");
   },
   error: (msg: string) => {
-    log.createLogFile(`❌  ${msg}`, "error");
+    log.createLogFile(`${msg}`, "error");
   },
   warn: (msg: string) => {
-    log.createLogFile(`⚠  ${msg}`, "warn");
+    log.createLogFile(`${msg}`, "warn");
   },
   success: (msg: string) => {
-    log.createLogFile(`✔  ${msg}`, "success");
+    log.createLogFile(`${msg}`, "success");
   },
   debug: (msg: string) => {
-    if (settings.logging.level !== "debug" && settings.logging.level !== "trace") return;
-    log.createLogFile(`🛠  ${msg}`, "debug");
+    if (logLevel !== "debug" && logLevel !== "trace") return;
+    log.createLogFile(`${msg}`, "debug");
   },
   trace: (msg: string) => {
-    if (settings.logging.level !== "trace") return;
-    log.createLogFile(`🛠  ${msg}`, "trace");
+    if (logLevel !== "trace") return;
+    log.createLogFile(`${msg}`, "trace");
   },
   object: (obj: any) => {
-    log.createLogFile(`🛠  ${JSON.stringify(obj, null, 2)}`, "info");
+    log.createLogFile(`${JSON.stringify(obj, null, 2)}`, "info");
   },
 };
 

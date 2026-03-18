@@ -388,19 +388,19 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
   try {
     // Check localStorage cache first
     const cachedChunkData = loadChunkFromCache(window.mapData.name, chunkX, chunkY);
-    let chunkData: ChunkData;
+    let chunkData: ChunkData | null;
 
     if (cachedChunkData) {
       // Use cached data
       chunkData = cachedChunkData;
     } else {
-      // Request from gateway via HTTP
+      // Request from game server via WebSocket LOAD_CHUNK packet
       try {
-        const response = await fetch(`/map-chunk?map=${encodeURIComponent(window.mapData.name)}&x=${chunkX}&y=${chunkY}&size=${window.mapData.chunkSize}`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch chunk: ${response.statusText}`);
+        chunkData = await requestChunkViaWebSocket(window.mapData.name, chunkX, chunkY);
+        if (!chunkData) {
+          console.error(`Failed to fetch chunk ${chunkKey} via WebSocket`);
+          return null;
         }
-        chunkData = await response.json() as ChunkData;
 
         // Save to localStorage cache
         saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);
@@ -424,6 +424,43 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
     console.error(`Error requesting chunk ${chunkKey}:`, error);
     return null;
   }
+}
+
+/**
+ * Request a chunk from the game server via WebSocket LOAD_CHUNK packet
+ */
+function requestChunkViaWebSocket(mapName: string, chunkX: number, chunkY: number): Promise<ChunkData | null> {
+  return new Promise((resolve, reject) => {
+    const chunkKey = `${chunkX}-${chunkY}`;
+
+    // Use global socket from socket module
+    const socketModule = (window as any).__socketModule;
+    if (!socketModule) {
+      reject(new Error("Socket module not initialized"));
+      return;
+    }
+
+    // Set up pending request handler
+    // This will be resolved by the CHUNK_DATA handler in socket.ts
+    socketModule.pendingMapChunkRequests.set(chunkKey, {
+      resolve: (data: any) => resolve(data),
+      reject: (error: Error) => reject(error)
+    });
+
+    // Send LOAD_CHUNK request
+    socketModule.sendRequest({
+      type: 'LOAD_CHUNK',
+      data: { map: mapName, x: chunkX, y: chunkY }
+    });
+
+    // Timeout after 10 seconds
+    setTimeout(() => {
+      if (socketModule.pendingMapChunkRequests.has(chunkKey)) {
+        socketModule.pendingMapChunkRequests.delete(chunkKey);
+        reject(new Error(`Map chunk request timeout for ${chunkKey}`));
+      }
+    }, 10000);
+  });
 }
 
 async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {

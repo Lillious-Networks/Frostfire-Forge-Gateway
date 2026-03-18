@@ -1,18 +1,15 @@
-// Load config from file
-const configFile = await Bun.file("./config.json").json();
-
-// Determine port based on environment variables
+// Load configuration from environment variables
 const useSSL = process.env.GATEWAY_USESSL === "true" || process.env.GATEWAY_USESSL === "1";
-const httpPort = parseInt(process.env.GATEWAY_PORT || "") || configFile.gateway.port || 80;
-const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "") || 443;
+const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
+const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
 const serverPort = useSSL ? httpsPort : httpPort;
 
 const config: GatewayConfig = {
   port: serverPort,
-  heartbeatInterval: configFile.gateway.heartbeatInterval || 5000,
-  serverTimeout: configFile.gateway.serverTimeout || 15000,
-  sessionTimeout: configFile.gateway.sessionTimeout || 1800000,
-  authKey: process.env.GATEWAY_AUTH_KEY || configFile.gateway.authKey || "change-this-secret-key"
+  heartbeatInterval: parseInt(process.env.HEARTBEAT_INTERVAL || "30000"),
+  serverTimeout: parseInt(process.env.SERVER_TIMEOUT || "90000"),
+  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || "300000"),
+  authKey: process.env.GATEWAY_AUTH_KEY || "change-this-secret-key"
 };
 
 // Store registered game servers
@@ -317,6 +314,108 @@ const serverConfig: any = {
       }
     }
 
+    // Map checksum sync endpoint
+    if (url.pathname === "/map-checksums" && req.method === "POST") {
+      try {
+        const { checksums, serverId, authKey } = await req.json();
+
+        // Validate authentication key
+        if (authKey !== config.authKey) {
+          return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Import checksum utilities
+        const { calculateAllMapChecksums, getMapContent } = await import("../modules/checksums");
+
+        // Get current master checksums
+        const masterChecksums = calculateAllMapChecksums();
+
+        // Compare and find outdated maps
+        const outdatedMaps: any[] = [];
+        for (const [mapName, masterChecksum] of Object.entries(masterChecksums)) {
+          const clientChecksum = checksums[mapName];
+          if (clientChecksum !== masterChecksum) {
+            const mapData = getMapContent(mapName);
+            if (mapData) {
+              outdatedMaps.push({
+                name: mapName,
+                checksum: masterChecksum,
+                data: mapData
+              });
+            }
+          }
+        }
+
+        console.log(`[Gateway] Map sync for ${serverId}: ${outdatedMaps.length} outdated maps`);
+
+        return new Response(JSON.stringify({
+          success: true,
+          outdatedMaps
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        console.error("[Gateway] Error in /map-checksums:", error);
+        return new Response(JSON.stringify({ error: "Invalid request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // Map update endpoint (server sends updated map)
+    if (url.pathname === "/update-map" && req.method === "POST") {
+      try {
+        const { mapName, mapData, serverId, authKey } = await req.json();
+
+        // Validate authentication key
+        if (authKey !== config.authKey) {
+          return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Import checksum utilities
+        const { writeMapContent, calculateAllMapChecksums } = await import("../modules/checksums");
+
+        // Write updated map to master
+        const success = writeMapContent(mapName, mapData);
+
+        if (!success) {
+          return new Response(JSON.stringify({ error: "Failed to write map file" }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Calculate new checksums (all maps)
+        const checksums = calculateAllMapChecksums();
+        const newChecksum = checksums[mapName] || "";
+
+        console.log(`[Gateway] Map updated: ${mapName} by server ${serverId}`);
+
+        // TODO: Broadcast to all other connected game servers via WebSocket
+        // For now, just confirm the update
+        return new Response(JSON.stringify({
+          success: true,
+          checksum: newChecksum,
+          message: "Map updated successfully"
+        }), {
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        console.error("[Gateway] Error in /update-map:", error);
+        return new Response(JSON.stringify({ error: "Invalid request body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
     // Dashboard login endpoint
     if (url.pathname === "/api/login" && req.method === "POST") {
       try {
@@ -436,7 +535,7 @@ const serverConfig: any = {
       }
 
       // Serve dashboard HTML
-      const dashboardHTML = await Bun.file("./public/dashboard.html").text();
+      const dashboardHTML = await Bun.file(new URL("../../webserver/public/dashboard.html", import.meta.url)).text();
       return new Response(dashboardHTML, {
         headers: { "Content-Type": "text/html" }
       });
@@ -444,7 +543,7 @@ const serverConfig: any = {
 
     // Login page
     if (url.pathname === "/" && req.method === "GET") {
-      const loginHTML = await Bun.file("./public/login.html").text();
+      const loginHTML = await Bun.file(new URL("../../webserver/public/login.html", import.meta.url)).text();
       return new Response(loginHTML, {
         headers: { "Content-Type": "text/html" }
       });

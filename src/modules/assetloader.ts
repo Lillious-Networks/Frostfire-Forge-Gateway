@@ -5,7 +5,7 @@ import assetCache from "../services/assetCache";
 import zlib from "zlib";
 
 // Hard-coded asset paths
-const assetPath = path.join(import.meta.dir, "..", "public");
+const assetPath = path.join(import.meta.dir, "..", "webserver", "public");
 const TILESETS_PATH = "tilesets";
 const MAPS_PATH = "maps";
 

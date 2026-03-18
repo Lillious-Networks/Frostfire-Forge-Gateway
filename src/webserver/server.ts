@@ -1,11 +1,20 @@
 const now = performance.now();
-import log from "./modules/logger";
-import sendEmail from "./services/email";
-import player from "./systems/player";
-import verify from "./services/verification";
-import { hash, randomBytes } from "./modules/hash";
-import query from "./controllers/sqldatabase";
-import * as settings from "./config/settings.json";
+import log from "../modules/logger";
+import sendEmail from "../services/email";
+import player from "../systems/player";
+import verify from "../services/verification";
+import { hash, randomBytes } from "../modules/hash";
+import query from "../controllers/sqldatabase";
+// Load settings from environment variables
+const settings = {
+  guest_mode: {
+    enabled: process.env.GUEST_MODE_ENABLED === "true" || process.env.GUEST_MODE_ENABLED === "1"
+  },
+  default_map: process.env.DEFAULT_MAP || "overworld.json",
+  "2fa": {
+    enabled: process.env.TWO_FA_ENABLED === "true" || process.env.TWO_FA_ENABLED === "1"
+  }
+};
 import path from "path";
 import fs from "fs";
 import zlib from "zlib";
@@ -20,11 +29,10 @@ import changepassword_html from "./public/change-password.html";
 import realmselection_html from "./public/realm-selection.html";
 
 // Load whitelisted and blacklisted IPs and functions
-import { w_ips, b_ips, blacklistAdd } from "./systems/security";
+import { w_ips, b_ips, blacklistAdd } from "../systems/security";
 
 // Load asset loader
-import { initializeAssets } from "./modules/assetloader";
-import assetCache from "./services/assetCache";
+import { initializeAssets } from "../modules/assetloader";
 
 // Load security rules from security.cfg
 const security = fs.existsSync(path.join(import.meta.dir, "./config/security.cfg"))
@@ -39,9 +47,9 @@ if (security.length > 0) {
 
 // Assets are loaded by game servers, not the gateway
 
-const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "./src/certs/webserver/cert.pem");
-const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "./src/certs/webserver/key.pem");
-const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "./src/certs/webserver/cert.ca-bundle");
+const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "../certs/webserver/cert.pem");
+const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "../certs/webserver/key.pem");
+const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "../certs/webserver/cert.ca-bundle");
 const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
 
 const routes = {
@@ -70,30 +78,13 @@ const routes = {
   },
   "/api/gateway/servers": {
     GET: async () => {
-      // Check if gateway is enabled
-      const gatewayEnabled = (settings as any).gateway?.enabled;
-      const gatewayUrl = process.env.GATEWAY_URL || (settings as any).gateway?.url;
-
-      if (!gatewayEnabled || !gatewayUrl) {
-        return new Response(JSON.stringify({
-          message: "Gateway not configured",
-          servers: []
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
       try {
-        // Fetch server list from gateway (use public /status endpoint)
-        // Since webserver and gateway run on same machine, use localhost HTTP to avoid redirect/cert issues
-        let fetchUrl = gatewayUrl;
-
-        // Always use localhost HTTP for internal communication
+        // Fetch server list from gateway status endpoint
+        // Gateway runs on same machine, use localhost HTTP for internal communication
         const gatewayPort = process.env.GATEWAY_PORT || "9999";
-        fetchUrl = `http://localhost:${gatewayPort}`;
+        const gatewayUrl = `http://localhost:${gatewayPort}`;
 
-        const response = await fetch(`${fetchUrl}/status`, {
+        const response = await fetch(`${gatewayUrl}/status`, {
           method: "GET",
           headers: { "Content-Type": "application/json" }
         });
@@ -171,7 +162,7 @@ const routes = {
       }
 
       try {
-        const tilesetPath = path.join(import.meta.dir, "public", "tilesets", name);
+        const tilesetPath = path.join(import.meta.dir, "./public/tilesets", name);
 
         if (!fs.existsSync(tilesetPath)) {
           return new Response(JSON.stringify({ error: "Tileset not found" }), {
@@ -194,95 +185,6 @@ const routes = {
       } catch (error: any) {
         log.error(`Error serving tileset: ${error.message}`);
         return new Response(JSON.stringify({ error: "Internal server error" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-  },
-  "/map-chunk": {
-    GET: async (req: Request) => {
-      const url = new URL(req.url);
-      const mapName = url.searchParams.get("map");
-      const chunkX = parseInt(url.searchParams.get("x") || "0");
-      const chunkY = parseInt(url.searchParams.get("y") || "0");
-      const chunkSize = parseInt(url.searchParams.get("size") || "25");
-
-      if (!mapName) {
-        return new Response(JSON.stringify({ error: "Missing map name" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      try {
-        // Get map from cache
-        const maps = await assetCache.get("maps") as any[];
-        const mapFile = mapName.endsWith(".json") ? mapName : `${mapName}.json`;
-        const map = maps?.find((m: any) => m.name === mapFile);
-
-        if (!map) {
-          return new Response(JSON.stringify({ error: "Map not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        // Extract chunk from map data
-        const mapData = map.data;
-        const startX = chunkX * chunkSize;
-        const startY = chunkY * chunkSize;
-
-        const chunk = {
-          chunkX,
-          chunkY,
-          width: chunkSize,
-          height: chunkSize,
-          layers: [] as any[]
-        };
-
-        // Extract chunk data from each layer
-        mapData.layers.forEach((layer: any, index: number) => {
-          if (layer.type === "tilelayer" && layer.data) {
-            const chunkLayerData: number[] = [];
-
-            for (let y = 0; y < chunkSize; y++) {
-              for (let x = 0; x < chunkSize; x++) {
-                const mapX = startX + x;
-                const mapY = startY + y;
-                const mapIndex = mapY * mapData.width + mapX;
-
-                if (mapIndex < layer.data.length) {
-                  chunkLayerData.push(layer.data[mapIndex]);
-                } else {
-                  chunkLayerData.push(0);
-                }
-              }
-            }
-
-            // Get zIndex from layer properties or use layer index as fallback
-            let zIndex = layer.zIndex;
-            if (zIndex === undefined) {
-              zIndex = index;
-            }
-
-            chunk.layers.push({
-              name: layer.name,
-              zIndex: zIndex,
-              data: chunkLayerData,
-              width: chunkSize,
-              height: chunkSize
-            });
-          }
-        });
-
-        return new Response(JSON.stringify(chunk), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error: any) {
-        log.error(`Error serving map chunk: ${error.message}`);
-        return new Response(JSON.stringify({ error: "Failed to fetch map chunk" }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
         });
@@ -317,7 +219,6 @@ Bun.serve({
       "/api/gateway/servers": routes["/api/gateway/servers"],
       "/api/gateway/connection-token": routes["/api/gateway/connection-token"],
       "/tileset": routes["/tileset"],
-      "/map-chunk": routes["/map-chunk"],
     },
   async fetch(req: Request, server: any) {
     const url = tryParseURL(req.url);
@@ -361,7 +262,6 @@ Bun.serve({
       return route[req.method as keyof typeof route]?.(req);
     }
 
-    // Assets (map-chunk, tileset, music) should be requested via WebSocket from game server
     // Unknown routes redirect to homepage
     return Response.redirect("/", 301);
   },
@@ -713,7 +613,6 @@ function tryParseURL(url: string) : URL | null {
   }
 }
 
-// Initialize assets (tilesets and maps)
 await initializeAssets();
 
 const readyTimeMs = performance.now() - now;

@@ -1,7 +1,6 @@
 import query from "../controllers/sqldatabase";
 import { verify, randomBytes } from "../modules/hash";
-import * as settings from "../config/settings.json";
-const defaultMap = (settings as any).default_map?.replace(".json", "") || "main";
+const defaultMap = (process.env.DEFAULT_MAP || "overworld.json").replace(".json", "");
 import log from "../modules/logger";
 
 const player = {

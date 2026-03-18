@@ -1,19 +1,19 @@
+version: '3.8'
+
 services:
   gateway-dev:
     build:
-      context: .
-      dockerfile: Dockerfile.dev
+      context: ../..
+      dockerfile: src/docker/Dockerfile.dev
     container_name: frostfire-gateway-dev
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "80:80"
+      - "443:443"
       - "9999:9999"
-      - "8443:8443"
-      - "9998:9998"
-    volumes:
-      - ./.env.development:/app/.env.development:ro
+      - "9443:9443"
     env_file:
-      - .env.development
+      - ../../.env.development
     networks:
       - gateway-network-dev
 

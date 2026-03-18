@@ -561,6 +561,18 @@ socket.onmessage = async (event) => {
       }
       break;
     }
+    case "CHUNK_DATA": {
+      // Handle chunk data response from game server
+      if (data && data.chunkX !== undefined && data.chunkY !== undefined) {
+        const chunkKey = `${data.chunkX}-${data.chunkY}`;
+        const resolver = pendingMapChunkRequests.get(chunkKey);
+        if (resolver) {
+          resolver.resolve(data);
+          pendingMapChunkRequests.delete(chunkKey);
+        }
+      }
+      break;
+    }
     case "COLLISION_DEBUG": {
       if (!data || data.tileX === undefined || data.tileY === undefined) return;
       // Store collision tile for rendering
@@ -2811,5 +2823,11 @@ async function saveAnimationToDB(name: string, data: Uint8Array) {
 
 // Initialize equipment slot handlers when the page loads
 setupEquipmentSlotHandlers();
+
+// Expose socket module for map chunk requests
+(window as any).__socketModule = {
+  sendRequest,
+  pendingMapChunkRequests
+};
 
 export { sendRequest, cachedPlayerId, getIsLoaded };

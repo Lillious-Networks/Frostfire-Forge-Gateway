@@ -1,42 +1,51 @@
 node_modules
-config/settings.json
-.env*
-!.env.gateway.example
-!.env.production.example
 .VSCodeCounter
 bun.lockb
 .vscode/
 .claude/
-logs/
-public/js/web/*.js
-certs/gateway/*.crt
-certs/gateway/*.key
-certs/gateway/*.pem
-certs/gateway/*.srl
-certs/gateway/*.csr
-certs/gateway/*.der
-certs/gateway/*.p12
-certs/gateway/*.pfx
-certs/gateway/*.jks
-certs/gateway/*.jceks
-certs/gateway/*.ca-bundle
-certs/webserver/*.crt
-certs/webserver/*.key
-certs/webserver/*.pem
-certs/webserver/*.srl
-certs/webserver/*.csr
-certs/webserver/*.der
-certs/webserver/*.p12
-certs/webserver/*.pfx
-certs/webserver/*.jks
-certs/webserver/*.jceks
-certs/webserver/*.ca-bundle
+.DS_Store
+*.log
 
-config/
-!config/assets.json
+# Configuration files (server-specific)
+src/webserver/config/security.cfg
+
+# Environment files
 .env*
 !.env.example
-public/tilesets/*
-!public/tilesets/tiles.png
-!public/tilesets/MystcialValley_Environment.png
-!public/tilesets/MystcialValley_Structures.png
+
+# Logs
+src/logs/
+
+# Compiled client-side JavaScript
+src/webserver/public/js/web/*.js
+
+# SSL/TLS Certificates
+src/certs/gateway/*.crt
+src/certs/gateway/*.key
+src/certs/gateway/*.pem
+src/certs/gateway/*.srl
+src/certs/gateway/*.csr
+src/certs/gateway/*.der
+src/certs/gateway/*.p12
+src/certs/gateway/*.pfx
+src/certs/gateway/*.jks
+src/certs/gateway/*.jceks
+src/certs/gateway/*.ca-bundle
+
+src/certs/webserver/*.crt
+src/certs/webserver/*.key
+src/certs/webserver/*.pem
+src/certs/webserver/*.srl
+src/certs/webserver/*.csr
+src/certs/webserver/*.der
+src/certs/webserver/*.p12
+src/certs/webserver/*.pfx
+src/certs/webserver/*.jks
+src/certs/webserver/*.jceks
+src/certs/webserver/*.ca-bundle
+
+# Game assets
+src/webserver/public/tilesets/*
+!src/webserver/public/tilesets/tiles.png
+!src/webserver/public/tilesets/MysticalValley_Environment.png
+!src/webserver/public/tilesets/MysticalValley_Structures.png

@@ -1331,6 +1331,9 @@ class TileEditor {
     const chunks = Array.from(chunkChanges.values());
 
     console.log(`Saving ${chunks.length} modified chunks...`);
+    chunks.forEach(chunk => {
+      console.log(`  Chunk at (${chunk.chunkX}, ${chunk.chunkY})`);
+    });
 
     // Send modified chunks to server
     sendRequest({

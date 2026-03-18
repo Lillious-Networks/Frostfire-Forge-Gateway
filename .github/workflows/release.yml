@@ -45,25 +45,28 @@ jobs:
           echo 'EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}"' >> .env.development
           echo 'EMAIL_SERVICE="${{ secrets.EMAIL_SERVICE }}"' >> .env.development
           echo 'EMAIL_USER="${{ secrets.EMAIL_USER }}"' >> .env.development
-          echo 'EMAIL_TEST="${{ secrets.EMAIL_TEST }}"' >> .env.development
-          echo 'WEBSRV_PORT=8080' >> .env.development
+          echo 'WEBSRV_PORT=80' >> .env.development
+          echo 'WEBSRV_PORTSSL=443' >> .env.development
           echo 'WEBSRV_USESSL=true' >> .env.development
-          echo 'WEBSRV_PORTSSL=8443' >> .env.development
+          echo 'WEBSRV_CERT_PATH=./src/certs/webserver/cert.pem' >> .env.development
+          echo 'WEBSRV_KEY_PATH=./src/certs/webserver/key.pem' >> .env.development
+          echo 'WEBSRV_CA_PATH=./src/certs/webserver/cert.ca-bundle' >> .env.development
           echo 'DOMAIN="${{ secrets.DOMAIN }}"' >> .env.development
           echo 'GATEWAY_PORT=9999' >> .env.development
-          echo 'GATEWAY_PORTSSL=9998' >> .env.development
+          echo 'GATEWAY_PORTSSL=9443' >> .env.development
           echo 'GATEWAY_USESSL=true' >> .env.development
+          echo 'GATEWAY_CERT_PATH=./src/certs/gateway/cert.pem' >> .env.development
+          echo 'GATEWAY_KEY_PATH=./src/certs/gateway/key.pem' >> .env.development
+          echo 'GATEWAY_CA_PATH=./src/certs/gateway/cert.ca-bundle' >> .env.development
           echo 'GATEWAY_AUTH_KEY="${{ secrets.GATEWAY_AUTH_KEY }}"' >> .env.development
           echo 'GATEWAY_GAME_SERVER_SECRET="${{ secrets.GATEWAY_GAME_SERVER_SECRET }}"' >> .env.development
           echo 'HEARTBEAT_INTERVAL=30000' >> .env.development
           echo 'SERVER_TIMEOUT=90000' >> .env.development
-          echo 'SESSION_TIMEOUT=1800000' >> .env.development
+          echo 'SESSION_TIMEOUT=300000' >> .env.development
           echo 'GATEWAY_ENABLED=true' >> .env.development
           echo 'GATEWAY_URL="${{ secrets.GATEWAY_URL }}"' >> .env.development
-          echo 'VERSION="dev"' >> .env.development
-          echo 'GAME_NAME="Frostfire Forge - Development"' >> .env.development
+          echo 'GAME_NAME=Frostfire Forge' >> .env.development
           echo 'LOG_LEVEL=debug' >> .env.development
-          echo 'CACHE="memory"' >> .env.development
 
       - name: Create certificate directories
         run: |
@@ -116,7 +119,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.dev
+          file: ./src/docker/Dockerfile.dev
           target: development
           push: true
           tags: ${{ steps.meta.outputs.tags }}
