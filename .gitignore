@@ -12,6 +12,7 @@ src/webserver/config/security.cfg
 # Environment files
 .env*
 !.env.example
+!.env.development
 
 # Logs
 src/logs/

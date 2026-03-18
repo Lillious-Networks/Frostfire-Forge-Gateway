@@ -8,7 +8,6 @@ on:
   push:
     branches:
       - main
-      - development
   workflow_dispatch:
 
 concurrency:
@@ -23,48 +22,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Create environment file
-        run: |
-          if [ -d ".env.development" ]; then
-            echo ".env.development is a directory. Removing it."
-            rm -rf .env.development
-          fi
-
-          if [ -f ".env.development" ]; then
-            echo ".env.development file exists. Removing it."
-            rm .env.development
-          fi
-
-          echo 'DATABASE_ENGINE=mysql' >> .env.development
-          echo 'DATABASE_HOST="${{ secrets.DATABASE_HOST }}"' >> .env.development
-          echo 'DATABASE_NAME="${{ secrets.DATABASE_NAME }}"' >> .env.development
-          echo 'DATABASE_PASSWORD="${{ secrets.DATABASE_PASSWORD }}"' >> .env.development
-          echo 'DATABASE_USER="${{ secrets.DATABASE_USER }}"' >> .env.development
-          echo 'DATABASE_PORT="${{ secrets.DATABASE_PORT }}"' >> .env.development
-          echo 'SQL_SSL_MODE=DISABLED' >> .env.development
-          echo 'EMAIL_PASSWORD="${{ secrets.EMAIL_PASSWORD }}"' >> .env.development
-          echo 'EMAIL_SERVICE="${{ secrets.EMAIL_SERVICE }}"' >> .env.development
-          echo 'EMAIL_USER="${{ secrets.EMAIL_USER }}"' >> .env.development
-          echo 'EMAIL_TEST="${{ secrets.EMAIL_TEST }}"' >> .env.development
-          echo 'WEBSRV_PORT=80' >> .env.development
-          echo 'WEBSRV_USESSL=false' >> .env.development
-          echo 'WEBSRV_PORTSSL=443' >> .env.development
-          echo 'DOMAIN="${{ secrets.DOMAIN }}"' >> .env.development
-          echo 'GATEWAY_PORT=9999' >> .env.development
-          echo 'GATEWAY_PORTSSL=9443' >> .env.development
-          echo 'GATEWAY_USESSL=false' >> .env.development
-          echo 'GATEWAY_AUTH_KEY="${{ secrets.GATEWAY_AUTH_KEY }}"' >> .env.development
-          echo 'GATEWAY_GAME_SERVER_SECRET="${{ secrets.GATEWAY_GAME_SERVER_SECRET }}"' >> .env.development
-          echo 'HEARTBEAT_INTERVAL=30000' >> .env.development
-          echo 'SERVER_TIMEOUT=90000' >> .env.development
-          echo 'SESSION_TIMEOUT=1800000' >> .env.development
-          echo 'GATEWAY_ENABLED=true' >> .env.development
-          echo 'GATEWAY_URL="${{ secrets.GATEWAY_URL }}"' >> .env.development
-          echo 'VERSION="dev"' >> .env.development
-          echo 'GAME_NAME="Frostfire Forge - Development"' >> .env.development
-          echo 'LOG_LEVEL=debug' >> .env.development
-          echo 'CACHE="memory"' >> .env.development
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -84,19 +41,13 @@ jobs:
           tags: |
             type=raw,value=latest
 
-      - name: Determine Dockerfile and Image Tag
+      - name: Set Image Tag
         id: dockerfile
         run: |
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          if [ "${{ github.ref }}" = "refs/heads/development" ]; then
-            echo "dockerfile=./src/docker/Dockerfile.dev" >> $GITHUB_OUTPUT
-            echo "target=development" >> $GITHUB_OUTPUT
-            echo "image_tag=${REPO_LOWER}/frostfire-forge-gateway-development" >> $GITHUB_OUTPUT
-          else
-            echo "dockerfile=./src/docker/Dockerfile.prod" >> $GITHUB_OUTPUT
-            echo "target=production" >> $GITHUB_OUTPUT
-            echo "image_tag=${REPO_LOWER}/frostfire-forge-gateway" >> $GITHUB_OUTPUT
-          fi
+          echo "dockerfile=./src/docker/Dockerfile.dev" >> $GITHUB_OUTPUT
+          echo "target=development" >> $GITHUB_OUTPUT
+          echo "image_tag=${REPO_LOWER}" >> $GITHUB_OUTPUT
 
       - name: Build Docker Image
         uses: docker/build-push-action@v5
