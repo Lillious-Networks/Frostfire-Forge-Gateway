@@ -21,7 +21,7 @@ The gateway consists of two independent servers:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      GAME CLIENTS                            │
+│                      GAME CLIENTS                           │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                     HTTP/HTTPS (80/443)
@@ -43,15 +43,15 @@ The gateway consists of two independent servers:
         │  - Failover & session migration       │
         │  - Health monitoring dashboard        │
         │  - Server status API                  │
-        └──────────────────┬────────────────────┘
-                           │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-         ▼                 ▼                 ▼
-    ┌────────────┐   ┌────────────┐   ┌────────────┐
-    │ Game Srv 1 │   │ Game Srv 2 │   │ Game Srv N │
-    │  :3000     │   │  :3000     │   │  :3000     │
-    └────────────┘   └────────────┘   └────────────┘
+        └──────────────────────┬────────────────┘
+                               │
+            ┌──────────────────┼──────────────────┐
+            │                  │                  │
+            ▼                  ▼                  ▼
+    ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+    │  Game Srv 1  │   │  Game Srv 2  │   │  Game Srv 3  │
+    │  :3000/3001  │   │  :3000/3001  │   │  :3000/3001  │
+    └──────────────┘   └──────────────┘   └──────────────┘
 ```
 
 ### Server Responsibilities
@@ -73,6 +73,56 @@ The gateway consists of two independent servers:
 - Server status API endpoints
 - Administrative authentication
 
+## Environment Variables
+
+Configuration is managed via environment variables in `.env.development` or `.env.production`:
+
+```bash
+# Database Configuration
+DATABASE_ENGINE=mysql
+DATABASE_HOST=localhost
+DATABASE_NAME=frostfire_forge
+DATABASE_USER=gateway_user
+DATABASE_PASSWORD=secure_password
+DATABASE_PORT=3306
+SQL_SSL_MODE=DISABLED
+
+# Gateway Server
+GATEWAY_PORT=9999
+GATEWAY_PORTSSL=9443
+GATEWAY_USESSL=false
+GATEWAY_CERT_PATH=./src/certs/gateway/cert.pem
+GATEWAY_KEY_PATH=./src/certs/gateway/key.pem
+GATEWAY_CA_PATH=./src/certs/gateway/cert.ca-bundle
+GATEWAY_AUTH_KEY=your-uuid-key-here
+GATEWAY_GAME_SERVER_SECRET=your-shared-secret
+
+# Webserver
+WEBSRV_PORT=80
+WEBSRV_PORTSSL=443
+WEBSRV_USESSL=false
+WEBSRV_CERT_PATH=./src/certs/webserver/cert.pem
+WEBSRV_KEY_PATH=./src/certs/webserver/key.pem
+WEBSRV_CA_PATH=./src/certs/webserver/cert.ca-bundle
+
+# Email
+EMAIL_SERVICE=smtp.mailtrap.io
+EMAIL_USER=your-email@example.com
+EMAIL_PASSWORD=your-email-password
+
+# Application Settings
+LOG_LEVEL=debug
+CACHE=memory
+HEARTBEAT_INTERVAL=30000
+SERVER_TIMEOUT=90000
+SESSION_TIMEOUT=300000
+GUEST_MODE_ENABLED=true
+DEFAULT_MAP=overworld.json
+TWO_FA_ENABLED=false
+DOMAIN=http://localhost
+GAME_NAME=Frostfire Forge
+```
+
 ## Quick Start
 
 ### Prerequisites
@@ -83,23 +133,26 @@ The gateway consists of two independent servers:
 
 ### Development
 
+**Option 1: Use prebuilt Docker image:**
+
 ```bash
-bun install
-bun run development
+docker run -d --name gateway-test -p 9999:9999 -p 80:80 ghcr.io/lillious-networks/frostfire-forge-gateway:latest
 ```
 
-This will:
-1. Transpile client-side TypeScript
-2. Start the webserver on port 80
-3. Start the gateway server on port 9999
+**Option 2: Build and run from source:**
+
+```bash
+bun development
+```
+
+Optionally edit `.env.development` to customize settings.
 
 Access the game client at `http://localhost` and the monitoring dashboard at `http://localhost:9999/dashboard`
 
 ### Production
 
 ```bash
-bun install
-bun run production
+bun production
 ```
 
 Uses `.env.production` environment variables instead of `.env.development`.
@@ -117,29 +170,9 @@ GRANT ALL PRIVILEGES ON frostfire_gateway.* TO 'gateway_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-The gateway will create tables automatically on first run.
+The game engine will create tables automatically on first run.
 
-### 2. Environment Configuration
-
-Create `.env.development` or `.env.production`:
-
-```bash
-# Database Configuration
-DATABASE_ENGINE=mysql
-DATABASE_HOST=localhost
-DATABASE_NAME=frostfire_gateway
-DATABASE_USER=gateway_user
-DATABASE_PASSWORD=your_secure_password
-DATABASE_PORT=3306
-SQL_SSL_MODE=DISABLED
-
-# Gateway Server Configuration
-GATEWAY_PORT=9999
-GATEWAY_AUTH_KEY=your-uuid-key-here
-GATEWAY_GAME_SERVER_SECRET=your-shared-secret
-```
-
-### 3. SSL/TLS Setup (Production Only)
+### 2. SSL/TLS Setup
 
 Place your certificates in the following directories:
 
@@ -155,129 +188,36 @@ src/certs/
     └── cert.ca-bundle     # Full CA chain (optional)
 ```
 
-Set environment variables:
+Then update the following environment variables
 ```bash
 WEBSRV_USESSL=true
-WEBSRV_CERT_PATH=./src/certs/webserver/cert.pem
-WEBSRV_KEY_PATH=./src/certs/webserver/key.pem
-WEBSRV_CA_PATH=./src/certs/webserver/cert.ca-bundle
 GATEWAY_USESSL=true
-GATEWAY_CERT_PATH=./src/certs/gateway/cert.pem
-GATEWAY_KEY_PATH=./src/certs/gateway/key.pem
-GATEWAY_CA_PATH=./src/certs/gateway/cert.ca-bundle
 ```
 
-### 4. Configuration
-
-All configuration is managed via environment variables. See `.env.example` for available options:
-- `GUEST_MODE_ENABLED` - Enable guest account mode (default: true)
-- `DEFAULT_MAP` - Default map to load (default: overworld.json)
-- `TWO_FA_ENABLED` - Enable two-factor authentication (default: false)
-- `HEARTBEAT_INTERVAL` - Gateway heartbeat interval in ms (default: 30000)
-- `SERVER_TIMEOUT` - Server timeout in ms (default: 90000)
-- `SESSION_TIMEOUT` - Session timeout in ms (default: 300000)
-
-Set `GATEWAY_AUTH_KEY` to a secure random value in your `.env` file before starting the gateway.
+Certificate paths are already configured in the environment variables section above.
 
 ## Docker Deployment
 
-### Development
+### Using Docker Compose
 
 ```bash
-docker-compose -f src/docker/docker-compose.dev.yml up -d
+cd src/docker
+docker-compose -f docker-compose.dev.yml up -d
+docker-compose -f docker-compose.dev.yml logs -f gateway
+docker-compose -f docker-compose.dev.yml down
 ```
 
-### Production
+### Build and Run Manually
 
 ```bash
-docker-compose -f src/docker/docker-compose.prod.yml up -d
-```
+docker build -f src/docker/Dockerfile.dev -t frostfire-forge-gateway:latest .
 
-The Docker setup includes:
-- Multi-stage builds for optimized images
-- Health checks on the gateway endpoint
-- Volume mounts for logs and certificates
-- Network isolation between services
-
-## Game Server Integration
-
-### Step 1: Register Server on Startup
-
-When your game server starts, register it with the gateway:
-
-```bash
-POST /register HTTP/1.1
-Host: gateway:9999
-Content-Type: application/json
-
-{
-  "id": "game-server-001",
-  "host": "192.168.1.100",                    # Internal IP
-  "publicHost": "game1.example.com",          # Public hostname/IP for clients
-  "port": 3000,                               # Primary connection port
-  "wsPort": 3000,                             # WebSocket port (for game server use)
-  "useSSL": false,                            # Whether game server uses SSL/TLS
-  "maxConnections": 500,                      # Maximum concurrent players
-  "authKey": "your-gateway-auth-key"          # Must match GATEWAY_AUTH_KEY
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "serverId": "game-server-001",
-  "message": "Server registered successfully"
-}
-```
-
-### Step 2: Send Heartbeats Every 30 Seconds
-
-Continuously report server health:
-
-```bash
-POST /heartbeat HTTP/1.1
-Host: gateway:9999
-Content-Type: application/json
-
-{
-  "id": "game-server-001",
-  "activeConnections": 42,                    # Current player count
-  "cpuUsage": 45.2,                           # CPU usage percentage
-  "ramUsage": 2048,                           # RAM usage in MB
-  "rtt": 12,                                  # Round-trip latency in ms
-  "authKey": "your-gateway-auth-key"
-}
-```
-
-**Stop sending heartbeats and the server will be marked dead after 90 seconds.**
-
-### Step 3: Handle Unregistration
-
-On graceful shutdown, unregister from the gateway:
-
-```bash
-POST /unregister HTTP/1.1
-Host: gateway:9999
-Content-Type: application/json
-
-{
-  "id": "game-server-001",
-  "authKey": "your-gateway-auth-key"
-}
-```
-
-### Step 4: Validate Client Connection Tokens
-
-When clients connect to your game server, they send a connection token. Validate it:
-
-```typescript
-// Token is sent in HTTP header (or initial message for other protocols)
-const token = request.headers['x-connection-token'];
-
-// Verify against the shared secret
-const signature = hmacSHA256(token, GATEWAY_GAME_SERVER_SECRET);
-const isValid = signature === request.headers['x-connection-signature'];
+docker run -d \
+  --name gateway \
+  --env-file .env.development \
+  -p 9999:9999 \
+  -p 80:80 \
+  frostfire-forge-gateway:latest
 ```
 
 ## Client Connection Flow
@@ -290,7 +230,6 @@ const isValid = signature === request.headers['x-connection-signature'];
    - Returns signed token valid for one connection
 5. **Client connects directly to selected game server**
    - Includes token in connection headers or initial message
-   - Note: Game server may use HTTP, WebSocket, or other protocol
 6. **Game server validates token** using shared secret
 7. **Session maintained** via heartbeats from game server to gateway
 
@@ -298,49 +237,13 @@ const isValid = signature === request.headers['x-connection-signature'];
 
 Access the real-time dashboard at `http://localhost:9999/dashboard`
 
-Default credentials: Check logs for dashboard password (generated on first run)
+Default credentials: Value of `GATEWAY_AUTH_KEY`
 
 **Dashboard Features:**
-- Real-time server status (online/offline/degraded)
+- Real-time server status
 - CPU and RAM usage graphs
 - Connection count per server
 - Latency/RTT monitoring
-- Migration history (last 100 failover events)
-- Total migration count
-- Server logs viewer
-
-**Endpoints:**
-- `GET /status` - Public server status (no auth required)
-- `GET /debug/sessions` - View active client sessions (debug only)
-- `GET /api/stats` - Dashboard statistics (requires auth)
-
-## API Reference
-
-### Webserver APIs (Port 80/443)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/` | GET | Login page |
-| `/login` | POST | User authentication |
-| `/register` | POST | New account registration |
-| `/verify` | POST | Email verification |
-| `/game` | GET | Game client HTML |
-| `/api/gateway/servers` | GET | List available game servers |
-| `/api/gateway/connection-token` | GET | Get signed connection token |
-| `/tileset?name=NAME` | GET | Download gzip-compressed tileset |
-| `/map-chunk?map=X&x=X&y=Y` | GET | Get map chunk data |
-
-### Gateway Server APIs (Port 9999)
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/register` | POST | Game server registration |
-| `/heartbeat` | POST | Server health update |
-| `/unregister` | POST | Server shutdown notification |
-| `/status` | GET | Public server status |
-| `/dashboard` | GET | Monitoring dashboard |
-| `/api/stats` | GET | Dashboard statistics |
-| `/debug/sessions` | GET | Active sessions (debug) |
 
 ## Security Considerations
 
@@ -357,14 +260,6 @@ Default credentials: Check logs for dashboard password (generated on first run)
 - **Client Tokens:** HMAC-SHA256 signed with `GATEWAY_GAME_SERVER_SECRET`
   - One-time use tokens bound to specific game server
   - Prevents token replay across servers
-
-### SSL/TLS
-
-For production deployments:
-1. Obtain valid SSL certificates from a trusted CA
-2. Place in `certs/webserver/` and `certs/gateway/`
-3. Set `WEBSRV_USESSL=true` and `GATEWAY_USESSL=true`
-4. Use strong ciphers and TLS 1.2+
 
 ### Network Security
 
@@ -428,107 +323,23 @@ For production deployments:
 ### Dashboard Auth Failing
 
 **Issue:** Cannot log into monitoring dashboard
-- Check: Credentials printed in logs on first run
+- Check: `GATEWAY_AUTH_KEY`
 - Check: Configuration environment variables are set correctly
 - View: Check for login attempts in logs with `grep "dashboard"` logs/*
-
-## Development
-
-### Project Structure
-
-```
-├── src/
-│   ├── start.ts             # Startup orchestrator
-│   ├── webserver/
-│   │   ├── server.ts        # Webserver (port 80)
-│   │   ├── config/
-│   │   │   └── security.cfg # Security rules (optional)
-│   │   └── public/          # Client assets (HTML, CSS, JS, images, tilesets, maps)
-│   ├── gateway/
-│   │   └── server.ts        # Gateway server (port 9999)
-│   ├── controllers/
-│   │   ├── sqldatabase.ts   # Database interface
-│   │   ├── sqldatabase.worker.ts # Worker thread for DB
-│   │   └── utils.ts         # Utilities
-│   ├── modules/
-│   │   ├── logger.ts        # Logging
-│   │   ├── hash.ts          # Password hashing
-│   │   └── assetloader.ts   # Asset loading
-│   ├── services/
-│   │   ├── email.ts         # Email service
-│   │   ├── verification.ts  # Email verification
-│   │   ├── ip.ts            # IP management
-│   │   └── assetCache.ts    # Asset caching
-│   ├── systems/
-│   │   ├── player.ts        # Player management
-│   │   └── security.ts      # Security rules
-│   ├── utility/
-│   │   ├── create-config.ts # Config generation (unused)
-│   │   └── transpiler.ts    # TS compilation
-│   ├── docker/
-│   │   ├── Dockerfile.dev   # Development Dockerfile
-│   │   ├── Dockerfile.prod  # Production Dockerfile
-│   │   ├── docker-compose.dev.yml # Development compose file
-│   │   └── docker-compose.prod.yml # Production compose file
-│   ├── certs/               # SSL certificates
-│   └── logs/                # Application logs
-├── package.json             # NPM configuration
-├── .env.development         # Development environment variables
-└── .env.production          # Production environment variables
-```
-
-### Running Tests
-
-Currently, manual integration testing is recommended. To test the gateway:
-
-```bash
-# Terminal 1: Run gateway
-bun run development
-
-# Terminal 2: Register a test server
-curl -X POST http://localhost:9999/register \
-  -H "Content-Type: application/json" \
-  -d '{"id":"test-1","host":"localhost","publicHost":"localhost","port":3000,"wsPort":3000,"maxConnections":100,"authKey":"GATEWAY_AUTH_KEY"}'
-
-# Terminal 3: Send heartbeat
-curl -X POST http://localhost:9999/heartbeat \
-  -H "Content-Type: application/json" \
-  -d '{"id":"test-1","activeConnections":5,"cpuUsage":10,"ramUsage":512,"authKey":"GATEWAY_AUTH_KEY","rtt":5}'
-
-# View dashboard
-open http://localhost:9999/dashboard
-```
-
-### Logs
-
-Application logs are written to `logs/YYYY-MM-DD.log`:
-
-```bash
-# View today's logs
-tail -f logs/$(date +%Y-%m-%d).log
-
-# Search for errors
-grep ERROR logs/*.log
-```
-
-Set `LOG_LEVEL=debug` for detailed troubleshooting.
 
 ## Performance Tuning
 
 ### Database
 - Increase connection pool size in `sqldatabase.ts` if many concurrent operations
 - Use MySQL with InnoDB for better concurrency
-- Add indexes to frequently queried columns
 
 ### Memory
 - Set `CACHE=redis` for distributed caching if memory is constrained
 - Lower `SESSION_TIMEOUT` to clean up old sessions faster
-- Monitor with `GET /debug/sessions`
 
 ### Network
-- Ensure low latency between webserver and gateway (same network if possible)
 - Use CDN for static assets (JS, CSS, images)
-- Compress responses with gzip (default for tilesets)
+- Compress responses with gzip
 
 ## Contributing
 

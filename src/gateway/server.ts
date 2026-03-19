@@ -535,7 +535,7 @@ const serverConfig: any = {
       }
 
       // Serve dashboard HTML
-      const dashboardHTML = await Bun.file(new URL("../../webserver/public/dashboard.html", import.meta.url)).text();
+      const dashboardHTML = await Bun.file(new URL("../webserver/public/dashboard.html", import.meta.url)).text();
       return new Response(dashboardHTML, {
         headers: { "Content-Type": "text/html" }
       });
@@ -543,7 +543,7 @@ const serverConfig: any = {
 
     // Login page
     if (url.pathname === "/" && req.method === "GET") {
-      const loginHTML = await Bun.file(new URL("../../webserver/public/login.html", import.meta.url)).text();
+      const loginHTML = await Bun.file(new URL("../webserver/public/login.html", import.meta.url)).text();
       return new Response(loginHTML, {
         headers: { "Content-Type": "text/html" }
       });
