@@ -34,7 +34,7 @@ The gateway consists of two independent servers:
         │  - Connection token generation        │
         └──────────────────┬────────────────────┘
                            │
-                    HTTP (Port 80)
+                    HTTP/HTTPS (9999/9443)
                            │
         ┌──────────────────▼────────────────────┐
         │  GATEWAY SERVER (9999/9443)           │
