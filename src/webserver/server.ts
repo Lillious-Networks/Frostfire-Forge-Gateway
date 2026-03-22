@@ -153,8 +153,23 @@ const routes = {
         });
       }
 
+      if (name.includes("/") || name.includes("\\")) {
+        return new Response(JSON.stringify({ error: "Invalid tileset name" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
       try {
-        const tilesetPath = path.join(import.meta.dir, "./public/tilesets", name);
+        const tilesetDir = path.resolve(import.meta.dir, "./public/tilesets");
+        const tilesetPath = path.resolve(tilesetDir, name);
+
+        if (!tilesetPath.startsWith(tilesetDir)) {
+          return new Response(JSON.stringify({ error: "Invalid tileset name" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
 
         if (!fs.existsSync(tilesetPath)) {
           return new Response(JSON.stringify({ error: "Tileset not found" }), {

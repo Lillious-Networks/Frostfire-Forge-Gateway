@@ -40,7 +40,12 @@ export function calculateAllMapChecksums(): Record<string, string> {
 export function getMapContent(mapName: string): any | null {
   try {
     const mapDir = path.join(assetPath, MAPS_PATH);
-    const filePath = path.join(mapDir, mapName.endsWith(".json") ? mapName : `${mapName}.json`);
+    const filePath = path.resolve(mapDir, mapName.endsWith(".json") ? mapName : `${mapName}.json`);
+
+    if (!filePath.startsWith(mapDir)) {
+      console.error(`Path traversal attempt blocked: ${mapName}`);
+      return null;
+    }
 
     if (!fs.existsSync(filePath)) {
       console.warn(`Map file not found: ${filePath}`);
@@ -57,7 +62,12 @@ export function getMapContent(mapName: string): any | null {
 export function writeMapContent(mapName: string, mapData: any): boolean {
   try {
     const mapDir = path.join(assetPath, MAPS_PATH);
-    const filePath = path.join(mapDir, mapName.endsWith(".json") ? mapName : `${mapName}.json`);
+    const filePath = path.resolve(mapDir, mapName.endsWith(".json") ? mapName : `${mapName}.json`);
+
+    if (!filePath.startsWith(mapDir)) {
+      console.error(`Path traversal attempt blocked: ${mapName}`);
+      return false;
+    }
 
     fs.writeFileSync(filePath, JSON.stringify(mapData, null, 2), "utf-8");
     return true;
