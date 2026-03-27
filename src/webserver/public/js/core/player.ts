@@ -124,8 +124,8 @@ async function createPlayer(data: any) {
 
         context.drawImage(
           this.typingImage,
-          this.position.x - this.typingImage.width / 1.5,
-          this.position.y - this.typingImage.height - 25,
+          this.renderPosition.x - this.typingImage.width / 1.5,
+          this.renderPosition.y - this.typingImage.height - 25,
           this.typingImage.width / 1.5,
           this.typingImage.height / 1.5
         );
@@ -152,20 +152,20 @@ async function createPlayer(data: any) {
           context.shadowOffsetY = 1;
           context.font = "14px 'Comic Relief'";
           const lines = getLines(context, this.chat, 500).reverse();
-          let startingPosition = this.position.y - 20;
+          let startingPosition = this.renderPosition.y - 20;
 
           for (let i = 0; i < lines.length; i++) {
             startingPosition -= 20;
             const textWidth = context.measureText(lines[i]).width;
             context.fillStyle = "rgba(0, 0, 0, 0.2)";
             context.fillRect(
-              this.position.x - textWidth/2 - 5,
+              this.renderPosition.x - textWidth/2 - 5,
               startingPosition - 17,
               textWidth + 10,
               20
             );
             context.fillStyle = chatColor;
-            context.fillText(lines[i], this.position.x, startingPosition);
+            context.fillText(lines[i], this.renderPosition.x, startingPosition);
           }
         }
       }
@@ -402,8 +402,8 @@ async function createPlayer(data: any) {
 
         context.drawImage(
           layerCanvas,
-          Math.round(this.position.x - frame.width / 2 + offsetX),
-          Math.round(this.position.y - frame.height / 2 + offsetY)
+          Math.round(this.renderPosition.x - frame.width / 2 + offsetX),
+          Math.round(this.renderPosition.y - frame.height / 2 + offsetY)
         );
       }
 
@@ -433,8 +433,8 @@ async function createPlayer(data: any) {
       context.save();
       context.beginPath();
       context.ellipse(
-        this.position.x,
-        this.position.y + 16,
+        this.renderPosition.x,
+        this.renderPosition.y + 16,
         shadow.width,
         shadow.height,
         0,
@@ -447,8 +447,8 @@ async function createPlayer(data: any) {
 
       context.beginPath();
       context.ellipse(
-        this.position.x,
-        this.position.y + 16,
+        this.renderPosition.x,
+        this.renderPosition.y + 16,
         shadow.width,
         shadow.height,
         0,
@@ -525,19 +525,19 @@ async function createPlayer(data: any) {
 
       context.strokeText(
         data.username,
-        this.position.x,
-        this.position.y + 40 + uiOffset
+        this.renderPosition.x,
+        this.renderPosition.y + 40 + uiOffset
       );
       context.fillText(
         data.username,
-        this.position.x,
-        this.position.y + 40 + uiOffset
+        this.renderPosition.x,
+        this.renderPosition.y + 40 + uiOffset
       );
 
       if (!this.isStealth) {
         if (data.id === cachedPlayerId || this.targeted) {
           context.fillStyle = "rgba(0, 0, 0, 0.8)";
-          context.fillRect(this.position.x - 50, this.position.y + 46 + uiOffset, 100, 3);
+          context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 46 + uiOffset, 100, 3);
 
           context.shadowBlur = 2;
 
@@ -554,8 +554,8 @@ async function createPlayer(data: any) {
           }
 
           context.fillRect(
-            this.position.x - 50,
-            this.position.y + 46 + uiOffset,
+            this.renderPosition.x - 50,
+            this.renderPosition.y + 46 + uiOffset,
             healthPercent * 100,
             3
           );
@@ -563,12 +563,12 @@ async function createPlayer(data: any) {
 
         if (data.id === cachedPlayerId || this.targeted) {
         context.fillStyle = "rgba(0, 0, 0, 0.8)";
-        context.fillRect(this.position.x - 50, this.position.y + 51 + uiOffset, 100, 3);
+        context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 51 + uiOffset, 100, 3);
         context.fillStyle = "#469CD9";
         const maxStamina = this.stats.total_max_stamina || this.stats.max_stamina;
         context.fillRect(
-          this.position.x - 50,
-            this.position.y + 51 + uiOffset,
+          this.renderPosition.x - 50,
+            this.renderPosition.y + 51 + uiOffset,
             (this.stats.stamina / maxStamina) * 100,
             3
           );
@@ -582,8 +582,8 @@ async function createPlayer(data: any) {
 
           context.shadowColor = "black";
           context.shadowBlur = 2;
-            const offsetX = this.position.x - 60 - (this.stats.level.toString().length * 5);
-          context.fillText(`${this.stats.level}`, offsetX, this.position.y + 55 + uiOffset);
+            const offsetX = this.renderPosition.x - 60 - (this.stats.level.toString().length * 5);
+          context.fillText(`${this.stats.level}`, offsetX, this.renderPosition.y + 55 + uiOffset);
         }
       }
 

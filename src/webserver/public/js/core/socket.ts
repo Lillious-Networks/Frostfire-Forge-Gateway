@@ -286,6 +286,7 @@ async function initializeSocket() {
 
   if (!socket) {
     isReconnecting = false;
+    window.location.href = "/";
     throw new Error('Failed to establish WebSocket connection');
   }
 
@@ -523,8 +524,24 @@ async function handleLoadPlayersPacket(data: any) {
 socket.onmessage = async (event) => {
   receivedResponses++;
   if (!(event.data instanceof ArrayBuffer)) return;
-  const data = JSON.parse(packet.decode(event.data))["data"];
-  const type = JSON.parse(packet.decode(event.data))["type"];
+
+  const bytes = new Uint8Array(event.data);
+  const FIRST_BYTE = bytes[0];
+
+  let type: string;
+  let data: any;
+
+  if (FIRST_BYTE === 0x01) {
+    type = "BATCH_MOVEXY";
+    data = bytes;
+  } else if (FIRST_BYTE === 0x02) {
+    type = "MOVEXY";
+    data = bytes;
+  } else {
+    const decoded = JSON.parse(packet.decode(event.data));
+    data = decoded["data"];
+    type = decoded["type"];
+  }
 
   switch (type) {
     case "SERVER_TIME": {
@@ -1136,6 +1153,31 @@ socket.onmessage = async (event) => {
       break;
     }
     case "MOVEXY": {
+      if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        if (bytes.length < 9) break;
+
+        const DIRECTION_MAP = [
+          "up", "down", "left", "right",
+          "upleft", "upright", "downleft", "downright"
+        ];
+
+        const view = new DataView(bytes.buffer, bytes.byteOffset, 9);
+        const playerId = view.getUint16(1, true);
+        const x = view.getInt16(3, true);
+        const y = view.getInt16(5, true);
+        const dirStealth = bytes[7];
+        const direction = dirStealth & 0x0F;
+        const stealth = (dirStealth >> 4) & 0x0F;
+
+        data = {
+          i: playerId,
+          d: { x, y, dr: DIRECTION_MAP[direction] || "down" },
+          r: 0,
+          s: stealth
+        };
+      }
+
       if (data._data === "abort") {
         break;
       }
@@ -1144,15 +1186,16 @@ socket.onmessage = async (event) => {
         break;
       }
 
+      const playerId = data.i || data.id;
+
       const player = Array.from(cache.players).find(
-        (player) => player.id === data.id
+        (player) => player.id == playerId
       );
       if (!player) return;
 
       player.typing = false;
 
       const moveData = data.d || data._data;
-      const playerId = data.i || data.id;
 
       player.serverPosition.x = Math.round(moveData.x);
       player.serverPosition.y = Math.round(moveData.y);
@@ -1160,20 +1203,74 @@ socket.onmessage = async (event) => {
       player.position.y = Math.round(moveData.y);
       player.lastServerUpdate = performance.now();
       
-      if (playerId === cachedPlayerId) {
+      if (playerId == cachedPlayerId) {
         positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
       }
       break;
     }
     case "BATCH_MOVEXY": {
 
-      if (!Array.isArray(data)) break;
-
       if (!sessionActive || !cachedPlayerId) {
         break;
       }
 
-      for (const movement of data) {
+      let movements: any[] = [];
+
+      if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        if (bytes.length === 0) break;
+
+        const HEADER_BYTE = 0x01;
+        if (bytes[0] === HEADER_BYTE) {
+          const DIRECTION_MAP = [
+            "up", "down", "left", "right",
+            "upleft", "upright", "downleft", "downright"
+          ];
+
+          let offset = 1;
+          const countView = new DataView(bytes.buffer, bytes.byteOffset + offset, 2);
+          const count = countView.getUint16(0, true);
+          offset += 2;
+
+          for (let i = 0; i < count; i++) {
+            if (offset + 2 > bytes.length) break;
+
+            const idView = new DataView(bytes.buffer, bytes.byteOffset + offset, 2);
+            const playerId = idView.getUint16(0, true);
+            offset += 2;
+
+            if (offset + 5 > bytes.length) break;
+            const moveView = new DataView(bytes.buffer, bytes.byteOffset + offset, 5);
+            const x = moveView.getInt16(0, true);
+            const y = moveView.getInt16(2, true);
+            const dirStealth = bytes[offset + 4];
+            const direction = dirStealth & 0x0F;
+            const stealth = (dirStealth >> 4) & 0x0F;
+            offset += 5;
+
+            movements.push({
+              i: playerId,
+              d: { x, y, dr: DIRECTION_MAP[direction] || "down" },
+              r: 0,
+              s: stealth
+            });
+          }
+        } else {
+          try {
+            const decoder = new TextDecoder();
+            const decoded = JSON.parse(decoder.decode(bytes));
+            movements = decoded.data || decoded;
+          } catch (e) {
+            break;
+          }
+        }
+      } else if (Array.isArray(data)) {
+        movements = data;
+      } else {
+        break;
+      }
+
+      for (const movement of movements) {
 
         const moveData = movement.d || movement._data;
         const playerId = movement.i || movement.id;
@@ -1181,7 +1278,7 @@ socket.onmessage = async (event) => {
         if (moveData === "abort") continue;
 
         const player = Array.from(cache.players).find(
-          (p) => p.id === playerId
+          (p) => p.id == playerId
         );
 
         if (!player) {
@@ -1197,7 +1294,7 @@ socket.onmessage = async (event) => {
         player.serverPosition.y = Math.round(moveData.y);
         player.lastServerUpdate = performance.now();
         
-        if (playerId !== cachedPlayerId) {
+        if (playerId != cachedPlayerId) {
           player.position.x = Math.round(moveData.x);
           player.position.y = Math.round(moveData.y);
         } else {
@@ -1205,7 +1302,7 @@ socket.onmessage = async (event) => {
           player.position.y = Math.round(moveData.y);
         }
 
-        if (playerId === cachedPlayerId) {
+        if (playerId == cachedPlayerId) {
           positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
         }
       }

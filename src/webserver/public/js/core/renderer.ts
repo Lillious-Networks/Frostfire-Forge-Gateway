@@ -21,6 +21,9 @@ const SERVER_SPEED = 6;
 
 let lastMovementTime = 0;
 
+// Player render position smoothing configuration
+const PLAYER_SMOOTHING_FACTOR = 0.2; // Higher = faster movement
+
 function updateLocalPlayerPrediction(currentPlayer: any, now: number) {
   if (!currentPlayer) return;
   
@@ -70,20 +73,57 @@ function updateLocalPlayerPrediction(currentPlayer: any, now: number) {
 function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
   if (!player || !player.lastServerUpdate) return;
   if (player.id === cachedPlayerId) return;
-  
+
   const dx = player.serverPosition.x - player.position.x;
   const dy = player.serverPosition.y - player.position.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
-  
+
   const threshold = 5;
   const lerpFactor = 0.2 * deltaSeconds * 60;
   if (distance > threshold) {
     player.position.x = Math.round(player.position.x + dx * lerpFactor);
     player.position.y = Math.round(player.position.y + dy * lerpFactor);
   }
-  
-  player.renderPosition.x = player.position.x;
-  player.renderPosition.y = player.position.y;
+}
+
+/**
+ * Smoothly interpolates render positions toward actual positions
+ * This creates smooth camera movement while reducing vibration from client prediction jitter
+ * Frame-rate independent smoothing tuned for 144fps
+ */
+function smoothPlayerRenderPositions(players: any[], currentPlayer: any, deltaTime: number) {
+  const TELEPORT_THRESHOLD = 500; // Distance threshold to detect teleports/warps
+  const TARGET_FPS = 144; // Target framerate for smoothing calibration
+
+  // Calculate frame-rate independent smoothing factor
+  // At 144fps (deltaTime ≈ 0.00694s), use PLAYER_SMOOTHING_FACTOR
+  // At lower framerates, scale proportionally to maintain same speed
+  const smoothFactor = 1 - Math.pow(1 - PLAYER_SMOOTHING_FACTOR, deltaTime * TARGET_FPS);
+
+  for (const player of players) {
+    if (!player) continue;
+
+    // Initialize renderPosition if it doesn't exist
+    if (!player.renderPosition) {
+      player.renderPosition = { x: player.position.x, y: player.position.y };
+      continue;
+    }
+
+    // For all players, apply smoothing or snap based on distance
+    const dx = player.position.x - player.renderPosition.x;
+    const dy = player.position.y - player.renderPosition.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // If distance is very large (teleport/warp), snap immediately instead of smoothing
+    if (distance > TELEPORT_THRESHOLD) {
+      player.renderPosition.x = player.position.x;
+      player.renderPosition.y = player.position.y;
+    } else {
+      // Otherwise smoothly lerp toward position with frame-rate independent factor
+      player.renderPosition.x = player.renderPosition.x + dx * smoothFactor;
+      player.renderPosition.y = player.renderPosition.y + dy * smoothFactor;
+    }
+  }
 }
 
 canvas.style.position = 'fixed';
@@ -101,8 +141,8 @@ let pendingRequest: boolean = false;
 function updateCamera(currentPlayer: any, deltaTime: number) {
   if (!getIsLoaded()) return;
   if (currentPlayer && window.mapData) {
-    const targetX = currentPlayer.position.x;
-    const targetY = currentPlayer.position.y;
+    const targetX = currentPlayer.renderPosition.x;
+    const targetY = currentPlayer.renderPosition.y;
 
     cameraX = targetX;
     cameraY = targetY;
@@ -524,6 +564,9 @@ function animationLoop() {
   }
 
   updateLocalPlayerPrediction(currentPlayer, now);
+
+  // Apply smoothing to all player render positions after position updates
+  smoothPlayerRenderPositions(playersArray, currentPlayer, deltaTime);
 
   updateCamera(currentPlayer, deltaTime * 60);
 

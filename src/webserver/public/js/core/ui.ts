@@ -751,9 +751,6 @@ function updateAdminPlayerListWithData(players: Array<{ username: string; map: s
   }
 }
 
-function requestOnlinePlayers() {
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
-}
 
 function getSelectedPlayer(): string {
   return adminPlayerSelect?.value || "";
