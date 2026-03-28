@@ -2,22 +2,69 @@
   <img src="../../blob/main/logo.png?raw=true">
 </p>
 
-<h1 align="center">🧊🔥 Frostfire Forge Gateway🔥🧊</h1>
+<h1 align="center">🧊🔥 Frostfire Forge Gateway 🔥🧊</h1>
 
 <p align="center">
-  <strong>A Modern Reverse Proxy</strong>
+  <strong>Centralized Authentication & Reverse Proxy for Frostfire Forge MMO Platform</strong>
 </p>
 
 <p align="center">
 A production-grade authentication and reverse proxy gateway for Frostfire Forge game servers. Provides centralized user authentication, game server registration, automatic failover, real-time health monitoring, and realm-based server routing.
 </p>
+
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/Lillious-Networks/Frostfire-Forge-Gateway/release.yml?branch=main&label=Docker&style=flat-square" alt="Docker">
+  <img src="https://img.shields.io/badge/status-Alpha-yellow?style=flat-square&label=Status" alt="Work in Progress">
+  <img src="https://img.shields.io/github/license/Lillious-Networks/Frostfire-Forge-Gateway?style=flat-square&label=License" alt="License">
+  <img src="https://img.shields.io/github/stars/Lillious-Networks/Frostfire-Forge-Gateway?style=flat-square&label=Stars" alt="GitHub Stars">
 </p>
 
-## Features
+---
 
-- **Dual-Server Architecture:** Separate webserver (user auth, asset serving) and gateway server (game server management)
+> [!NOTE]
+> **Project Status**: This project is currently a **work in progress**
+>
+> **Core Development Team**: [Lillious](https://github.com/Lillious), [Deph0](https://github.com/Deph0)
+>
+> **Community**: [Join our Discord](https://discord.gg/4spUbuXBvZ)
+
+---
+
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Features](#-features)
+- [Requirements](#-requirements)
+- [Architecture](#-architecture)
+  - [Dual-Server Design](#dual-server-design)
+  - [Server Responsibilities](#server-responsibilities)
+- [Quick Start](#-quick-start)
+  - [Development Setup](#development-setup)
+  - [Production Setup](#production-setup)
+  - [Docker Deployment](#docker-deployment)
+- [Environment Variables](#-environment-variables)
+- [Setup Instructions](#-setup-instructions)
+- [Monitoring Dashboard](#-monitoring-dashboard)
+- [Security](#-security)
+
+---
+
+## 📖 Overview
+
+The Frostfire Forge Gateway is a critical infrastructure component of the Frostfire Forge MMO platform. It acts as the central hub for:
+
+- **User Authentication** - Login, registration, email verification, and password reset
+- **Game Server Management** - Registration, health monitoring, and automatic failover
+- **Client Routing** - Realm based server selection and connection token generation
+- **Asset Serving** - Fast delivery of compressed game data and static assets
+- **Monitoring & Administration** - Real-time dashboard and health status APIs
+
+The gateway works in conjunction with the [Frostfire Forge Game Engine](https://github.com/Lillious-Networks/Frostfire-Forge) and [Frostfire Forge Assets](https://github.com/Lillious-Networks/Frostfire-Forge-Assets) to provide a complete MMO platform.
+
+---
+
+## ✨ Features
+
 - **Game Server Authentication & Registration:** Automatic server discovery and registration with heartbeat monitoring
 - **User Authentication:** Login, registration, email verification, password reset
 - **Automatic Server Failover:** Detects dead servers and migrates active client sessions automatically
@@ -25,10 +72,27 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 - **HTTP Proxying:** Intelligent routing to game servers
 - **SSL/TLS Support:** Full HTTPS support for both webserver and gateway
 - **Realm Routing:** Client requests routed to appropriate game server realms
-- **Asset Delivery:** Gzip-compressed tileset and map data serving
+- **Asset Delivery:** Gzip-compressed asset data serving
 - **Docker Ready:** Development and production-ready containerization
 
-## Architecture Overview
+---
+
+## 🔧 Requirements
+
+> [!IMPORTANT]
+> **Required Software**:
+> - [Bun](https://bun.sh/) - JavaScript runtime & package manager
+> - [MySQL](https://www.mysql.com/downloads/) - Database for users and game state
+> - [Frostfire Forge Game Engine](https://github.com/Lillious-Networks/Frostfire-Forge) - Game servers that register with gateway
+> - [Frostfire Forge Assets](https://github.com/Lillious-Networks/Frostfire-Forge-Assets) - Asset server for game data
+> - [Docker](https://www.docker.com/) (Optional) - For containerized deployment
+> - SMTP Server (Optional) - For email verification (recommended for production)
+
+---
+
+## 🏗️ Architecture
+
+### Dual-Server Design
 
 The gateway consists of two independent servers:
 
@@ -42,8 +106,6 @@ The gateway consists of two independent servers:
         ┌──────────────────▼────────────────────┐
         │    WEBSERVER (80/443)                 │
         │  - User authentication                │
-        │  - Asset/map serving                  │
-        │  - HTTP proxying to game servers      │
         │  - Connection token generation        │
         └──────────────────┬────────────────────┘
                            │
@@ -86,17 +148,17 @@ The gateway consists of two independent servers:
 - Server status API endpoints
 - Administrative authentication
 
-## Environment Variables
+---
 
-Configuration is managed via environment variables in `.env.development` or `.env.production`:
+## ⚙️ Environment Variables
 
 ```bash
 # Database Configuration
 DATABASE_ENGINE=mysql
 DATABASE_HOST=localhost
 DATABASE_NAME=frostfire_forge
-DATABASE_USER=gateway_user
-DATABASE_PASSWORD=secure_password
+DATABASE_USER=root
+DATABASE_PASSWORD=your_password
 DATABASE_PORT=3306
 SQL_SSL_MODE=DISABLED
 
@@ -118,7 +180,14 @@ WEBSRV_CERT_PATH=./src/certs/webserver/cert.pem
 WEBSRV_KEY_PATH=./src/certs/webserver/key.pem
 WEBSRV_CA_PATH=./src/certs/webserver/cert.ca-bundle
 
-# Email
+# CORS Configuration (Security)
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost,http://127.0.0.1,http://127.0.0.1:8000
+
+# Asset Server Configuration
+ASSET_SERVER_URL="http://127.0.0.1:8000"
+ASSET_SERVER_AUTH_KEY=your-asset-server-key
+
+# Email (Optional but recommended)
 EMAIL_SERVICE=smtp.mailtrap.io
 EMAIL_USER=your-email@example.com
 EMAIL_PASSWORD=your-email-password
@@ -136,56 +205,90 @@ DOMAIN=http://localhost
 GAME_NAME=Frostfire Forge
 ```
 
-## Quick Start
+---
 
-### Prerequisites
+## 🚀 Quick Start
 
-- **Bun 1.0+** - Runtime (install from https://bun.sh)
-- **MySQL/MariaDB** - Database for user accounts and game state
-- **SMTP Server** - For email verification (optional but recommended)
-
-### Development
+### Development Setup
 
 **Option 1: Use prebuilt Docker image:**
-
 ```bash
-docker run -d --name gateway-test -p 9999:9999 -p 80:80 ghcr.io/lillious-networks/frostfire-forge-gateway:latest
+docker run -d --name frostfire-gateway-dev -p 80:80 -p 9999:9999 ghcr.io/lillious-networks/frostfire-forge-gateway-dev:latest
 ```
 
 **Option 2: Build and run from source:**
-
 ```bash
 bun development
 ```
 
-Optionally edit `.env.development` to customize settings.
+**Optional: Update `.env.development` before running**
 
 Access the game client at `http://localhost` and the monitoring dashboard at `http://localhost:9999/dashboard`
 
-### Production
+---
 
+### Production Setup
+
+**Update the `.env.production` file**
+
+Configure your production environment variables including SSL certificates if needed.
+
+**Start the production server:**
 ```bash
 bun production
 ```
 
-Uses `.env.production` environment variables instead of `.env.development`.
+---
 
-## Setup Instructions
+## 🐳 Docker Deployment
 
-### 1. Database Setup
+### Using Docker Compose
+
+```bash
+# Start development environment
+docker compose -f src/docker/docker-compose.dev.yml up -d
+
+# View logs
+docker compose -f src/docker/docker-compose.dev.yml logs -f
+
+# Stop
+docker compose -f src/docker/docker-compose.dev.yml down
+```
+
+### NPM Commands
+
+```bash
+# Development
+npm run docker:dev              # Start dev container
+npm run docker:dev:logs         # View logs
+npm run docker:dev:rebuild      # Rebuild and restart
+npm run docker:dev:down         # Stop dev container
+
+# Production
+npm run docker:prod             # Start prod container
+npm run docker:prod:logs        # View logs
+npm run docker:prod:rebuild     # Rebuild and restart
+npm run docker:prod:down        # Stop prod container
+```
+
+---
+
+## 📋 Setup Instructions
+
+### Database Setup
 
 Create a MySQL database and user for the gateway:
 
 ```sql
-CREATE DATABASE frostfire_gateway;
+CREATE DATABASE frostfire_forge;
 CREATE USER 'gateway_user'@'localhost' IDENTIFIED BY 'secure_password';
-GRANT ALL PRIVILEGES ON frostfire_gateway.* TO 'gateway_user'@'localhost';
+GRANT ALL PRIVILEGES ON frostfire_forge.* TO 'gateway_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-The game engine will create tables automatically on first run.
+The gateway will create tables automatically on first run.
 
-### 2. SSL/TLS Setup
+### SSL/TLS Setup
 
 Place your certificates in the following directories:
 
@@ -201,56 +304,19 @@ src/certs/
     └── cert.ca-bundle     # Full CA chain (optional)
 ```
 
-Then update the following environment variables
+Then update the following environment variables:
 ```bash
 WEBSRV_USESSL=true
 GATEWAY_USESSL=true
 ```
 
-Certificate paths are already configured in the environment variables section above.
+---
 
-## Docker Deployment
-
-### Using Docker Compose
-
-```bash
-cd src/docker
-docker-compose -f docker-compose.dev.yml up -d
-docker-compose -f docker-compose.dev.yml logs -f gateway
-docker-compose -f docker-compose.dev.yml down
-```
-
-### Build and Run Manually
-
-```bash
-docker build -f src/docker/Dockerfile.dev -t frostfire-forge-gateway:latest .
-
-docker run -d \
-  --name gateway \
-  --env-file .env.development \
-  -p 9999:9999 \
-  -p 80:80 \
-  frostfire-forge-gateway:latest
-```
-
-## Client Connection Flow
-
-1. **Client connects to webserver** (port 80/443)
-2. **Client logs in** via `POST /login`
-3. **Client fetches available servers** via `GET /api/gateway/servers`
-   - Returns list of healthy game servers sorted by load
-4. **Client requests connection token** via `GET /api/gateway/connection-token`
-   - Returns signed token valid for one connection
-5. **Client connects directly to selected game server**
-   - Includes token in connection headers or initial message
-6. **Game server validates token** using shared secret
-7. **Session maintained** via heartbeats from game server to gateway
-
-## Monitoring Dashboard
+## 📊 Monitoring Dashboard
 
 Access the real-time dashboard at `http://localhost:9999/dashboard`
 
-Default credentials: Value of `GATEWAY_AUTH_KEY`
+**Default credentials:** Value of `GATEWAY_AUTH_KEY`
 
 **Dashboard Features:**
 - Real-time server status
@@ -258,7 +324,9 @@ Default credentials: Value of `GATEWAY_AUTH_KEY`
 - Connection count per server
 - Latency/RTT monitoring
 
-## Security Considerations
+---
+
+## 🔐 Security
 
 ### Authentication
 
@@ -274,94 +342,8 @@ Default credentials: Value of `GATEWAY_AUTH_KEY`
   - One-time use tokens bound to specific game server
   - Prevents token replay across servers
 
-### Network Security
+---
 
-- Run gateway server (`9999`) only on internal network, not public
-- Expose webserver port (`80/443`) to clients
-- Use firewall rules to restrict game server port access
-- Enable IP whitelist/blacklist via database security rules
-
-### Secrets Management
-
-- Regenerate `GATEWAY_AUTH_KEY` and `GATEWAY_GAME_SERVER_SECRET` for each deployment
-- Never commit `.env` files or certificate keys to version control
-- Use CI/CD secrets for environment variables
-- Rotate secrets quarterly
-
-## Troubleshooting
-
-### Servers Not Registering
-
-**Issue:** Game servers fail to register
-- Check: Is `GATEWAY_AUTH_KEY` correctly set in both gateway and game server?
-- Check: Can game servers reach gateway URL (`GATEWAY_URL`)?
-- Check: Are game server requests including correct `authKey`?
-- View logs: `cat logs/$(date +%Y-%m-%d).log`
-
-### Clients Can't Connect
-
-**Issue:** Clients receive "No available servers" error
-- Check: Are game servers sending heartbeats? Use `GET /status` endpoint
-- Check: Can clients reach webserver port (`WEBSRV_PORT`)?
-
-### Session Migration Not Working
-
-**Issue:** Clients disconnect when server goes down
-- Check: Is `SERVER_TIMEOUT` set correctly (default 90s)?
-- Check: Are you sending heartbeats every `HEARTBEAT_INTERVAL` seconds?
-- View: Check migration history in dashboard
-
-### Database Connection Errors
-
-**Issue:** "Cannot connect to database" in logs
-- Check: Database credentials in `.env` file
-- Check: Database host/port accessibility (`mysql -u user -p -h host`)
-- Check: Database exists (`SHOW DATABASES;`)
-- For Docker: Verify service names in `docker-compose.yml`
-
-### Email Verification Not Working
-
-**Issue:** Users not receiving verification emails
-- Check: `EMAIL_SERVICE`, `EMAIL_USER`, `EMAIL_PASSWORD` are correct
-- View: Check logs for SMTP errors
-- SMTP Ports: Usually 587 (TLS) or 465 (SSL)
-
-### High Memory Usage
-
-**Issue:** Gateway consuming excess memory
-- Check: Number of active sessions (`GET /debug/sessions`)
-- Tune: Adjust `SESSION_TIMEOUT` to lower value
-- Consider: Switch to Redis caching if `CACHE=memory` is enabled
-
-### Dashboard Auth Failing
-
-**Issue:** Cannot log into monitoring dashboard
-- Check: `GATEWAY_AUTH_KEY`
-- Check: Configuration environment variables are set correctly
-- View: Check for login attempts in logs with `grep "dashboard"` logs/*
-
-## Performance Tuning
-
-### Database
-- Increase connection pool size in `sqldatabase.ts` if many concurrent operations
-- Use MySQL with InnoDB for better concurrency
-
-### Memory
-- Set `CACHE=redis` for distributed caching if memory is constrained
-- Lower `SESSION_TIMEOUT` to clean up old sessions faster
-
-### Network
-- Use CDN for static assets (JS, CSS, images)
-- Compress responses with gzip
-
-## Contributing
-
-To contribute improvements:
-1. Create a feature branch: `git checkout -b feature/your-feature`
-2. Make changes and test locally
-3. Commit with clear messages
-4. Push and create a pull request
-
-## License
-
-Frostfire Forge Gateway is part of the Frostfire Forge project.
+<p align="center">
+  <sub>Built with ❤️ by the Frostfire Forge Team</sub>
+</p>

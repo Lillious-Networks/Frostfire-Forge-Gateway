@@ -81,7 +81,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
         mapHeight = mapData.height;
         tilewidth = mapData.tilewidth;
         tileheight = mapData.tileheight;
-        tilesets = mapData.tilesets || [];
       } else {
         throw new Error("Invalid LOAD_MAP array format");
       }
