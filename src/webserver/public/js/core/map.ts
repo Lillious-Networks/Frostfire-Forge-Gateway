@@ -28,7 +28,7 @@ interface ChunkData {
   upperCanvas?: HTMLCanvasElement;
 }
 
-export default async function loadMap(data: any): Promise<boolean> {
+export default async function loadMap(metadata: any): Promise<boolean> {
     if (loadingScreen) {
       loadingScreen.style.display = "flex";
       loadingScreen.style.opacity = "1";
@@ -40,43 +40,85 @@ export default async function loadMap(data: any): Promise<boolean> {
       window.mapData.loadedChunks.clear();
     }
 
-    const mapName = data[1];
-    if (mapName) {
-      clearMapCache(mapName);
+    // Handle both old and new message formats
+    let mapName: string;
+    let spawnX: number;
+    let spawnY: number;
+    let mapWidth: number;
+    let mapHeight: number;
+    let tilewidth: number;
+    let tileheight: number;
+    let tilesets: any[] = [];
+
+    if (metadata && typeof metadata === 'object' && 'name' in metadata && !Array.isArray(metadata)) {
+      // New format: metadata object from server
+      // { name, assetServerUrl, width, height, tilewidth, tileheight, spawnX, spawnY, direction, chunks }
+      mapName = metadata.name;
+      spawnX = metadata.spawnX || 0;
+      spawnY = metadata.spawnY || 0;
+      mapWidth = metadata.width;
+      mapHeight = metadata.height;
+      tilewidth = metadata.tilewidth || 32;
+      tileheight = metadata.tileheight || 32;
+      tilesets = metadata.tilesets || [];
+    } else if (metadata && Array.isArray(metadata)) {
+      // Old format: [{ data: compressed }, mapName, spawnX, spawnY]
+      const data = metadata;
+      if (data[0] && typeof data[0] === 'object' && data[0].data) {
+        //@ts-expect-error - Imported via HTML
+        const inflated = pako.inflate(
+          new Uint8Array(new Uint8Array(data[0].data)),
+          { to: "string" }
+        );
+        const mapData = inflated ? JSON.parse(inflated) : null;
+        if (!mapData) {
+          throw new Error("Failed to parse map data");
+        }
+        mapName = data[1];
+        spawnX = data[2] || 0;
+        spawnY = data[3] || 0;
+        mapWidth = mapData.width;
+        mapHeight = mapData.height;
+        tilewidth = mapData.tilewidth;
+        tileheight = mapData.tileheight;
+        tilesets = mapData.tilesets || [];
+      } else {
+        throw new Error("Invalid LOAD_MAP array format");
+      }
+    } else {
+      console.error("Invalid LOAD_MAP message format:", metadata);
+      throw new Error("LOAD_MAP message must include map metadata object with name, width, height, tilewidth, tileheight");
     }
 
-    //@ts-expect-error - Imported via HTML
-    const inflated = pako.inflate(
-      new Uint8Array(new Uint8Array(data[0].data)),
-      { to: "string" }
-    );
-    const mapData = inflated ? JSON.parse(inflated) : null;
-
-    if (!mapData) {
-      throw new Error("Failed to parse map data");
+    if (!mapName) {
+      throw new Error("Map name is missing from LOAD_MAP message");
     }
 
+    // Store asset server URL for chunk loading
+    const assetServerUrl = metadata?.assetServerUrl || "";
+    (window as any).__assetServerUrl = assetServerUrl;
+
+    clearMapCache(mapName);
     progressBar.style.width = "10%";
 
-    const images = await loadTilesets(mapData.tilesets);
-    if (!images.length) throw new Error("No tileset images loaded");
+    const images = await loadTilesets(tilesets);
+    if (!images.length) {
+      console.warn("No tileset images loaded, continuing with empty tilesets");
+    }
 
     progressBar.style.width = "30%";
 
-    const CHUNK_SIZE = mapData.tilewidth;
-    const chunksX = Math.ceil(mapData.width / CHUNK_SIZE);
-    const chunksY = Math.ceil(mapData.height / CHUNK_SIZE);
-
-    const spawnX = data[2] || 0;
-    const spawnY = data[3] || 0;
+    const CHUNK_SIZE = tilewidth;
+    const chunksX = Math.ceil(mapWidth / CHUNK_SIZE);
+    const chunksY = Math.ceil(mapHeight / CHUNK_SIZE);
 
     window.mapData = {
-      name: data[1],
-      width: mapData.width,
-      height: mapData.height,
-      tilewidth: mapData.tilewidth,
-      tileheight: mapData.tileheight,
-      tilesets: mapData.tilesets,
+      name: mapName,
+      width: mapWidth,
+      height: mapHeight,
+      tilewidth: tilewidth,
+      tileheight: tileheight,
+      tilesets: tilesets,
       images: images,
       chunksX: chunksX,
       chunksY: chunksY,
@@ -103,7 +145,7 @@ export default async function loadMap(data: any): Promise<boolean> {
 
     progressBar.style.width = "40%";
 
-    const chunkPixelSize = CHUNK_SIZE * mapData.tilewidth;
+    const chunkPixelSize = CHUNK_SIZE * window.mapData.tilewidth;
     const spawnChunkX = Math.floor(spawnX / chunkPixelSize);
     const spawnChunkY = Math.floor(spawnY / chunkPixelSize);
 
@@ -223,7 +265,12 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
   const tilesetPromises = tilesets.map(async (tileset) => {
     const name = tileset.image.split("/").pop();
 
-    const response = await fetch(`/tileset?name=${encodeURIComponent(name)}`);
+    const assetServerUrl = (window as any).__assetServerUrl || "";
+    if (!assetServerUrl) {
+      throw new Error("Asset server URL not configured - cannot load tilesets");
+    }
+
+    const response = await fetch(`${assetServerUrl}/tileset?name=${encodeURIComponent(name)}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch tileset ${name}: ${response.statusText}`);
     }
@@ -354,7 +401,7 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
     } else {
 
       try {
-        chunkData = await requestChunkViaWebSocket(window.mapData.name, chunkX, chunkY);
+        chunkData = await requestChunkViaAssetServer(window.mapData.name, chunkX, chunkY);
         if (!chunkData) {
           return null;
         }
@@ -378,33 +425,38 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
   }
 }
 
-function requestChunkViaWebSocket(mapName: string, chunkX: number, chunkY: number): Promise<ChunkData | null> {
-  return new Promise((resolve, reject) => {
-    const chunkKey = `${chunkX}-${chunkY}`;
+async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunkY: number): Promise<ChunkData | null> {
+  if (!window.mapData) {
+    throw new Error("Map data not initialized");
+  }
 
-    const socketModule = (window as any).__socketModule;
-    if (!socketModule) {
-      reject(new Error("Socket module not initialized"));
-      return;
+  const chunkSize = window.mapData.chunkSize;
+  const assetServerUrl = (window as any).__assetServerUrl || "";
+
+  try {
+    const chunkUrl = `${assetServerUrl}/map-chunk?map=${encodeURIComponent(mapName)}&x=${chunkX}&y=${chunkY}&size=${chunkSize}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(chunkUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch chunk: ${response.statusText}`);
     }
 
-    socketModule.pendingMapChunkRequests.set(chunkKey, {
-      resolve: (data: any) => resolve(data),
-      reject: (error: Error) => reject(error)
-    });
+    const chunkData: ChunkData = await response.json();
 
-    socketModule.sendRequest({
-      type: 'LOAD_CHUNK',
-      data: { map: mapName, x: chunkX, y: chunkY }
-    });
+    // Ensure chunk has proper structure
+    if (!chunkData.layers) {
+      chunkData.layers = [];
+    }
 
-    setTimeout(() => {
-      if (socketModule.pendingMapChunkRequests.has(chunkKey)) {
-        socketModule.pendingMapChunkRequests.delete(chunkKey);
-        reject(new Error(`Map chunk request timeout for ${chunkKey}`));
-      }
-    }, 10000);
-  });
+    return chunkData;
+  } catch (error) {
+    console.error(`Error fetching chunk ${chunkX},${chunkY} from asset server:`, error);
+    throw error;
+  }
 }
 
 async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {

@@ -25,7 +25,7 @@ interface GatewayConfig {
   heartbeatInterval: number;
   serverTimeout: number;
   sessionTimeout: number;
-  authKey: string;
+  authKey: Nullable<string>;
 }
 
 declare interface TilesetData {

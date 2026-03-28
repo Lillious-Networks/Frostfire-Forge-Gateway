@@ -9,7 +9,7 @@ const config: GatewayConfig = {
   heartbeatInterval: parseInt(process.env.HEARTBEAT_INTERVAL || "30000"),
   serverTimeout: parseInt(process.env.SERVER_TIMEOUT || "90000"),
   sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || "300000"),
-  authKey: process.env.GATEWAY_AUTH_KEY || "change-this-secret-key"
+  authKey: process.env.GATEWAY_AUTH_KEY || null
 };
 
 const gameServers: Map<string, GameServer> = new Map();
@@ -277,95 +277,6 @@ const serverConfig: any = {
       }
     }
 
-    if (url.pathname === "/map-checksums" && req.method === "POST") {
-      try {
-        const { checksums, serverId, authKey } = await req.json();
-
-        if (authKey !== config.authKey) {
-          return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
-            status: 401,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        const { calculateAllMapChecksums, getMapContent } = await import("../modules/checksums");
-
-        const masterChecksums = calculateAllMapChecksums();
-
-        const outdatedMaps: any[] = [];
-        for (const [mapName, masterChecksum] of Object.entries(masterChecksums)) {
-          const clientChecksum = checksums[mapName];
-          if (clientChecksum !== masterChecksum) {
-            const mapData = getMapContent(mapName);
-            if (mapData) {
-              outdatedMaps.push({
-                name: mapName,
-                checksum: masterChecksum,
-                data: mapData
-              });
-            }
-          }
-        }
-
-        console.log(`[Gateway] Map sync for ${serverId}: ${outdatedMaps.length} outdated maps`);
-
-        return new Response(JSON.stringify({
-          success: true,
-          outdatedMaps
-        }), {
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error("[Gateway] Error in /map-checksums:", error);
-        return new Response(JSON.stringify({ error: "Invalid request body" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-
-    if (url.pathname === "/update-map" && req.method === "POST") {
-      try {
-        const { mapName, mapData, serverId, authKey } = await req.json();
-
-        if (authKey !== config.authKey) {
-          return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
-            status: 401,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        const { writeMapContent, calculateAllMapChecksums } = await import("../modules/checksums");
-
-        const success = writeMapContent(mapName, mapData);
-
-        if (!success) {
-          return new Response(JSON.stringify({ error: "Failed to write map file" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        const checksums = calculateAllMapChecksums();
-        const newChecksum = checksums[mapName] || "";
-
-        console.log(`[Gateway] Map updated: ${mapName} by server ${serverId}`);
-
-        return new Response(JSON.stringify({
-          success: true,
-          checksum: newChecksum,
-          message: "Map updated successfully"
-        }), {
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error) {
-        console.error("[Gateway] Error in /update-map:", error);
-        return new Response(JSON.stringify({ error: "Invalid request body" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
 
     if (url.pathname === "/api/login" && req.method === "POST") {
       try {

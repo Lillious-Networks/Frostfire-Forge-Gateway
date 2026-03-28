@@ -15,7 +15,7 @@ services:
     volumes:
       - mysql-data-dev:/var/lib/mysql
     networks:
-      - gateway-network-dev
+      - frostfire-network-dev
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       timeout: 20s
@@ -39,12 +39,12 @@ services:
     env_file:
       - ../../.env.development
     networks:
-      - gateway-network-dev
+      - frostfire-network-dev
 
 volumes:
   mysql-data-dev:
     driver: local
 
 networks:
-  gateway-network-dev:
+  frostfire-network-dev:
     driver: bridge

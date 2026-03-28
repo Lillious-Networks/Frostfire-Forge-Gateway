@@ -17,7 +17,6 @@ const settings = {
 };
 import path from "path";
 import fs from "fs";
-import zlib from "zlib";
 import crypto from "crypto";
 import animator_html from "./public/animator.html";
 import connectiontest_html from "./public/connection-test.html";
@@ -29,8 +28,6 @@ import changepassword_html from "./public/change-password.html";
 import realmselection_html from "./public/realm-selection.html";
 
 import { w_ips, b_ips, blacklistAdd } from "../systems/security";
-
-import { initializeAssets } from "../modules/assetloader";
 
 const security = fs.existsSync(path.join(import.meta.dir, "./config/security.cfg"))
   ? fs.readFileSync(path.join(import.meta.dir, "./config/security.cfg"), "utf8").split("\n").filter(line => line.trim() !== "" && !line.startsWith("#"))
@@ -141,63 +138,6 @@ const routes = {
       }
     }
   },
-  "/tileset": {
-    GET: async (req: Request) => {
-      const url = new URL(req.url);
-      const name = url.searchParams.get("name");
-
-      if (!name) {
-        return new Response(JSON.stringify({ error: "Missing tileset name" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      if (name.includes("/") || name.includes("\\")) {
-        return new Response(JSON.stringify({ error: "Invalid tileset name" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      try {
-        const tilesetDir = path.resolve(import.meta.dir, "./public/tilesets");
-        const tilesetPath = path.resolve(tilesetDir, name);
-
-        if (!tilesetPath.startsWith(tilesetDir)) {
-          return new Response(JSON.stringify({ error: "Invalid tileset name" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        if (!fs.existsSync(tilesetPath)) {
-          return new Response(JSON.stringify({ error: "Tileset not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-
-        const tilesetData = fs.readFileSync(tilesetPath);
-        const compressedData = zlib.gzipSync(tilesetData);
-        const base64Data = compressedData.toString("base64");
-
-        return new Response(JSON.stringify({
-          name: name,
-          data: base64Data
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      } catch (error: any) {
-        log.error(`Error serving tileset: ${error.message}`);
-        return new Response(JSON.stringify({ error: "Internal server error" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-    }
-  },
   "/realm-selection": realmselection_html,
 } as Record<string, any>;
 
@@ -225,7 +165,6 @@ Bun.serve({
       "/verify": routes["/verify"],
       "/api/gateway/servers": routes["/api/gateway/servers"],
       "/api/gateway/connection-token": routes["/api/gateway/connection-token"],
-      "/tileset": routes["/tileset"],
     },
   async fetch(req: Request, server: any) {
     const url = tryParseURL(req.url);
@@ -607,8 +546,6 @@ function tryParseURL(url: string) : URL | null {
     return null;
   }
 }
-
-await initializeAssets();
 
 const readyTimeMs = performance.now() - now;
 log.success(`Webserver started on port ${serverPort} (${_https ? "HTTPS" : "HTTP"}) - Ready in ${(readyTimeMs / 1000).toFixed(3)}s (${readyTimeMs.toFixed(0)}ms)`);

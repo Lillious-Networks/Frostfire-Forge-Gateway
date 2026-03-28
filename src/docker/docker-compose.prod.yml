@@ -29,8 +29,8 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - gateway-network
+      - frostfire-network-prod
 
 networks:
-  gateway-network:
+  frostfire-network-prod:
     driver: bridge
