@@ -9,6 +9,90 @@ import {
 
 const spriteSheetCache: SpriteSheetCache = {};
 
+// Fetch sprite sheet template from asset server
+async function fetchSpriteSheetTemplate(templateUrl: string): Promise<any> {
+  try {
+    const response = await fetch(templateUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch sprite template: ${response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`Error fetching sprite template from ${templateUrl}:`, error);
+    throw error;
+  }
+}
+
+// Helper to convert SpriteUrl to SpriteSheetTemplate
+async function resolveSpriteUrl(spriteUrl: any): Promise<any> {
+  // If it's already a template, return it
+  if (spriteUrl.frameWidth) {
+    return spriteUrl;
+  }
+
+  // If it has templateUrl, fetch the template
+  if (spriteUrl.templateUrl) {
+    const template = await fetchSpriteSheetTemplate(spriteUrl.templateUrl);
+
+    // Extract base URL from templateUrl
+    const baseUrl = spriteUrl.templateUrl.substring(0, spriteUrl.templateUrl.indexOf('?'));
+    const assetServerUrl = baseUrl.substring(0, baseUrl.lastIndexOf('/'));
+
+    // Use the provided imageUrl if available (for equipment sprites using shared templates),
+    // otherwise convert template's imageSource to full asset server URL
+    if (spriteUrl.imageUrl) {
+      // Equipment sprite with shared template - use the equipment's specific image
+      template.imageSource = spriteUrl.imageUrl;
+    } else if (template.imageSource) {
+      // Body/head sprite - convert imageSource relative path to full asset server URL
+      const baseName = template.imageSource.split('/').pop()?.replace('.png', '');
+      if (baseName) {
+        template.imageSource = `${assetServerUrl}/sprite-sheet-image?name=${encodeURIComponent(baseName)}`;
+      } else {
+        template.imageSource = `${assetServerUrl}/sprite-sheet-image?name=${encodeURIComponent(template.name)}`;
+      }
+    } else {
+      template.imageSource = `${assetServerUrl}/sprite-sheet-image?name=${encodeURIComponent(template.name)}`;
+    }
+
+    return template;
+  }
+
+  // If it only has imageUrl (equipment sprites), construct minimal template
+  // Equipment should animate with the same animation states as the body
+  if (spriteUrl.imageUrl) {
+    const createDirections = (frameDuration: number, loop: boolean) => ({
+      down: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      up: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      left: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      right: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      downleft: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      downright: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      upleft: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } },
+      upright: { frames: [0], frameDuration, loop, offset: { x: 0, y: 0 } }
+    });
+
+    return {
+      name: spriteUrl.name,
+      imageSource: spriteUrl.imageUrl,
+      frameWidth: 64,
+      frameHeight: 64,
+      columns: 1,
+      rows: 1,
+      animations: {
+        idle: { directions: createDirections(1000, false) },
+        walk: { directions: createDirections(150, true) },
+        mount_idle: { directions: createDirections(1000, false) },
+        mount_walk: { directions: createDirections(200, true) },
+        cast_idle: { directions: createDirections(1000, false) },
+        cast_walk: { directions: createDirections(150, true) }
+      }
+    };
+  }
+
+  throw new Error(`Invalid sprite data: ${JSON.stringify(spriteUrl)}`);
+}
+
 export async function initializeLayeredAnimation(
   mountSprite: Nullable<SpriteSheetTemplate>,
   bodySprite: Nullable<SpriteSheetTemplate>,
@@ -24,84 +108,132 @@ export async function initializeLayeredAnimation(
   initialAnimation: string = 'idle'
 ): Promise<LayeredAnimation> {
 
-  if (mountSprite && !validateSpriteSheetTemplate(mountSprite)) {
+  // Resolve sprite URLs to full templates (handles both SpriteUrl and SpriteSheetTemplate)
+  let resolvedMount = mountSprite;
+  let resolvedBody = bodySprite;
+  let resolvedHead = headSprite;
+  let resolvedArmorHelmet = armorHelmetSprite;
+  let resolvedArmorShoulderguards = armorShoulderguardsSprite;
+  let resolvedArmorNeck = armorNeckSprite;
+  let resolvedArmorHands = armorHandsSprite;
+  let resolvedArmorChest = armorChestSprite;
+  let resolvedArmorFeet = armorFeetSprite;
+  let resolvedArmorLegs = armorLegsSprite;
+  let resolvedArmorWeapon = armorWeaponSprite;
+
+  // Resolve any SpriteUrl objects to full templates
+  if (mountSprite && ((mountSprite as any).templateUrl || (mountSprite as any).imageUrl)) {
+    resolvedMount = await resolveSpriteUrl(mountSprite);
+  }
+  if (bodySprite && ((bodySprite as any).templateUrl || (bodySprite as any).imageUrl)) {
+    resolvedBody = await resolveSpriteUrl(bodySprite);
+  }
+  if (headSprite && ((headSprite as any).templateUrl || (headSprite as any).imageUrl)) {
+    resolvedHead = await resolveSpriteUrl(headSprite);
+  }
+  if (armorHelmetSprite && ((armorHelmetSprite as any).templateUrl || (armorHelmetSprite as any).imageUrl)) {
+    resolvedArmorHelmet = await resolveSpriteUrl(armorHelmetSprite);
+  }
+  if (armorShoulderguardsSprite && ((armorShoulderguardsSprite as any).templateUrl || (armorShoulderguardsSprite as any).imageUrl)) {
+    resolvedArmorShoulderguards = await resolveSpriteUrl(armorShoulderguardsSprite);
+  }
+  if (armorNeckSprite && ((armorNeckSprite as any).templateUrl || (armorNeckSprite as any).imageUrl)) {
+    resolvedArmorNeck = await resolveSpriteUrl(armorNeckSprite);
+  }
+  if (armorHandsSprite && ((armorHandsSprite as any).templateUrl || (armorHandsSprite as any).imageUrl)) {
+    resolvedArmorHands = await resolveSpriteUrl(armorHandsSprite);
+  }
+  if (armorChestSprite && ((armorChestSprite as any).templateUrl || (armorChestSprite as any).imageUrl)) {
+    resolvedArmorChest = await resolveSpriteUrl(armorChestSprite);
+  }
+  if (armorFeetSprite && ((armorFeetSprite as any).templateUrl || (armorFeetSprite as any).imageUrl)) {
+    resolvedArmorFeet = await resolveSpriteUrl(armorFeetSprite);
+  }
+  if (armorLegsSprite && ((armorLegsSprite as any).templateUrl || (armorLegsSprite as any).imageUrl)) {
+    resolvedArmorLegs = await resolveSpriteUrl(armorLegsSprite);
+  }
+  if (armorWeaponSprite && ((armorWeaponSprite as any).templateUrl || (armorWeaponSprite as any).imageUrl)) {
+    resolvedArmorWeapon = await resolveSpriteUrl(armorWeaponSprite);
+  }
+
+  if (resolvedMount && !validateSpriteSheetTemplate(resolvedMount)) {
     throw new Error('Invalid mount sprite sheet template');
   }
-  if (bodySprite && !validateSpriteSheetTemplate(bodySprite)) {
+  if (resolvedBody && !validateSpriteSheetTemplate(resolvedBody)) {
     throw new Error('Invalid body sprite sheet template');
   }
-  if (headSprite && !validateSpriteSheetTemplate(headSprite)) {
+  if (resolvedHead && !validateSpriteSheetTemplate(resolvedHead)) {
     throw new Error('Invalid head sprite sheet template');
   }
-  if (armorHelmetSprite && !validateSpriteSheetTemplate(armorHelmetSprite)) {
+  if (resolvedArmorHelmet && !validateSpriteSheetTemplate(resolvedArmorHelmet)) {
     throw new Error('Invalid armor helmet sprite sheet template');
   }
-  if (armorShoulderguardsSprite && !validateSpriteSheetTemplate(armorShoulderguardsSprite)) {
+  if (resolvedArmorShoulderguards && !validateSpriteSheetTemplate(resolvedArmorShoulderguards)) {
     throw new Error('Invalid armor shoulderguards sprite sheet template');
   }
-  if (armorNeckSprite && !validateSpriteSheetTemplate(armorNeckSprite)) {
+  if (resolvedArmorNeck && !validateSpriteSheetTemplate(resolvedArmorNeck)) {
     throw new Error('Invalid armor neck sprite sheet template');
   }
-  if (armorHandsSprite && !validateSpriteSheetTemplate(armorHandsSprite)) {
+  if (resolvedArmorHands && !validateSpriteSheetTemplate(resolvedArmorHands)) {
     throw new Error('Invalid armor hands sprite sheet template');
   }
-  if (armorChestSprite && !validateSpriteSheetTemplate(armorChestSprite)) {
+  if (resolvedArmorChest && !validateSpriteSheetTemplate(resolvedArmorChest)) {
     throw new Error('Invalid armor chest sprite sheet template');
   }
-  if (armorFeetSprite && !validateSpriteSheetTemplate(armorFeetSprite)) {
+  if (resolvedArmorFeet && !validateSpriteSheetTemplate(resolvedArmorFeet)) {
     throw new Error('Invalid armor feet sprite sheet template');
   }
-  if (armorLegsSprite && !validateSpriteSheetTemplate(armorLegsSprite)) {
+  if (resolvedArmorLegs && !validateSpriteSheetTemplate(resolvedArmorLegs)) {
     throw new Error('Invalid armor legs sprite sheet template');
   }
-  if (armorWeaponSprite && !validateSpriteSheetTemplate(armorWeaponSprite)) {
+  if (resolvedArmorWeapon && !validateSpriteSheetTemplate(resolvedArmorWeapon)) {
     throw new Error('Invalid armor weapon sprite sheet template');
   }
 
-  const isMounted = mountSprite !== null;
+  const isMounted = resolvedMount !== null;
 
-  const mountLayer = mountSprite
-    ? await createAnimationLayer('mount', mountSprite, initialAnimation, -1, false)
+  const mountLayer = resolvedMount
+    ? await createAnimationLayer('mount', resolvedMount, initialAnimation, -1, false)
     : null;
 
-  const bodyLayer = bodySprite
-    ? await createAnimationLayer('body', bodySprite, initialAnimation, 0, isMounted)
+  const bodyLayer = resolvedBody
+    ? await createAnimationLayer('body', resolvedBody, initialAnimation, 0, isMounted)
     : null;
 
-  const armorNeckLayer = armorNeckSprite
-    ? await createAnimationLayer('armor_neck', armorNeckSprite, initialAnimation, 1, isMounted)
+  const armorNeckLayer = resolvedArmorNeck
+    ? await createAnimationLayer('armor_neck', resolvedArmorNeck, initialAnimation, 1, isMounted)
     : null;
 
-  const armorHandsLayer = armorHandsSprite
-    ? await createAnimationLayer('armor_hands', armorHandsSprite, initialAnimation, 2, isMounted)
+  const armorHandsLayer = resolvedArmorHands
+    ? await createAnimationLayer('armor_hands', resolvedArmorHands, initialAnimation, 2, isMounted)
     : null;
 
-  const armorChestLayer = armorChestSprite
-    ? await createAnimationLayer('armor_chest', armorChestSprite, initialAnimation, 3, isMounted)
+  const armorChestLayer = resolvedArmorChest
+    ? await createAnimationLayer('armor_chest', resolvedArmorChest, initialAnimation, 3, isMounted)
     : null;
 
-  const armorFeetLayer = armorFeetSprite
-    ? await createAnimationLayer('armor_feet', armorFeetSprite, initialAnimation, 4, isMounted)
+  const armorFeetLayer = resolvedArmorFeet
+    ? await createAnimationLayer('armor_feet', resolvedArmorFeet, initialAnimation, 4, isMounted)
     : null;
 
-  const armorLegsLayer = armorLegsSprite
-    ? await createAnimationLayer('armor_legs', armorLegsSprite, initialAnimation, 5, isMounted)
+  const armorLegsLayer = resolvedArmorLegs
+    ? await createAnimationLayer('armor_legs', resolvedArmorLegs, initialAnimation, 5, isMounted)
     : null;
 
-  const headLayer = headSprite
-    ? await createAnimationLayer('head', headSprite, initialAnimation, 6, isMounted)
+  const headLayer = resolvedHead
+    ? await createAnimationLayer('head', resolvedHead, initialAnimation, 6, isMounted)
     : null;
 
-  const armorHelmetLayer = armorHelmetSprite
-    ? await createAnimationLayer('armor_helmet', armorHelmetSprite, initialAnimation, 7, isMounted)
+  const armorHelmetLayer = resolvedArmorHelmet
+    ? await createAnimationLayer('armor_helmet', resolvedArmorHelmet, initialAnimation, 7, isMounted)
     : null;
 
-  const armorShoulderguardsLayer = armorShoulderguardsSprite
-    ? await createAnimationLayer('armor_shoulderguards', armorShoulderguardsSprite, initialAnimation, 8, isMounted)
+  const armorShoulderguardsLayer = resolvedArmorShoulderguards
+    ? await createAnimationLayer('armor_shoulderguards', resolvedArmorShoulderguards, initialAnimation, 8, isMounted)
     : null;
 
-  const armorWeaponLayer = armorWeaponSprite
-    ? await createAnimationLayer('armor_weapon', armorWeaponSprite, initialAnimation, 9, isMounted)
+  const armorWeaponLayer = resolvedArmorWeapon
+    ? await createAnimationLayer('armor_weapon', resolvedArmorWeapon, initialAnimation, 9, isMounted)
     : null;
 
   return {

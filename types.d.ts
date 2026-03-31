@@ -33,6 +33,18 @@ declare interface TilesetData {
   data: Buffer;
 }
 
+declare interface NPC {
+  id: string;
+  position: { x: number; y: number };
+  dialog: string;
+  particles?: Particle[];
+  hidden?: boolean;
+  quest: Nullable<number>;
+  show: (context: CanvasRenderingContext2D) => void;
+  updateParticle: (particle: Particle, npc: any, context: CanvasRenderingContext2D, deltaTime: number) => void;
+  dialogue: (context: CanvasRenderingContext2D) => void;
+}
+
 declare interface LayeredAnimation {
   layers: {
     mount: Nullable<AnimationLayer>;

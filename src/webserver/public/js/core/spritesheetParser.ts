@@ -220,11 +220,11 @@ export async function preloadSpriteSheetImage(imageSource: string): Promise<HTML
       reject(new Error(`Failed to load sprite sheet image: ${imageSource}`));
     };
 
-    if (imageSource.startsWith('data:image/')) {
-      image.src = imageSource;
-    } else {
-
-      image.src = `data:image/png;base64,${imageSource}`;
+    // Set CORS for remote images
+    if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
+      image.crossOrigin = 'anonymous';
     }
+
+    image.src = imageSource;
   });
 }

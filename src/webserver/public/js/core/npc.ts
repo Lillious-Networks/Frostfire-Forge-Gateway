@@ -5,17 +5,7 @@ const cache = Cache.getInstance();
 import { getIsLoaded } from "./socket.js";
 
 function createNPC(data: any) {
-  const npc: {
-    id: string;
-    position: { x: number; y: number };
-    dialog: string;
-    particles?: Particle[];
-    hidden?: boolean;
-    quest: number | null;
-    show: (context: CanvasRenderingContext2D) => void;
-    updateParticle: (particle: Particle, npc: any, context: CanvasRenderingContext2D, deltaTime: number) => void;
-    dialogue: (context: CanvasRenderingContext2D) => void;
-  } = {
+  const npc: NPC = {
     id: data.id,
     dialog: data.dialog || "",
     position: {

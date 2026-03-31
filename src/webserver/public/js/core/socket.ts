@@ -78,6 +78,9 @@ const tilesetChunks = new Map<string, {chunks: string[], totalChunks: number, re
 let loadPlayersProcessing = false;
 const loadPlayersQueue: any[] = [];
 
+// Global item cache for looking up item details by name
+const itemsByName = new Map<string, any>();
+
 export function requestMapChunkViaWS(mapName: string, chunkX: number, chunkY: number, chunkSize: number): Promise<any> {
   return new Promise((resolve, reject) => {
 
@@ -571,18 +574,7 @@ socket.onmessage = async (event) => {
 
       if (icon && spell && !cache.projectileIcons.has(spell)) {
 
-        if (!icon.data || !Array.isArray(icon.data)) break;
-
-        try {
-
-          //@ts-expect-error - Imported via HTML
-          const inflatedData = pako.inflate(
-            new Uint8Array(icon.data),
-            { to: "string" }
-          );
-          const iconImage = new Image();
-          iconImage.src = `data:image/png;base64,${inflatedData}`;
-
+        createCachedImage(icon).then((iconImage) => {
           iconImage.onload = () => {
             cache.projectileIcons.set(spell, iconImage);
           };
@@ -590,9 +582,12 @@ socket.onmessage = async (event) => {
           iconImage.onerror = (error) => {
             console.error("Error loading projectile icon:", error);
           };
-        } catch (error) {
-          console.error("Error inflating projectile icon data:", error);
-        }
+
+          // Trigger load in case image is cached
+          if (iconImage.complete) {
+            cache.projectileIcons.set(spell, iconImage);
+          }
+        });
       }
 
       cache.projectiles.push({
@@ -1394,22 +1389,15 @@ socket.onmessage = async (event) => {
           slot.draggable = true;
           slot.dataset.spellName = spell.name || Object.keys(data)[i] || 'Unknown';
 
-          if (spell.sprite?.data) {
-
-            //@ts-expect-error - Imported via HTML
-            const inflatedData = pako.inflate(
-              new Uint8Array(spell.sprite.data),
-              { to: "string" }
-            );
+          if (spell.spriteUrl) {
             const iconImage = new Image();
-            iconImage.src = `data:image/png;base64,${inflatedData}`;
-
+            iconImage.draggable = false;
             iconImage.width = 32;
             iconImage.height = 32;
-            iconImage.draggable = false;
             iconImage.onload = () => {
               slot.appendChild(iconImage);
             };
+            iconImage.src = spell.spriteUrl;
           } else {
 
             slot.innerHTML = `${spell.name || Object.keys(data)[i] || 'Unknown'}`;
@@ -1459,24 +1447,17 @@ socket.onmessage = async (event) => {
             (spell.name || '') === spellName
           );
 
-          if (matchingSpell && matchingSpell.sprite?.data) {
-
-            //@ts-expect-error - Imported via HTML
-            const inflatedData = pako.inflate(
-              new Uint8Array(matchingSpell.sprite.data),
-              { to: "string" }
-            );
+          if (matchingSpell && matchingSpell.spriteUrl) {
             const iconImage = new Image();
-            iconImage.src = `data:image/png;base64,${inflatedData}`;
+            iconImage.draggable = false;
             iconImage.width = 32;
             iconImage.height = 32;
-            iconImage.draggable = false;
-
-            hotbarSlot.innerHTML = "";
-            hotbarSlot.classList.remove("empty");
             iconImage.onload = () => {
+              hotbarSlot.innerHTML = "";
+              hotbarSlot.classList.remove("empty");
               hotbarSlot.appendChild(iconImage);
             };
+            iconImage.src = matchingSpell.spriteUrl;
           }
         }
       });
@@ -1504,22 +1485,14 @@ socket.onmessage = async (event) => {
             slot.classList.add("ui");
             slot.classList.add("epic");
 
-            if (data[i].icon) {
+            if (data[i].iconUrl) {
 
-              //@ts-expect-error - Imported via HTML
-              const inflatedData = pako.inflate(
-                new Uint8Array(data[i].icon.data),
-                { to: "string" }
-              );
-              const iconImage = new Image();
-              iconImage.src = `data:image/png;base64,${inflatedData}`;
-
-              iconImage.width = 32;
-              iconImage.height = 32;
-              iconImage.draggable = false;
-              iconImage.onload = () => {
+              createCachedImage(data[i].iconUrl).then((iconImage) => {
+                iconImage.width = 32;
+                iconImage.height = 32;
+                iconImage.draggable = false;
                 slot.appendChild(iconImage);
-              };
+              });
 
               slot.addEventListener("click", () => {
 
@@ -1600,22 +1573,25 @@ socket.onmessage = async (event) => {
           continue;
         }
 
-        const inventoryData = cache.inventory || [];
-        const itemDetails = inventoryData.find((item: any) => item.name === itemName);
+        // Look up item details from global cache or inventory cache
+        let itemDetails = itemsByName.get(String(itemName)) || (cache.inventory || []).find((item: any) => item.name === itemName);
 
-        if (itemDetails && itemDetails.icon) {
+        // If item doesn't have iconUrl but has icon, generate it
+        if (itemDetails && !itemDetails.iconUrl && itemDetails.icon) {
+          itemDetails = {
+            ...itemDetails,
+            iconUrl: `http://127.0.0.1:8000/icon?name=${encodeURIComponent(itemDetails.icon)}`
+          };
+        }
+
+        if (itemDetails && itemDetails.iconUrl) {
 
           if (itemDetails.quality) {
             slotElement.classList.add(itemDetails.quality.toLowerCase());
             slotElement.classList.remove("empty");
           }
 
-          //@ts-expect-error - Imported via HTML
-          const inflatedData = pako.inflate(
-            new Uint8Array(itemDetails.icon.data),
-            { to: "string" }
-          );
-          const iconSrc = `data:image/png;base64,${inflatedData}`;
+          const iconSrc = itemDetails.iconUrl;
 
           slotElement.ondblclick = () => {
 
@@ -1718,7 +1694,20 @@ socket.onmessage = async (event) => {
         const data = JSON.parse(packet.decode(event.data))["data"];
         const slots = JSON.parse(packet.decode(event.data))["slots"];
 
+        // Ensure all items have iconUrl (convert from icon if needed)
+        const assetServerUrl = data.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || "http://127.0.0.1:8000";
+        data.forEach((item: any) => {
+          if (!item.iconUrl && item.icon) {
+            item.iconUrl = `${assetServerUrl}/icon?name=${encodeURIComponent(item.icon)}`;
+          }
+        });
+
         cache.inventory = data;
+
+        // Populate global item cache for equipment lookups
+        data.forEach((item: any) => {
+          itemsByName.set(item.name, item);
+        });
 
         inventoryGrid.querySelectorAll(".slot").forEach((slot) => {
 
@@ -1780,45 +1769,39 @@ socket.onmessage = async (event) => {
 
             slot.classList.add(item.quality.toLowerCase() || "common");
 
-            if (item.icon) {
+            if (item.iconUrl) {
 
-              //@ts-expect-error - Imported via HTML
-              const inflatedData = pako.inflate(
-                new Uint8Array(item.icon.data),
-                { to: "string" }
-              );
-              const iconSrc = `data:image/png;base64,${inflatedData}`;
+              createCachedImage(item.iconUrl).then((iconImage) => {
+                iconImage.draggable = false;
+                iconImage.style.pointerEvents = "none";
+                iconImage.width = 32;
+                iconImage.height = 32;
+                slot.appendChild(iconImage);
 
-              const iconImage = createCachedImage(iconSrc);
-              iconImage.draggable = false;
-              iconImage.style.pointerEvents = "none";
-              iconImage.width = 32;
-              iconImage.height = 32;
-              slot.appendChild(iconImage);
+                if (item.quantity > 1) {
+                  const quantityLabel = document.createElement("div");
+                  quantityLabel.classList.add("quantity-label");
+                  quantityLabel.innerText = `x${item.quantity}`;
+                  quantityLabel.style.pointerEvents = "none";
+                  slot.appendChild(quantityLabel);
+                }
 
-              if (item.quantity > 1) {
-                const quantityLabel = document.createElement("div");
-                quantityLabel.classList.add("quantity-label");
-                quantityLabel.innerText = `x${item.quantity}`;
-                quantityLabel.style.pointerEvents = "none";
-                slot.appendChild(quantityLabel);
-              }
+                slot.dataset.itemName = item.name;
+                slot.dataset.itemType = item.type;
 
-              slot.dataset.itemName = item.name;
-              slot.dataset.itemType = item.type;
+                if (item.type === "equipment") {
+                  slot.dataset.equipmentSlot = item.equipment_slot;
+                }
 
-              if (item.type === "equipment") {
-                slot.dataset.equipmentSlot = item.equipment_slot;
-              }
+                slot.draggable = true;
+                slot.setAttribute("draggable", "true");
 
-              slot.draggable = true;
-              slot.setAttribute("draggable", "true");
+                setupItemTooltip(slot, () => {
 
-              setupItemTooltip(slot, () => {
-
-                const itemName = slot.dataset.itemName;
-                if (!itemName || !cache.inventory) return null;
-                return cache.inventory.find((invItem: any) => invItem.name === itemName);
+                  const itemName = slot.dataset.itemName;
+                  if (!itemName || !cache.inventory) return null;
+                  return cache.inventory.find((invItem: any) => invItem.name === itemName);
+                });
               });
             } else {
               slot.innerHTML = `${item.name}${
@@ -2243,28 +2226,31 @@ socket.onmessage = async (event) => {
           const slotElement = document.querySelector(`.slot[data-slot="${slotName}"]`) as HTMLDivElement;
           if (!slotElement) continue;
 
-          const itemDetails = targetInventory.find((item: any) => item.name === itemName);
+          let itemDetails = targetInventory.find((item: any) => item.name === itemName);
 
-          if (itemDetails && itemDetails.icon) {
+          // If item doesn't have iconUrl but has icon, generate it
+          if (itemDetails && !itemDetails.iconUrl && itemDetails.icon) {
+            const assetServerUrl = targetInventory.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || "http://127.0.0.1:8000";
+            itemDetails = {
+              ...itemDetails,
+              iconUrl: `${assetServerUrl}/icon?name=${encodeURIComponent(itemDetails.icon)}`
+            };
+          }
+
+          if (itemDetails && itemDetails.iconUrl) {
             if (itemDetails.quality) {
               slotElement.classList.add(itemDetails.quality.toLowerCase());
               slotElement.classList.remove("empty");
             }
 
-            //@ts-expect-error - Imported via HTML
-            const inflatedData = pako.inflate(
-              new Uint8Array(itemDetails.icon.data),
-              { to: "string" }
-            );
-            const iconSrc = `data:image/png;base64,${inflatedData}`;
+            createCachedImage(itemDetails.iconUrl).then((iconImage) => {
+              iconImage.draggable = false;
+              iconImage.width = 32;
+              iconImage.height = 32;
+              slotElement.appendChild(iconImage);
 
-            const iconImage = createCachedImage(iconSrc);
-            iconImage.draggable = false;
-            iconImage.width = 32;
-            iconImage.height = 32;
-            slotElement.appendChild(iconImage);
-
-            setupItemTooltip(slotElement, () => itemDetails);
+              setupItemTooltip(slotElement, () => itemDetails);
+            });
           } else {
 
             slotElement.innerHTML = String(itemName);
@@ -2312,19 +2298,14 @@ socket.onmessage = async (event) => {
               const inventoryData = cache.inventory || [];
               const itemDetails = inventoryData.find((item: any) => item.name === itemName);
 
-              if (itemDetails && itemDetails.icon) {
+              if (itemDetails && itemDetails.iconUrl) {
 
                 if (itemDetails.quality) {
                   slotElement.classList.add(itemDetails.quality.toLowerCase());
                   slotElement.classList.remove("empty");
                 }
 
-                //@ts-expect-error - Imported via HTML
-                const inflatedData = pako.inflate(
-                  new Uint8Array(itemDetails.icon.data),
-                  { to: "string" }
-                );
-                const iconSrc = `data:image/png;base64,${inflatedData}`;
+                const iconSrc = itemDetails.iconUrl;
 
                 slotElement.ondblclick = () => {
 
