@@ -1,4 +1,6 @@
 type Nullable<T> = T | null;
+type DatabaseEngine = "mysql" | "postgres" | "sqlite";
+
 interface GameServer {
   id: string;
   host: string;
