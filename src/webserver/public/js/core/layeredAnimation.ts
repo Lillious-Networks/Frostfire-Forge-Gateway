@@ -264,10 +264,11 @@ async function createAnimationLayer(
 ): Promise<AnimationLayer> {
 
   const normalizedName = spriteSheet.name.toLowerCase();
+  const imageSource = (spriteSheet as any).imageData || spriteSheet.imageSource;
+  const cacheKey = `${normalizedName}:${imageSource}`;
 
-  if (!spriteSheetCache[normalizedName]) {
+  if (!spriteSheetCache[cacheKey]) {
 
-    const imageSource = (spriteSheet as any).imageData || spriteSheet.imageSource;
     const image = await preloadSpriteSheetImage(imageSource);
 
     const extractedFramesMap = await extractFramesFromSpriteSheet(image, spriteSheet);
@@ -283,14 +284,14 @@ async function createAnimationLayer(
 
     const clonedTemplate = JSON.parse(JSON.stringify(spriteSheet));
 
-    spriteSheetCache[normalizedName] = {
+    spriteSheetCache[cacheKey] = {
       imageElement: image,
       template: clonedTemplate,
       extractedFrames
     };
   }
 
-  const cached = spriteSheetCache[normalizedName];
+  const cached = spriteSheetCache[cacheKey];
 
   let actualAnimationName = animationName;
   const isArmorLayer = type.startsWith('armor_');
@@ -310,15 +311,17 @@ async function createAnimationLayer(
     new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
   );
 
-  return {
+  const layer: any = {
     type,
     spriteSheet,
     frames,
     currentFrame: 0,
     lastFrameTime: performance.now(),
     zIndex,
-    visible: true
+    visible: true,
+    _cacheKey: cacheKey
   };
+  return layer as AnimationLayer;
 }
 
 export function updateLayeredAnimation(
@@ -359,8 +362,7 @@ export async function changeLayeredAnimation(
     .map(async (layer) => {
       if (layer && layer.spriteSheet) {
 
-        const normalizedName = layer.spriteSheet.name.toLowerCase();
-        const cached = spriteSheetCache[normalizedName];
+        const cached = spriteSheetCache[(layer as any)._cacheKey];
 
         if (!cached) {
           return;

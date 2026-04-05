@@ -8,6 +8,7 @@ import { updateWeatherCanvas, weather } from './weather.ts';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
+import { updateLayeredAnimation } from "./layeredAnimation.js";
 const times = [] as number[];
 let lastDirection = "";
 let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0;
@@ -813,6 +814,12 @@ function animationLoop() {
     return;
   }
 
+  for (const npc of cache.npcs) {
+    if ((npc as any).layeredAnimation) {
+      updateLayeredAnimation((npc as any).layeredAnimation, deltaTime);
+    }
+  }
+
   if (cache.players instanceof Map) {
     animationManager.updateAllPlayers(cache.players, deltaTime);
     cache.players.forEach((player: any) => {
@@ -1001,8 +1008,8 @@ function animationLoop() {
         ctx.fillStyle = 'rgba(255, 80, 80, 0.15)';
         ctx.lineWidth = 1;
         ctx.setLineDash([4, 3]);
-        ctx.fillRect(npc.position.x, npc.position.y, 32, 48);
-        ctx.strokeRect(npc.position.x, npc.position.y, 32, 48);
+        ctx.fillRect(npc.position.x - 16, npc.position.y - 24, 32, 48);
+        ctx.strokeRect(npc.position.x - 16, npc.position.y - 24, 32, 48);
         ctx.restore();
       }
     }

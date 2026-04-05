@@ -35,11 +35,28 @@ declare interface TilesetData {
 
 declare interface NPC {
   id: string;
+  name?: string;
   position: { x: number; y: number };
   dialog: string;
   particles?: Particle[];
   hidden?: boolean;
   quest: Nullable<number>;
+  direction?: string;
+  sprite_type?: 'none' | 'static' | 'animated';
+  spriteLayers?: {
+    body: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    head: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    helmet: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    shoulderguards: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    neck: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    hands: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    chest: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    feet: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    legs: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    weapon: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+  } | null;
+  layeredAnimation?: LayeredAnimation | null;
+  staticImage?: HTMLImageElement | null;
   show: (context: CanvasRenderingContext2D) => void;
   updateParticle: (particle: Particle, npc: any, context: CanvasRenderingContext2D, deltaTime: number) => void;
   dialogue: (context: CanvasRenderingContext2D) => void;

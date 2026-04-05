@@ -570,6 +570,62 @@
             </label>
           </div>
           <div style="margin-bottom: 12px;">
+            <label>Sprite Type</label>
+            <select id="ne-npc-sprite-type" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; font-family: 'Comic Relief', Arial, sans-serif;">
+              <option value="none">None (default)</option>
+              <option value="static">Static Image</option>
+              <option value="animated">Animated Sprite</option>
+            </select>
+          </div>
+          <div id="ne-sprite-fields" style="margin-bottom: 12px;">
+            <div style="margin-bottom: 8px;">
+              <label>Body</label>
+              <input type="text" id="ne-npc-sprite-body" spellcheck="false" placeholder="e.g. npc_merchant_body" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+            </div>
+            <div id="ne-sprite-animated-fields">
+              <div style="margin-bottom: 8px;">
+                <label>Head</label>
+                <input type="text" id="ne-npc-sprite-head" spellcheck="false" placeholder="e.g. npc_merchant_head" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Helmet</label>
+                <input type="text" id="ne-npc-sprite-helmet" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Shoulderguards</label>
+                <input type="text" id="ne-npc-sprite-shoulderguards" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Neck</label>
+                <input type="text" id="ne-npc-sprite-neck" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Hands</label>
+                <input type="text" id="ne-npc-sprite-hands" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Chest</label>
+                <input type="text" id="ne-npc-sprite-chest" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Feet</label>
+                <input type="text" id="ne-npc-sprite-feet" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Legs</label>
+                <input type="text" id="ne-npc-sprite-legs" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+              <div style="margin-bottom: 8px;">
+                <label>Weapon</label>
+                <input type="text" id="ne-npc-sprite-weapon" spellcheck="false" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+              </div>
+            </div>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <label>Name</label>
+            <input type="text" id="ne-npc-name" spellcheck="false" maxlength="64" placeholder="" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+          </div>
+          <div style="margin-bottom: 12px;">
             <label>Dialog <span style="color: rgba(255,255,255,0.4); font-size: 11px;">(max 500 chars)</span></label>
             <textarea id="ne-npc-dialog" maxlength="500" rows="3" spellcheck="false" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif; resize: vertical;"></textarea>
           </div>

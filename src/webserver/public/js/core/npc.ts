@@ -1,14 +1,49 @@
 import { getLines } from "./chat.js";
-import { npcImage } from "./images.js";
+import { npcImage, createCachedImage } from "./images.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getIsLoaded } from "./socket.js";
+import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
+
+async function reinitNpcSprite(npc: any) {
+  npc.layeredAnimation = null;
+  npc.staticImage = null;
+  try {
+    const layers = npc.spriteLayers;
+    if (npc.sprite_type === 'animated' && layers) {
+      npc.layeredAnimation = await initializeLayeredAnimation(
+        null,
+        layers.body || null,
+        layers.head || null,
+        layers.helmet || null,
+        layers.shoulderguards || null,
+        layers.neck || null,
+        layers.hands || null,
+        layers.chest || null,
+        layers.feet || null,
+        layers.legs || null,
+        layers.weapon || null,
+        `idle_${npc.direction || 'down'}`
+      );
+    } else if (npc.sprite_type === 'static' && layers?.body?.imageUrl) {
+      npc.staticImage = await createCachedImage(layers.body.imageUrl);
+    }
+  } catch (e) {
+    console.error("Error loading NPC sprite:", e);
+  }
+}
 
 function createNPC(data: any) {
   const npc: NPC = {
     id: data.id,
+    name: data.name || "",
     dialog: data.dialog || "",
     hidden: data?.hidden ?? false,
+    direction: data.location?.direction || "down",
+    sprite_type: data.sprite_type || 'none',
+    spriteLayers: data.spriteLayers || null,
+    layeredAnimation: null,
+    staticImage: null,
     position: {
       x: data.location.x,
       y: data.location.y,
@@ -24,22 +59,64 @@ function createNPC(data: any) {
           context.textAlign = "center";
 
           const lines = getLines(context, this.dialog, 500).reverse();
-          let startingPosition = this.position.y;
+          let startingPosition = this.position.y - 12;
 
           for (let i = 0; i < lines.length; i++) {
             startingPosition -= 15;
-            context.fillText(lines[i], this.position.x + 16, startingPosition);
+            const offsetX = (this as any).layeredAnimation ? 0 : 16;
+          context.fillText(lines[i], this.position.x + offsetX, startingPosition);
           }
         }
       }
     },
     show: function (this: typeof npc, context: CanvasRenderingContext2D) {
-      if (!npcImage || !context) return;
-
+      if (!context || this.hidden) return;
       context.globalAlpha = 1;
 
-      if (!this.hidden) {
+      if (this.layeredAnimation) {
+        const layers = getVisibleLayersSorted(this.layeredAnimation);
+        context.save();
+        context.imageSmoothingEnabled = false;
+        for (const layer of layers) {
+          if (!layer.frames.length) continue;
+          const frame = layer.frames[layer.currentFrame];
+          if (!frame?.imageElement?.complete || !frame.imageElement.naturalWidth) continue;
+          const ox = frame.offset?.x || 0;
+          const oy = frame.offset?.y || 0;
+          context.drawImage(
+            frame.imageElement,
+            Math.round(this.position.x - frame.width / 2 + ox),
+            Math.round(this.position.y - frame.height / 2 + oy)
+          );
+        }
+        context.restore();
+      } else if ((this as any).staticImage?.complete && (this as any).staticImage.naturalWidth > 0) {
+        const img = (this as any).staticImage as HTMLImageElement;
+        context.drawImage(
+          img,
+          Math.round(this.position.x - img.width / 2),
+          Math.round(this.position.y - img.height / 2)
+        );
+      } else {
+        if (!npcImage) return;
         context.drawImage(npcImage, this.position.x, this.position.y, npcImage.width, npcImage.height);
+      }
+
+      if ((this as any).name?.trim()) {
+        context.save();
+        context.font = "14px 'Comic Relief'";
+        context.textAlign = "center";
+        context.shadowColor = "black";
+        context.shadowBlur = 2;
+        context.shadowOffsetX = 0;
+        context.strokeStyle = "black";
+        context.fillStyle = "gold";
+        const offsetX = (this as any).layeredAnimation ? 0 : 16;
+        const nameX = this.position.x + offsetX;
+        const nameY = this.position.y + 44;
+        context.strokeText((this as any).name, nameX, nameY);
+        context.fillText((this as any).name, nameX, nameY);
+        context.restore();
       }
     },
     updateParticle: async (particle: Particle, npc: any, context: CanvasRenderingContext2D, deltaTime: number) => {
@@ -185,6 +262,8 @@ function createNPC(data: any) {
 
   cache.npcs.push(npc);
 
+  reinitNpcSprite(npc);
+
   (async function () {
     try {
       getIsLoaded();
@@ -197,4 +276,4 @@ function createNPC(data: any) {
   }).call(npc);
 }
 
-export { createNPC };
+export { createNPC, reinitNpcSprite };

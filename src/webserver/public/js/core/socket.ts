@@ -53,7 +53,7 @@ import {
   updateAdminPlayerListWithData,
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
-import { createNPC } from "./npc.ts";
+import { createNPC, reinitNpcSprite } from "./npc.ts";
 import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
 import { createCachedImage } from "./images.ts";
@@ -665,10 +665,18 @@ socket.onmessage = async (event) => {
             y: updatedNpc.position.y,
           };
         }
+        if (updatedNpc.name !== undefined) liveNpc.name = updatedNpc.name || "";
         if (updatedNpc.dialog !== undefined) liveNpc.dialog = updatedNpc.dialog || "";
         if (updatedNpc.hidden !== undefined) liveNpc.hidden = updatedNpc.hidden;
         if (updatedNpc.particles !== undefined) liveNpc.particles = updatedNpc.particles || [];
         if (updatedNpc.quest !== undefined) liveNpc.quest = updatedNpc.quest || null;
+        // Update sprite and reinit if changed
+        if (updatedNpc.sprite_type !== undefined) {
+          liveNpc.sprite_type = updatedNpc.sprite_type;
+          liveNpc.spriteLayers = updatedNpc.spriteLayers || null;
+          liveNpc.direction = updatedNpc.position?.direction || liveNpc.direction || "down";
+          reinitNpcSprite(liveNpc);
+        }
         // Reset particle arrays so they re-emit with updated config
         liveNpc.particleArrays = {};
         liveNpc.lastEmitTime = {};
@@ -689,6 +697,7 @@ socket.onmessage = async (event) => {
         // New NPC — spawn it in the game world
         createNPC({
           id: updatedNpc.id,
+          name: updatedNpc.name || "",
           location: { x: updatedNpc.position?.x ?? 0, y: updatedNpc.position?.y ?? 0, direction: updatedNpc.position?.direction || "down" },
           dialog: updatedNpc.dialog || "",
           hidden: updatedNpc.hidden ?? false,
@@ -698,6 +707,8 @@ socket.onmessage = async (event) => {
           map: updatedNpc.map,
           position: updatedNpc.position,
           last_updated: updatedNpc.last_updated,
+          sprite_type: updatedNpc.sprite_type || 'none',
+          spriteLayers: updatedNpc.spriteLayers || null,
         });
       }
       // Notify editor

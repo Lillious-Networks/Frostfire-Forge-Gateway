@@ -84,7 +84,7 @@ class NpcEditor {
     for (const liveNpc of cache.npcs) {
       const nx = liveNpc.position?.x ?? 0;
       const ny = liveNpc.position?.y ?? 0;
-      if (wx >= nx && wx <= nx + NPC_HIT_W && wy >= ny && wy <= ny + NPC_HIT_H) {
+      if (wx >= nx - NPC_HIT_W / 2 && wx <= nx + NPC_HIT_W / 2 && wy >= ny - NPC_HIT_H / 2 && wy <= ny + NPC_HIT_H / 2) {
         const data = this.npcs.find((n) => n.id === liveNpc.id) ?? null;
         return { live: liveNpc, data };
       }
@@ -240,11 +240,37 @@ class NpcEditor {
 
     const formFields = [
       "ne-npc-direction",
+      "ne-npc-name",
       "ne-npc-dialog",
       "ne-npc-script",
       "ne-npc-quest",
       "ne-npc-hidden",
+      "ne-npc-sprite-type",
+      "ne-npc-sprite-body",
+      "ne-npc-sprite-head",
+      "ne-npc-sprite-helmet",
+      "ne-npc-sprite-shoulderguards",
+      "ne-npc-sprite-neck",
+      "ne-npc-sprite-hands",
+      "ne-npc-sprite-chest",
+      "ne-npc-sprite-feet",
+      "ne-npc-sprite-legs",
+      "ne-npc-sprite-weapon",
     ];
+
+    // Show/hide animated-only fields when sprite type changes
+    const spriteTypeEl = document.getElementById("ne-npc-sprite-type") as HTMLSelectElement;
+    const animatedFields = document.getElementById("ne-sprite-animated-fields");
+    const spriteFields = document.getElementById("ne-sprite-fields");
+    if (spriteTypeEl) {
+      const updateSpriteVisibility = () => {
+        const val = spriteTypeEl.value;
+        if (spriteFields) spriteFields.style.display = val === "none" ? "none" : "block";
+        if (animatedFields) animatedFields.style.display = val === "animated" ? "block" : "none";
+      };
+      spriteTypeEl.addEventListener("change", updateSpriteVisibility);
+      updateSpriteVisibility();
+    }
     for (const id of formFields) {
       const el = document.getElementById(id);
       if (el) {
@@ -473,6 +499,9 @@ class NpcEditor {
     const hiddenEl = document.getElementById("ne-npc-hidden") as HTMLInputElement;
     if (hiddenEl) hiddenEl.checked = Boolean(npc.hidden);
 
+    const nameEl = document.getElementById("ne-npc-name") as HTMLInputElement;
+    if (nameEl) nameEl.value = npc.name || "";
+
     const dialogEl = document.getElementById("ne-npc-dialog") as HTMLTextAreaElement;
     if (dialogEl) dialogEl.value = npc.dialog || "";
 
@@ -481,6 +510,29 @@ class NpcEditor {
 
     const questEl = document.getElementById("ne-npc-quest") as HTMLInputElement;
     if (questEl) questEl.value = npc.quest != null ? String(npc.quest) : "";
+
+    const spriteTypeEl = document.getElementById("ne-npc-sprite-type") as HTMLSelectElement;
+    if (spriteTypeEl) {
+      spriteTypeEl.value = npc.sprite_type || "none";
+      spriteTypeEl.dispatchEvent(new Event("change"));
+    }
+
+    const spriteLayerIds: [string, string][] = [
+      ["ne-npc-sprite-body", "sprite_body"],
+      ["ne-npc-sprite-head", "sprite_head"],
+      ["ne-npc-sprite-helmet", "sprite_helmet"],
+      ["ne-npc-sprite-shoulderguards", "sprite_shoulderguards"],
+      ["ne-npc-sprite-neck", "sprite_neck"],
+      ["ne-npc-sprite-hands", "sprite_hands"],
+      ["ne-npc-sprite-chest", "sprite_chest"],
+      ["ne-npc-sprite-feet", "sprite_feet"],
+      ["ne-npc-sprite-legs", "sprite_legs"],
+      ["ne-npc-sprite-weapon", "sprite_weapon"],
+    ];
+    for (const [elId, field] of spriteLayerIds) {
+      const el = document.getElementById(elId) as HTMLInputElement;
+      if (el) el.value = npc[field] || "";
+    }
 
     let npcParticleNames: string[] = [];
     if (typeof npc.particles === "string" && npc.particles) {
@@ -503,9 +555,12 @@ class NpcEditor {
 
     const directionEl = document.getElementById("ne-npc-direction") as HTMLSelectElement;
     const hiddenEl = document.getElementById("ne-npc-hidden") as HTMLInputElement;
+    const nameEl = document.getElementById("ne-npc-name") as HTMLInputElement;
     const dialogEl = document.getElementById("ne-npc-dialog") as HTMLTextAreaElement;
     const scriptEl = document.getElementById("ne-npc-script") as HTMLTextAreaElement;
     const questEl = document.getElementById("ne-npc-quest") as HTMLInputElement;
+    const spriteTypeEl = document.getElementById("ne-npc-sprite-type") as HTMLSelectElement;
+    const g = (id: string) => (document.getElementById(id) as HTMLInputElement)?.value?.trim() || null;
 
     return {
       id: this.selectedNpc.id,
@@ -516,10 +571,22 @@ class NpcEditor {
         direction: directionEl?.value || "down",
       },
       hidden: hiddenEl?.checked ?? false,
+      name: nameEl?.value?.trim() || null,
       dialog: dialogEl?.value || null,
       script: scriptEl?.value || null,
       quest: questEl?.value ? Number(questEl.value) : null,
       particles: this.getSelectedParticleNames(),
+      sprite_type: (spriteTypeEl?.value || "none") as 'none' | 'static' | 'animated',
+      sprite_body: g("ne-npc-sprite-body"),
+      sprite_head: g("ne-npc-sprite-head"),
+      sprite_helmet: g("ne-npc-sprite-helmet"),
+      sprite_shoulderguards: g("ne-npc-sprite-shoulderguards"),
+      sprite_neck: g("ne-npc-sprite-neck"),
+      sprite_hands: g("ne-npc-sprite-hands"),
+      sprite_chest: g("ne-npc-sprite-chest"),
+      sprite_feet: g("ne-npc-sprite-feet"),
+      sprite_legs: g("ne-npc-sprite-legs"),
+      sprite_weapon: g("ne-npc-sprite-weapon"),
     };
   }
 
@@ -554,6 +621,10 @@ class NpcEditor {
       script: null,
       particles: [],
       quest: null,
+      sprite_type: "none",
+      sprite_body: null, sprite_head: null, sprite_helmet: null,
+      sprite_shoulderguards: null, sprite_neck: null, sprite_hands: null,
+      sprite_chest: null, sprite_feet: null, sprite_legs: null, sprite_weapon: null,
     };
 
     this.hasPendingNew = true;
@@ -571,6 +642,8 @@ class NpcEditor {
       map: "",
       position: { x: spawnX, y: spawnY, direction: "down" },
       last_updated: null,
+      sprite_type: "none",
+      spriteLayers: null,
     });
 
     this.selectNpc(tempNpc);
