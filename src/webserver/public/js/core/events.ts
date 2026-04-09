@@ -426,6 +426,10 @@ document.addEventListener("click", (event) => {
   if ((window as any).tileEditor?.isActive) return;
   if ((event.target as HTMLElement)?.classList.contains("ui")) return;
 
+  // Don't untarget when clicking on entity editor UI
+  const entityEditorContainer = document.getElementById("entity-editor-container");
+  if (entityEditorContainer && entityEditorContainer.contains(event.target as Node)) return;
+
   const contextMenu = document.getElementById("context-menu");
   if (contextMenu && !contextMenu.contains(event.target as Node)) {
     contextMenu.remove();
@@ -438,9 +442,55 @@ document.addEventListener("click", (event) => {
   const worldX = screenX - window.innerWidth / 2 + getCameraX();
   const worldY = screenY - window.innerHeight / 2 + getCameraY();
 
-  const target = Array.from(cache.players).find(player => player.targeted);
-  if (target) {
-    target.targeted = false;
+  // Clear previous target
+  const prevPlayer = Array.from(cache.players).find(player => player.targeted);
+  if (prevPlayer) {
+    prevPlayer.targeted = false;
+  }
+  const prevNpc = cache.npcs.find((npc: any) => npc.id === cache.targetId);
+  if (prevNpc) {
+    cache.targetId = null;
+  }
+  const prevEntity = cache.entities.find((entity: any) => entity.id === cache.targetId);
+  if (prevEntity) {
+    cache.targetId = null;
+  }
+
+  // Check if clicked on NPC
+  const clickedNpc = cache.npcs.find((npc: any) => {
+    const npcX = npc.position.x;
+    const npcY = npc.position.y;
+    return (
+      worldX >= npcX - 16 && worldX <= npcX + 32 &&
+      worldY >= npcY - 24 && worldY <= npcY + 48
+    );
+  });
+
+  if (clickedNpc) {
+    cache.targetId = clickedNpc.id;
+    return;
+  }
+
+  // Check if clicked on entity
+  const clickedEntity = cache.entities.find((entity: any) => {
+    // Skip dead entities - check both health and combatState
+    if (entity.health <= 0 || entity.combatState === 'dead') return false;
+
+    const entityX = entity.position.x;
+    const entityY = entity.position.y;
+    return (
+      worldX >= entityX - 16 && worldX <= entityX + 32 &&
+      worldY >= entityY - 24 && worldY <= entityY + 48
+    );
+  });
+
+  if (clickedEntity) {
+    cache.targetId = clickedEntity.id;
+    // Also select in entity editor if it's open
+    if ((window as any).entityEditor) {
+      (window as any).entityEditor.selectEntity(clickedEntity);
+    }
+    return;
   }
 
   sendRequest({

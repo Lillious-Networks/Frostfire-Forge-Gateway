@@ -14,7 +14,7 @@ let lastDirection = "";
 let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
 let cameraInitialized: boolean = false;
-import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, loadedChunksText } from "./ui.js";
+import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText } from "./ui.js";
 
 const SERVER_TICK_RATE = 30;
 const SERVER_FRAME_TIME = 1000 / SERVER_TICK_RATE;
@@ -84,6 +84,29 @@ function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
   if (distance > threshold) {
     player.position.x = Math.round(player.position.x + dx * lerpFactor);
     player.position.y = Math.round(player.position.y + dy * lerpFactor);
+  }
+}
+
+/**
+ * Smoothly interpolate entity movement toward server position
+ */
+function updateEntityInterpolation(entity: any, deltaSeconds: number) {
+  if (!entity || !entity.serverPosition) return;
+
+  const dx = entity.serverPosition.x - entity.position.x;
+  const dy = entity.serverPosition.y - entity.position.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  const threshold = 2; // Stop interpolating when close enough
+  const lerpFactor = 0.15 * deltaSeconds * 60; // Smooth interpolation factor
+
+  if (distance > threshold) {
+    entity.position.x = Math.round(entity.position.x + dx * lerpFactor);
+    entity.position.y = Math.round(entity.position.y + dy * lerpFactor);
+  } else if (distance > 0) {
+    // Snap to server position when very close
+    entity.position.x = entity.serverPosition.x;
+    entity.position.y = entity.serverPosition.y;
   }
 }
 
@@ -800,7 +823,15 @@ function animationLoop() {
   const fpsTarget = parseFloat(fpsSlider.value);
   const frameDuration = 1000 / fpsTarget;
   const now = performance.now();
-  const deltaTime = (now - lastFrameTime) / 1000;
+  let deltaTime = (now - lastFrameTime) / 1000;
+
+  // Clamp deltaTime to prevent huge jumps when tab is hidden/visible
+  // If more than 100ms has passed, assume it was a pause and cap at 16ms (60fps)
+  const maxDeltaTime = 0.016; // 16ms for 60fps
+  if (deltaTime > maxDeltaTime) {
+    deltaTime = maxDeltaTime;
+  }
+
   if (now - lastFrameTime < frameDuration) {
     requestAnimationFrame(animationLoop);
     return;
@@ -818,6 +849,14 @@ function animationLoop() {
     if ((npc as any).layeredAnimation) {
       updateLayeredAnimation((npc as any).layeredAnimation, deltaTime);
     }
+  }
+
+  for (const entity of cache.entities) {
+    if ((entity as any).layeredAnimation) {
+      updateLayeredAnimation((entity as any).layeredAnimation, deltaTime);
+    }
+    // Smooth entity movement interpolation
+    updateEntityInterpolation(entity, deltaTime);
   }
 
   if (cache.players instanceof Map) {
@@ -1014,22 +1053,51 @@ function animationLoop() {
       }
     }
 
+    // Render entities (same pattern as NPCs but with combat features)
+    const visibleEntities = cache.entities.filter(entity =>
+      isInView(entity.position.x, entity.position.y)
+    );
+
+    for (const entity of visibleEntities) {
+      entity.show(ctx);
+      if (entity.particles) {
+        for (const particle of entity.particles) {
+          if (particle.visible !== false) {
+            entity.updateParticle(particle, entity, ctx, deltaTime);
+          }
+        }
+      }
+    }
+
     const now = performance.now();
     for (let i = cache.projectiles.length - 1; i >= 0; i--) {
       const projectile = cache.projectiles[i];
       const elapsed = now - projectile.startTime;
       const progress = Math.min(elapsed / projectile.duration, 1);
 
-      const targetPlayer = playersArray.find(p => p.id === projectile.targetPlayerId);
+      let endX: number;
+      let endY: number;
 
-      if (!targetPlayer) {
-
-        cache.projectiles.splice(i, 1);
-        continue;
+      if ((projectile as any).isEntityTarget) {
+        // Target is an entity
+        const targetEntity = cache.entities.find((e: any) => e.id === (projectile as any).targetEntityId);
+        if (!targetEntity) {
+          cache.projectiles.splice(i, 1);
+          continue;
+        }
+        endX = targetEntity.position.x;
+        endY = targetEntity.position.y;
+      } else {
+        // Target is a player
+        const targetPlayer = playersArray.find(p => p.id === projectile.targetPlayerId);
+        if (!targetPlayer) {
+          cache.projectiles.splice(i, 1);
+          continue;
+        }
+        endX = targetPlayer.position.x;
+        endY = targetPlayer.position.y;
       }
 
-      const endX = targetPlayer.position.x;
-      const endY = targetPlayer.position.y;
       projectile.currentX = projectile.startX + (endX - projectile.startX) * progress;
       projectile.currentY = projectile.startY + (endY - projectile.startY) * progress;
 
@@ -1241,6 +1309,78 @@ function animationLoop() {
             }
           }
         }
+      }
+    }
+  }
+
+  if (astarDebugCheckbox && astarDebugCheckbox.checked) {
+    // Request data every frame to keep it fresh
+    sendRequest({ type: "GET_DEBUG_ASTAR", data: null });
+
+    const debugData = (window as any).astarDebugData;
+
+    if (!debugData || !debugData.nodes) {
+      // No data yet
+    } else {
+      const nodes = debugData.nodes || [];
+
+      if (nodes.length === 0) {
+        // No nodes to display
+      } else {
+      // Find min/max f-score for color gradient
+      let minF = Infinity;
+      let maxF = -Infinity;
+
+      for (const node of nodes) {
+        if (node.f < minF) minF = node.f;
+        if (node.f > maxF) maxF = node.f;
+      }
+
+      // Draw tiles based on f-score
+      for (const node of nodes) {
+        // Skip if node is not in view
+        if (!isInView(node.x * 32, node.y * 32)) continue;
+
+        // Calculate color based on f-score (blue = low/good, red = high/bad)
+        const fNormalized = maxF === minF ? 0.5 : (node.f - minF) / (maxF - minF);
+        const r = Math.round(fNormalized * 255);
+        const g = 0;
+        const b = Math.round((1 - fNormalized) * 255);
+
+        // Draw tile with gradient color
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.5)`;
+        ctx.fillRect(node.x * 32, node.y * 32, 32, 32);
+
+        // Draw border
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.8)`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(node.x * 32, node.y * 32, 32, 32);
+
+        // Optional: Draw f-score text for small number of nodes
+        if (nodes.length < 50) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+          ctx.font = '10px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const text = `${Math.round(node.f)}`;
+          ctx.fillText(text, node.x * 32 + 16, node.y * 32 + 16);
+        }
+      }
+
+      // Draw legend
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.fillRect(10, 10, 200, 60);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(10, 10, 200, 60);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('A* Debug:', 20, 20);
+      ctx.fillText(`Nodes: ${nodes.length}`, 20, 35);
+      ctx.fillText(`Blue=Low, Red=High`, 20, 50);
       }
     }
   }

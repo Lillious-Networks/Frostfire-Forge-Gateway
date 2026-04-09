@@ -85,7 +85,7 @@
           <input type="checkbox" id="show-grid-checkbox" class="ui">
         </div>
       </div>
-      <!-- 
+      <!--
       <div id="map-container" class="ui">
         <img id="map-border" src="../img/ui/ui-map.png" fetchpriority="high" class="ui"></img>
         <div id="map" class="ui"></div>
@@ -524,6 +524,37 @@
       </div>
     </div>
     <!-- NPC Editor -->
+    <div id="entity-editor-container" class="ui" style="display: none;"></div>
+
+    <!-- New Entity Modal -->
+    <div id="ee-new-entity-modal" class="ui ee-modal">
+      <div class="ee-modal-content" style="background: rgba(30, 30, 40, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 10px; padding: 30px; width: 350px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);">
+        <div style="margin-bottom: 20px;">
+          <h2 style="color: #FFF1DA; font-size: 1.2em; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 0.5px;">Create New Entity</h2>
+          <label style="display: block; margin-bottom: 8px; font-size: 12px; color: rgba(255, 255, 255, 0.7); text-transform: uppercase; letter-spacing: 0.5px;">Entity Name</label>
+          <input type="text" id="ee-new-entity-name-input" placeholder="Enter entity name" style="width: 100%; padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: white; box-sizing: border-box; font-family: 'Comic Relief', Arial, sans-serif;">
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" id="ee-modal-confirm" style="flex: 1; padding: 10px; background: rgba(46, 204, 113, 0.2); border: 1px solid rgba(46, 204, 113, 0.4); color: #46cc71; border-radius: 6px; cursor: pointer; font-weight: 600; font-family: 'Comic Relief', Arial, sans-serif; transition: all 0.2s;">Create</button>
+          <button type="button" id="ee-modal-cancel" style="flex: 1; padding: 10px; background: rgba(255, 70, 70, 0.2); border: 1px solid rgba(255, 70, 70, 0.4); color: #ff6666; border-radius: 6px; cursor: pointer; font-weight: 600; font-family: 'Comic Relief', Arial, sans-serif; transition: all 0.2s;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Entity Modal -->
+    <div id="ee-delete-entity-modal" class="ui ee-modal">
+      <div class="ee-modal-content" style="background: rgba(30, 30, 40, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(255, 70, 70, 0.3); border-radius: 10px; padding: 30px; width: 350px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);">
+        <div style="margin-bottom: 20px;">
+          <h2 style="color: #FFF1DA; font-size: 1.2em; margin: 0 0 15px 0; text-transform: uppercase; letter-spacing: 0.5px;">Delete Entity</h2>
+          <p style="color: rgba(255, 255, 255, 0.8); margin: 0; font-size: 13px;">Are you sure you want to delete <span id="ee-delete-entity-name" style="color: #ff6666; font-weight: 600;"></span>?</p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" id="ee-delete-confirm" style="flex: 1; padding: 10px; background: rgba(255, 70, 70, 0.2); border: 1px solid rgba(255, 70, 70, 0.4); color: #ff6666; border-radius: 6px; cursor: pointer; font-weight: 600; font-family: 'Comic Relief', Arial, sans-serif; transition: all 0.2s;">Delete</button>
+          <button type="button" id="ee-delete-cancel" style="flex: 1; padding: 10px; background: rgba(46, 204, 113, 0.2); border: 1px solid rgba(46, 204, 113, 0.4); color: #46cc71; border-radius: 6px; cursor: pointer; font-weight: 600; font-family: 'Comic Relief', Arial, sans-serif; transition: all 0.2s;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div id="npc-editor-container" class="ui" style="display: none;">
       <!-- NPC List Panel -->
       <div id="npc-editor-list-panel" class="ui ne-floating-panel" style="position: fixed; left: 50px; top: 50px; width: 300px; z-index: 1000;">

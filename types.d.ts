@@ -63,6 +63,50 @@ declare interface NPC {
   dialogue: (context: CanvasRenderingContext2D) => void;
 }
 
+declare interface Entity {
+  id: string;
+  name?: string;
+  position: { x: number; y: number };
+  direction?: string;
+  particles?: Particle[];
+  particleArrays?: { [key: string]: Particle[] };
+  lastEmitTime?: number;
+  health: number;
+  max_health: number;
+  level: number;
+  aggro_type: 'friendly' | 'neutral' | 'aggressive';
+  sprite_type?: 'none' | 'static' | 'animated';
+  spriteLayers?: {
+    body: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    head: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    helmet: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    shoulderguards: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    neck: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    hands: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    chest: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    feet: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    legs: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+    weapon: { name: string; templateUrl: string | null; imageUrl: string | null } | null;
+  } | null;
+  damageNumbers: Array<{
+    value: number;
+    x: number;
+    y: number;
+    startTime: number;
+    isHealing: boolean;
+    isCrit: boolean;
+    isMiss?: boolean;
+  }>;
+  layeredAnimation?: LayeredAnimation | null;
+  staticImage?: HTMLImageElement | null;
+  target: Nullable<string>;
+  combatState: 'idle' | 'aggro' | 'combat' | 'dead';
+  show: (context: CanvasRenderingContext2D) => void;
+  updateParticle: (particle: Particle, entity: any, context: CanvasRenderingContext2D, deltaTime: number) => void;
+  takeDamage: (amount: number) => void;
+  updatePosition: (x: number, y: number) => void;
+}
+
 declare interface LayeredAnimation {
   layers: {
     mount: Nullable<AnimationLayer>;

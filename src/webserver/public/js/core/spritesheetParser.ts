@@ -75,9 +75,19 @@ export async function buildAnimationFrames(
     if (animation?.directions) {
       animConfig = animation.directions[direction];
       if (!animConfig) {
+        // Map diagonal directions to cardinal directions if diagonal doesn't exist
+        let mappedDirection = direction;
+        if (direction === 'upleft' || direction === 'upright') {
+          mappedDirection = 'up';
+        } else if (direction === 'downleft' || direction === 'downright') {
+          mappedDirection = 'down';
+        }
 
-        const firstDirection = Object.keys(animation.directions)[0];
-        animConfig = animation.directions[firstDirection];
+        animConfig = animation.directions[mappedDirection];
+        if (!animConfig) {
+          const firstDirection = Object.keys(animation.directions)[0];
+          animConfig = animation.directions[firstDirection];
+        }
       }
     } else {
       animConfig = animation;

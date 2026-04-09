@@ -64,6 +64,7 @@ const collisionTilesDebugCheckbox = document.getElementById("collision-tiles-deb
 const noPvpDebugCheckbox = document.getElementById("nopvp-debug-checkbox") as HTMLInputElement;
 const wireframeDebugCheckbox = document.getElementById("wireframe-debug-checkbox") as HTMLInputElement;
 const showGridCheckbox = document.getElementById("show-grid-checkbox") as HTMLInputElement;
+const astarDebugCheckbox = document.getElementById("astar-debug-checkbox") as HTMLInputElement;
 const loadedChunksText = document.getElementById("loaded-chunks") as HTMLDivElement;
 const hotbar = document.getElementById("hotbar") as HTMLDivElement;
 const hotbarGrid = hotbar.querySelector("#grid") as HTMLDivElement;
@@ -946,7 +947,7 @@ export {
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
     serverTime, ambience, weatherCanvas, weatherCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
-    collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, loadedChunksText, collectablesUI,
+    collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText, collectablesUI,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,
     saveInventoryConfiguration, loadInventoryConfiguration, setupInventorySlotHandlers, updateCurrencyDisplay, adminPanelContainer,
     updateAdminMapInput, updateAdminPlayerListWithData,

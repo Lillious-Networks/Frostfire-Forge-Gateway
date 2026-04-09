@@ -9,6 +9,64 @@ import { updateTime } from "./ambience.ts";
 import { setWeatherType } from "./renderer.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip } from "./tooltip.ts";
 const cache = Cache.getInstance();
+
+// Global particle registry for resolving particle names to definitions
+const particleRegistry: Map<string, any> = new Map();
+
+// Helper function to ensure particle has all required properties
+function normalizeParticle(particle: any): any {
+  return {
+    name: particle.name || 'unknown',
+    size: particle.size !== undefined ? particle.size : 5,
+    color: particle.color || '#ffffff',
+    velocity: particle.velocity || { x: 0, y: 0 },
+    lifetime: particle.lifetime !== undefined ? particle.lifetime : 1000,
+    scale: particle.scale !== undefined ? particle.scale : 1,
+    opacity: particle.opacity !== undefined ? particle.opacity : 1,
+    visible: particle.visible !== false,
+    gravity: particle.gravity || { x: 0, y: 0 },
+    localposition: particle.localposition || { x: 0, y: 0 },
+    interval: particle.interval !== undefined ? particle.interval : 10,
+    amount: particle.amount !== undefined ? particle.amount : 1,
+    staggertime: particle.staggertime !== undefined ? particle.staggertime : 0,
+    currentLife: particle.currentLife || null,
+    initialVelocity: particle.initialVelocity || null,
+    spread: particle.spread || { x: 0, y: 0 },
+    weather: particle.weather || 'none',
+    affected_by_weather: particle.affected_by_weather || false
+  };
+}
+
+// Helper function to resolve particle names to full definitions
+function resolveParticles(particles: any[]): any[] {
+  if (!Array.isArray(particles)) return [];
+
+  return particles.map((p: any) => {
+    // If it's already a full object with properties, normalize it
+    if (typeof p === 'object' && p !== null && p.name && p.size !== undefined) {
+      return normalizeParticle(p);
+    }
+    // If it's a string, look up the full definition
+    if (typeof p === 'string') {
+      const definition = particleRegistry.get(p);
+      if (definition) {
+        return normalizeParticle(definition);
+      }
+      // Create default particle for unknown name
+      return normalizeParticle({ name: p });
+    }
+    // If it's an object with a name property, look it up
+    if (typeof p === 'object' && p !== null && p.name && typeof p.name === 'string') {
+      const definition = particleRegistry.get(p.name);
+      if (definition) {
+        return normalizeParticle(definition);
+      }
+      return normalizeParticle(p);
+    }
+    // Return normalized particle
+    return normalizeParticle(p);
+  });
+}
 import { createPlayer } from "./player.ts";
 import { updateFriendsList } from "./friends.ts";
 import { createInvitationPopup } from "./invites.ts";
@@ -543,6 +601,9 @@ socket.onmessage = async (event) => {
   } else if (FIRST_BYTE === 0x02) {
     type = "MOVEXY";
     data = bytes;
+  } else if (FIRST_BYTE === 0x03) {
+    type = "MOVE_ENTITY_BINARY";
+    data = bytes;
   } else {
     const decoded = JSON.parse(packet.decode(event.data));
     data = decoded["data"];
@@ -563,17 +624,34 @@ socket.onmessage = async (event) => {
     }
     case "PROJECTILE": {
       const player_id = data?.id;
-      const target_player_id = data?.target_id;
+      const target_id = data?.target_id;
       const time_to_travel = data?.time;
       const spell = data?.spell;
       const icon = data?.icon;
+      const isEntityTarget = data?.entity || false;
 
-      if (!player_id || !target_player_id || !time_to_travel) break;
+      if (!player_id || !target_id || !time_to_travel) break;
 
+      // Source could be a player or entity
       const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
-      const targetPlayer = Array.from(cache.players).find(p => p.id === target_player_id);
+      const sourceEntity = cache.entities.find((e: any) => e.id === player_id);
+      const sourcePos = sourcePlayer?.position || sourceEntity?.position;
 
-      if (!sourcePlayer || !targetPlayer) break;
+      let targetPos: { x: number; y: number } | null;
+
+      if (isEntityTarget) {
+        // Target is an entity
+        const targetEntity = cache.entities.find((e: any) => e.id === target_id);
+        if (!targetEntity) break;
+        targetPos = targetEntity.position;
+      } else {
+        // Target is a player
+        const targetPlayer = Array.from(cache.players).find(p => p.id === target_id);
+        if (!targetPlayer) break;
+        targetPos = targetPlayer.position;
+      }
+
+      if (!sourcePos || !targetPos) break;
 
       if (icon && spell && !cache.projectileIcons.has(spell)) {
 
@@ -594,14 +672,17 @@ socket.onmessage = async (event) => {
       }
 
       cache.projectiles.push({
-        startX: sourcePlayer.position.x,
-        startY: sourcePlayer.position.y,
-        targetPlayerId: target_player_id,
-        currentX: sourcePlayer.position.x,
-        currentY: sourcePlayer.position.y,
+        startX: sourcePos.x,
+        startY: sourcePos.y,
+        targetPlayerId: target_id,
+        targetEntityId: isEntityTarget ? target_id : undefined,
+        targetPos: targetPos,
+        currentX: sourcePos.x,
+        currentY: sourcePos.y,
         startTime: performance.now(),
         duration: time_to_travel * 1000,
-        spell: spell || 'unknown'
+        spell: spell || 'unknown',
+        isEntityTarget: isEntityTarget
       });
 
       break;
@@ -633,6 +714,13 @@ socket.onmessage = async (event) => {
     case "TOGGLE_NPC_EDITOR": {
 
       import('./npceditor.js').then((module) => {
+        module.default.toggle();
+      });
+      break;
+    }
+    case "TOGGLE_ENTITY_EDITOR": {
+
+      import('./entityeditor.js').then((module) => {
         module.default.toggle();
       });
       break;
@@ -735,6 +823,14 @@ socket.onmessage = async (event) => {
     }
     case "PARTICLE_LIST": {
 
+      // Store particles in global registry for entity creation
+      const particleListData = Array.isArray(data) ? data : (data.data ?? []);
+      particleRegistry.clear();
+      particleListData.forEach((p: any) => {
+        const name = p.name || p;
+        particleRegistry.set(name, p);
+      });
+
       // Try to access globally set instance first
       if ((window as any).particleEditor && (window as any).particleEditor.addParticleListItem) {
         (window as any).particleEditor.addParticleListItem(data);
@@ -747,9 +843,63 @@ socket.onmessage = async (event) => {
         });
       }
       // Also feed particle names to NPC editor if open
-      const particleListData = Array.isArray(data) ? data : (data.data ?? []);
       if ((window as any).npcEditor && (window as any).npcEditor.setParticleOptions) {
         (window as any).npcEditor.setParticleOptions(particleListData);
+      }
+      // Feed particles to entity editor
+      if ((window as any).entityEditor && (window as any).entityEditor.setParticleOptions) {
+        (window as any).entityEditor.setParticleOptions(particleListData);
+      }
+      break;
+    }
+    case "ENTITY_LIST": {
+      const entityListData = Array.isArray(data) ? data : (data.data ?? []);
+      // Send to editor for UI only - don't update cached game entities
+      if ((window as any).entityEditor && (window as any).entityEditor.setEntities) {
+        (window as any).entityEditor.setEntities(entityListData);
+      }
+      break;
+    }
+    case "ENTITY_UPDATED": {
+      const updatedEntity = data.data ?? data;
+      const cachedEntities = cache.entities || [];
+      const existingIdx = cachedEntities.findIndex((e: any) => e.id === updatedEntity.id);
+      if (existingIdx >= 0) {
+        const liveEntity = cachedEntities[existingIdx];
+        if (updatedEntity.position) {
+          liveEntity.updatePosition(updatedEntity.position.x, updatedEntity.position.y);
+        }
+        if (updatedEntity.health !== undefined) {
+          liveEntity.health = updatedEntity.health;
+        }
+        if (updatedEntity.aggro_type !== undefined) {
+          liveEntity.aggro_type = updatedEntity.aggro_type;
+        }
+        if (updatedEntity.position?.direction !== undefined) {
+          liveEntity.direction = updatedEntity.position.direction;
+        }
+        // Reset animation when combat state changes to idle
+        if (updatedEntity.combatState === 'idle' && liveEntity.combatState !== 'idle') {
+          liveEntity.combatState = 'idle';
+          // Reinitialize sprite to reset animation
+          const { reinitEntitySprite } = await import("./entity.js");
+          reinitEntitySprite(liveEntity);
+        } else if (updatedEntity.combatState !== undefined) {
+          liveEntity.combatState = updatedEntity.combatState;
+        }
+      }
+      // Don't update entity editor - it only needs updates on explicit reload
+      break;
+    }
+    case "ENTITY_REMOVED": {
+      const removedId = data.data ?? data.id;
+      const cachedEntities = cache.entities || [];
+      const idx = cachedEntities.findIndex((e: any) => e.id === removedId);
+      if (idx >= 0) {
+        cachedEntities.splice(idx, 1);
+      }
+      if ((window as any).entityEditor && (window as any).entityEditor.setEntities) {
+        (window as any).entityEditor.setEntities(cache.entities);
       }
       break;
     }
@@ -1341,6 +1491,153 @@ socket.onmessage = async (event) => {
   sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
       break;
     }
+    case "DESPAWN_ENTITY": {
+      if (!data || !data.id) return;
+
+      const entityIndex = cache.entities.findIndex((e: any) => e.id === data.id);
+      if (entityIndex !== -1) {
+        cache.entities.splice(entityIndex, 1);
+      }
+
+      // Untarget the entity if it was targeted
+      if (cache.targetId === data.id) {
+        cache.targetId = null;
+      }
+
+      // Respawn is handled server-side via entityAI timer
+      // Client will receive SPAWN_ENTITY packet when entity respawns
+
+      break;
+    }
+    case "SPAWN_ENTITY": {
+      if (!data) return;
+
+      // Check if entity already exists in cache
+      const existingEntityIndex = cache.entities.findIndex((e: any) => e.id === data.id);
+      if (existingEntityIndex !== -1) {
+        // Update existing entity
+        const existingEntity = cache.entities[existingEntityIndex];
+        cache.entities[existingEntityIndex] = {
+          ...existingEntity,
+          ...data,
+          health: data.health || data.max_health,
+          combatState: 'idle',
+        };
+      } else {
+        // Create new entity
+        const { createEntity } = await import("./entity.js");
+        createEntity({
+          id: data.id,
+          name: data.name,
+          location: {
+            x: data.position?.x || 0,
+            y: data.position?.y || 0,
+            direction: data.position?.direction || 'down',
+          },
+          health: data.health || data.max_health,
+          max_health: data.max_health,
+          level: data.level,
+          aggro_type: data.aggro_type,
+          sprite_type: data.sprite_type,
+          spriteLayers: data.spriteLayers,
+          particles: data.particles,
+        });
+      }
+
+      break;
+    }
+    case "MOVE_ENTITY": {
+      const { id, position, direction, isMoving, isCasting, castingSpell, castingProgress } = data;
+      if (!id || !position) break;
+
+      const entity = cache.entities.find((e: any) => e.id === id);
+
+      if (entity) {
+        // Store server position for smooth interpolation in game loop
+        if (!entity.serverPosition) {
+          entity.serverPosition = { x: position.x, y: position.y };
+        } else {
+          entity.serverPosition.x = position.x;
+          entity.serverPosition.y = position.y;
+        }
+        entity.isMoving = isMoving;
+        entity.isCasting = isCasting || false;
+        entity.castingSpell = castingSpell || null;
+        entity.castingProgress = castingProgress || 0;
+
+        if (direction) {
+          entity.direction = direction;
+        }
+
+        // Update animation based on casting or movement state
+        if (entity.layeredAnimation) {
+          let animationName;
+          if (isCasting) {
+            // Use casting idle animation when casting (entities stop moving while casting)
+            animationName = `cast_idle_${direction || entity.direction || 'down'}`;
+          } else {
+            // Use regular walk/idle animation
+            animationName = isMoving
+              ? `walk_${direction || entity.direction || 'down'}`
+              : `idle_${direction || entity.direction || 'down'}`;
+          }
+
+          const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+          changeLayeredAnimation(entity.layeredAnimation, animationName);
+        }
+      }
+      break;
+    }
+    case "MOVE_ENTITY_BINARY": {
+      if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        if (bytes.length < 11) break;
+
+        const DIRECTION_MAP = [
+          "up", "down", "left", "right",
+          "upleft", "upright", "downleft", "downright"
+        ];
+
+        const view = new DataView(bytes.buffer, bytes.byteOffset, 11);
+        const entityId = view.getUint32(1, true);
+        const x = view.getInt16(5, true);
+        const y = view.getInt16(7, true);
+        const flags = bytes[9];
+        const direction = (flags >> 4) & 0x0F;
+        const isMoving = (flags >> 3) & 0x01;
+        const isCasting = (flags >> 2) & 0x01;
+        const castingProgress = bytes[10] / 100;
+
+        const entity = cache.entities.find((e: any) => e.id === entityId);
+        if (entity) {
+          if (!entity.serverPosition) {
+            entity.serverPosition = { x, y };
+          } else {
+            entity.serverPosition.x = x;
+            entity.serverPosition.y = y;
+          }
+          entity.isMoving = isMoving ? true : false;
+          entity.isCasting = isCasting ? true : false;
+          entity.castingProgress = castingProgress;
+          entity.direction = DIRECTION_MAP[direction] || "down";
+
+          if (entity.layeredAnimation) {
+            let animationName;
+            if (isCasting) {
+              animationName = `cast_idle_${entity.direction}`;
+            } else if (isMoving) {
+              animationName = `walk_${entity.direction}`;
+            } else {
+              animationName = `idle_${entity.direction}`;
+            }
+
+            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+            changeLayeredAnimation(entity.layeredAnimation, animationName);
+          }
+        }
+      }
+      break;
+    }
     case "MOVEXY": {
       if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -1380,20 +1677,58 @@ socket.onmessage = async (event) => {
       const player = Array.from(cache.players).find(
         (player) => player.id == playerId
       );
-      if (!player) return;
-
-      player.typing = false;
 
       const moveData = data.d || data._data;
 
-      player.serverPosition.x = Math.round(moveData.x);
-      player.serverPosition.y = Math.round(moveData.y);
-      player.position.x = Math.round(moveData.x);
-      player.position.y = Math.round(moveData.y);
-      player.lastServerUpdate = performance.now();
-      
-      if (playerId == cachedPlayerId) {
-        positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
+      if (player) {
+        // Handle player movement
+        player.typing = false;
+        player.serverPosition.x = Math.round(moveData.x);
+        player.serverPosition.y = Math.round(moveData.y);
+        player.position.x = Math.round(moveData.x);
+        player.position.y = Math.round(moveData.y);
+        player.lastServerUpdate = performance.now();
+
+        if (playerId == cachedPlayerId) {
+          positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
+        }
+      } else {
+        // Handle entity movement
+        const entity = cache.entities.find((e: any) => e.id === playerId);
+        if (entity) {
+          const oldX = entity.position?.x ?? 0;
+          const oldY = entity.position?.y ?? 0;
+          const newX = Math.round(moveData.x);
+          const newY = Math.round(moveData.y);
+          const isMoving = oldX !== newX || oldY !== newY;
+          const isCasting = data.s === 1; // For entities, stealth field indicates casting
+
+          if (!entity.serverPosition) {
+            entity.serverPosition = { x: newX, y: newY };
+          } else {
+            entity.serverPosition.x = newX;
+            entity.serverPosition.y = newY;
+          }
+          entity.position.x = newX;
+          entity.position.y = newY;
+          entity.direction = moveData.dr || "down";
+          entity.isMoving = isMoving;
+          entity.isCasting = isCasting;
+
+          // Update entity animation if it has layered animation
+          if (entity.layeredAnimation) {
+            let animationName;
+            if (isCasting) {
+              animationName = `cast_idle_${entity.direction}`;
+            } else if (isMoving) {
+              animationName = `walk_${entity.direction}`;
+            } else {
+              animationName = `idle_${entity.direction}`;
+            }
+            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+            changeLayeredAnimation(entity.layeredAnimation, animationName);
+          }
+        }
       }
       break;
     }
@@ -1501,6 +1836,76 @@ socket.onmessage = async (event) => {
       await isLoaded();
       if (!data) return;
       createNPC(data);
+      break;
+    }
+    case "CREATE_ENTITY": {
+      await isLoaded();
+      if (!data) return;
+      // Resolve particle names to full definitions
+      if (data.particles) {
+        data.particles = resolveParticles(data.particles);
+      }
+      const { createEntity } = await import('./entity.js');
+      createEntity(data);
+      break;
+    }
+    case "UPDATE_ENTITY": {
+      if (!data || !data.id) return;
+      const entity = cache.entities.find((e: any) => e.id === data.id);
+      if (entity) {
+        if (data.position) {
+          entity.updatePosition(data.position.x, data.position.y);
+        }
+        if (data.direction !== undefined) {
+          entity.direction = data.direction;
+          // Update animation to idle with new direction using proper animation handler
+          if (entity.layeredAnimation) {
+            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
+            changeLayeredAnimation(entity.layeredAnimation, `idle_${data.direction}`);
+          }
+        }
+        if (data.health !== undefined) {
+          entity.health = data.health;
+        }
+        if (data.combatState) {
+          entity.combatState = data.combatState;
+        }
+        if (data.target !== undefined) {
+          entity.target = data.target;
+        }
+      }
+      break;
+    }
+    case "ENTITY_DIED": {
+      if (!data || !data.id) return;
+      const entity = cache.entities.find((e: any) => e.id === data.id);
+      if (entity) {
+        entity.combatState = 'dead';
+        // Remove from cache after a delay for animation
+        setTimeout(() => {
+          const index = cache.entities.indexOf(entity);
+          if (index > -1) {
+            cache.entities.splice(index, 1);
+          }
+        }, 3000);
+      }
+      break;
+    }
+    case "ENTITY_DAMAGE": {
+      if (!data || !data.id) return;
+      const entity = cache.entities.find((e: any) => e.id === data.id);
+      if (entity) {
+        entity.takeDamage(data.damage || 0);
+      }
+      break;
+    }
+    case "UPDATE_ENTITY_HEALTH": {
+      if (!data || !data.id) return;
+      const entity = cache.entities.find((e: any) => e.id === data.id);
+      if (entity) {
+        entity.health = data.health;
+        entity.maxHealth = data.maxHealth;
+      }
       break;
     }
     case "LOAD_MAP":
@@ -2173,16 +2578,27 @@ socket.onmessage = async (event) => {
     case "SELECTPLAYER": {
       const data = JSON.parse(packet.decode(event.data))["data"];
 
-      if (!data || !data.id || !data.username) {
+      if (!data || !data.id) {
         const target = Array.from(cache.players).find((p) => p.targeted);
         if (target) target.targeted = false;
+        cache.targetId = null;
 
         break;
       }
 
-      cache.players.forEach((player) => {
-        player.targeted = player.id === data.id;
-      });
+      // Check if it's a player or entity
+      const isPlayer = data.username !== undefined;
+
+      if (isPlayer) {
+        // Handle player targeting
+        cache.players.forEach((player) => {
+          player.targeted = player.id === data.id;
+        });
+        cache.targetId = null;
+      } else {
+        // Handle entity targeting
+        cache.targetId = data.id;
+      }
 
       break;
     }
@@ -2241,10 +2657,19 @@ socket.onmessage = async (event) => {
       break;
     }
     case "UPDATESTATS": {
-      const { target, stats, isCrit, username, damage } = JSON.parse(packet.decode(event.data))["data"];
-      const t = Array.from(cache.players).find(
-        (player) => player.id === target
-      );
+      const { target, stats, isCrit, username, damage, entity } = JSON.parse(packet.decode(event.data))["data"];
+
+      let t;
+
+      if (entity) {
+        // Entity target
+        t = cache.entities.find((e: any) => e.id === target);
+      } else {
+        // Player target
+        t = Array.from(cache.players).find(
+          (player) => player.id === target
+        );
+      }
 
       const currentPlayer = Array.from(cache.players).find(
         (player) => player.id === cachedPlayerId
@@ -2252,9 +2677,10 @@ socket.onmessage = async (event) => {
 
       if (t) {
 
-        const oldHealth = t.stats.health;
+        const oldHealth = entity ? t.health : t.stats.health;
         const newHealth = stats.health;
         const healthDiff = newHealth - oldHealth;
+
 
         const isRevive = (oldHealth <= 0 && newHealth === stats.total_max_health) ||
                          (newHealth === stats.total_max_health && healthDiff > stats.total_max_health * 0.5);
@@ -2289,9 +2715,20 @@ socket.onmessage = async (event) => {
           });
         }
 
-        t.stats = stats;
-        t.max_health = stats.total_max_health;
-        t.max_stamina = stats.total_max_stamina;
+        if (entity) {
+          // For entities, update health directly
+          t.health = stats.health;
+          t.max_health = stats.total_max_health;
+          // Set combatState to 'dead' if health <= 0
+          if (t.health <= 0) {
+            t.combatState = 'dead';
+          }
+        } else {
+          // For players, merge stats object (preserve existing fields)
+          t.stats = { ...t.stats, ...stats };
+          t.max_health = stats.total_max_health;
+          t.max_stamina = stats.total_max_stamina;
+        }
 
         if (statUI.style.left === "10px" && statUI.getAttribute("data-id") === String(target)) {
           levelLabel!.innerText = `Level: ${stats.level}`;
@@ -2762,6 +3199,11 @@ socket.onmessage = async (event) => {
           pendingTilesetRequests.delete(data.tileset.name);
         }
       }
+      break;
+    }
+    case "DEBUG_ASTAR": {
+      // Store A* debug data for visualization
+      (window as any).astarDebugData = data;
       break;
     }
     default:

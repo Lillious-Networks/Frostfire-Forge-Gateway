@@ -28,7 +28,9 @@ const COOLDOWN_DURATION = 100;
 const KEY_COOLDOWN_DURATION = 500;
 
 export const keyHandlers = {
-  F2: () => toggleDebugContainer(),
+  F2: () => {
+    toggleDebugContainer();
+  },
   Escape: () => handleEscapeKey(),
   KeyB: () => {
     toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
@@ -198,7 +200,20 @@ function cast(hotbar_index: number) {
     if (isKeyOnCooldown(`Digit${hotbar_index + 1}`)) return;
     selectHotbarSlot(hotbar_index);
     putKeyOnCooldown(`Digit${hotbar_index + 1}`);
-    const target = Array.from(cache?.players).find(p => p?.targeted) || null;
+
+    // Check for targeted player
+    const targetPlayer = Array.from(cache?.players).find(p => p?.targeted) || null;
+
+    let target = null;
+    let isEntity = false;
+
+    if (targetPlayer) {
+      target = targetPlayer;
+    } else if (cache.targetId) {
+      // Entity target
+      target = { id: cache.targetId };
+      isEntity = true;
+    }
 
     const slot = hotbarSlots[hotbar_index];
     const spellName = slot?.dataset?.spellName;
@@ -208,7 +223,8 @@ function cast(hotbar_index: number) {
       type: "HOTBAR",
       data: {
         spell: spellName,
-        target
+        target,
+        entity: isEntity
       }
     });
 }
