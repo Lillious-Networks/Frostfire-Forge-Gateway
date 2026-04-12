@@ -7,11 +7,7 @@ services:
       dockerfile: src/docker/Dockerfile.prod
     container_name: frostfire-gateway-prod
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "9999:9999"
-      - "9443:9443"
+    network_mode: "host"
     env_file:
       - ../../.env.production
     environment:
@@ -28,9 +24,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - frostfire-network-prod
-
-networks:
-  frostfire-network-prod:
-    driver: bridge
