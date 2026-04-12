@@ -3084,7 +3084,7 @@ class TileEditor {
         }))
       : [];
 
-    let objectCount = graveyardsArray.length + warpsArray.length;
+    const objectCount = graveyardsArray.length + warpsArray.length;
 
     const savePayload: any = {
       type: 'SAVE_MAP',
