@@ -1,5 +1,5 @@
 # Production Dockerfile for Frostfire Forge Asset Server
-FROM oven/bun:canary AS base
+FROM oven/bun:canary-slim AS base
 WORKDIR /app
 
 # Install dependencies
