@@ -1,17 +1,13 @@
 services:
-  gateway:
+  frostfire-gateway-prod:
     build:
-      context: ../..
+      context: ../../
       dockerfile: src/docker/Dockerfile.prod
     container_name: frostfire-gateway-prod
-    restart: unless-stopped
+    restart: always
     network_mode: "host"
     env_file:
       - ../../.env.production
-    environment:
-      - NODE_ENV=production
-      - ENV_FILE=.env.production
-      - TZ=UTC
     volumes:
       - ../../src/certs:/app/certs:ro
       - ../../src/logs:/app/logs
