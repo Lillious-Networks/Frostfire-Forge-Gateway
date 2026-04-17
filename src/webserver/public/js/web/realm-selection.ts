@@ -108,6 +108,15 @@ function renderServers(): void {
             ? `${clientPing}ms`
             : (status === 'offline' ? 'offline' : '<span style="color: #22c55e;">measuring...</span>');
 
+        // Build status badges (whitelist first, then status)
+        const statusBadges = [];
+
+        if (server.whitelisted) {
+            statusBadges.push(`<div class="realm-status whitelist">whitelist</div>`);
+        }
+
+        statusBadges.push(`<div class="realm-status ${statusClass}">${statusText}</div>`);
+
         return `
             <div class="realm-card ${status === 'offline' ? 'disabled' : ''}" data-server-id="${server.id}" ${status === 'offline' ? 'style="pointer-events: none; opacity: 0.5;"' : ''}>
                 <div class="realm-card-info">
@@ -120,7 +129,9 @@ function renderServers(): void {
                     </div>
                 </div>
                 <div class="realm-right">
-                    <div class="realm-status ${statusClass}">${statusText}</div>
+                    <div class="realm-badges">
+                        ${statusBadges.join('')}
+                    </div>
                     <div class="realm-latency">${latencyDisplay}</div>
                 </div>
             </div>

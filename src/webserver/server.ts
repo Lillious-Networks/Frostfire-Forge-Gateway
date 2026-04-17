@@ -13,9 +13,6 @@ const settings = {
   default_map: process.env.DEFAULT_MAP || "overworld.json",
   "2fa": {
     enabled: process.env.TWO_FA_ENABLED === "true" || process.env.TWO_FA_ENABLED === "1"
-  },
-  whitelist: {
-    enabled: process.env.WHITELIST === "true" || process.env.WHITELIST === "1"
   }
 };
 import path from "path";
@@ -39,19 +36,6 @@ if (security.length > 0) {
   log.success(`Loaded ${security.length} security rules`);
 } else {
   log.warn("No security rules found");
-}
-
-// Load whitelist if enabled
-const whitelist = settings.whitelist.enabled && fs.existsSync(path.join(import.meta.dir, "../../whitelist.txt"))
-  ? fs.readFileSync(path.join(import.meta.dir, "../../whitelist.txt"), "utf8").split("\n").filter(line => line.trim() !== "" && !line.startsWith("#")).map(line => line.trim().toLowerCase())
-  : [];
-
-if (settings.whitelist.enabled) {
-  if (whitelist.length > 0) {
-    log.success(`Loaded ${whitelist.length} whitelisted usernames`);
-  } else {
-    log.warn("Whitelist enabled but no usernames found in whitelist.txt");
-  }
 }
 
 const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "../certs/webserver/cert.pem");
@@ -339,10 +323,6 @@ async function register(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Invalid username" }), { status: 400 });
     }
 
-    if (settings.whitelist.enabled && !whitelist.includes(username.toLowerCase())) {
-      return new Response(JSON.stringify({ message: "Username not whitelisted" }), { status: 403 });
-    }
-
     if (validatePasswordComplexity(password) === false) {
       return new Response(JSON.stringify({ message: "Password must be between 8 and 20 characters long, contain at least one uppercase letter, one lowercase letter, one number, and one special character." }), { status: 400 });
     }
@@ -397,10 +377,6 @@ async function login(req: Request, server: any) {
 
     if (!validateUsername(username)) {
       return new Response(JSON.stringify({ message: "Invalid username" }), { status: 400 });
-    }
-
-    if (settings.whitelist.enabled && !whitelist.includes(username.toLowerCase())) {
-      return new Response(JSON.stringify({ message: "Username not whitelisted" }), { status: 403 });
     }
 
     if (password.length < 8 || password.length > 20) {

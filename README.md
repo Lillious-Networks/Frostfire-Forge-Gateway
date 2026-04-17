@@ -44,7 +44,6 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
   - [Docker Deployment](#docker-deployment)
 - [Environment Variables](#-environment-variables)
 - [Setup Instructions](#-setup-instructions)
-- [User Whitelist Configuration](#️-user-whitelist-configuration)
 - [Monitoring Dashboard](#-monitoring-dashboard)
 - [Security](#-security)
 
@@ -202,7 +201,6 @@ SESSION_TIMEOUT=300000
 GUEST_MODE_ENABLED=true
 DEFAULT_MAP=overworld.json
 TWO_FA_ENABLED=false
-WHITELIST=false
 DOMAIN=http://localhost
 GAME_NAME=Frostfire Forge
 ```
@@ -311,60 +309,6 @@ Then update the following environment variables:
 WEBSRV_USESSL=true
 GATEWAY_USESSL=true
 ```
-
----
-
-## 🛡️ User Whitelist Configuration
-
-### Overview
-
-The whitelist feature restricts user registration and login to only approved usernames. When enabled, any attempt to register or login with a username not in the whitelist will be rejected with a 403 Forbidden response.
-
-### Setup Instructions
-
-**1. Enable the whitelist:**
-
-Set the environment variable in your `.env` file:
-```bash
-WHITELIST=true
-```
-
-**2. Create/update the whitelist file:**
-
-Create a `whitelist.txt` file in the project root directory:
-
-```
-admin
-moderator
-testuser
-approved_player
-```
-
-**3. File Format:**
-
-- One username per line
-- Usernames are case-insensitive (converted to lowercase on matching)
-- Lines starting with `#` are treated as comments
-- Empty lines are ignored
-- Whitespace at the beginning and end of each line is trimmed
-
-Example `whitelist.txt`:
-```
-# Game Admins
-admin
-moderator
-
-# Test Players
-testuser
-lillious
-
-# Developer Accounts
-dev_account
-```
-
-**4. Restart the server:**
-
-The whitelist is loaded at server startup. After updating `whitelist.txt`, restart the gateway for changes to take effect.
 
 ---
 

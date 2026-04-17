@@ -15,6 +15,7 @@ interface GameServer {
   cpuUsage?: number;
   ramUsage?: number;
   latency?: number;
+  whitelisted?: boolean;
 }
 
 interface ClientSession {
