@@ -18,7 +18,7 @@ let cameraInitialized: boolean = false;
 // Upper layer tile visibility cache (for flood-fill result)
 let lastPlayerTileX: number = -1;
 let lastPlayerTileY: number = -1;
-let layerConnectedCache = new Map<string, Set<string>>();
+const layerConnectedCache = new Map<string, Set<string>>();
 
 import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText } from "./ui.js";
 
