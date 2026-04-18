@@ -14,6 +14,12 @@ let lastDirection = "";
 let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
 let cameraInitialized: boolean = false;
+
+// Upper layer tile visibility cache (for flood-fill result)
+let lastPlayerTileX: number = -1;
+let lastPlayerTileY: number = -1;
+let layerConnectedCache = new Map<string, Set<string>>();
+
 import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText } from "./ui.js";
 
 const SERVER_TICK_RATE = 30;
@@ -711,59 +717,80 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
             continue;
           }
 
-          const connected = new Set<string>();
-          
+          let connected = new Set<string>();
+
           if (playerTileX !== undefined && playerTileY !== undefined) {
-            const visited = new Set<string>();
-            const queue: Array<{cx: number, cy: number, lx: number, ly: number}> = [];
-            
-            const scx = Math.floor(playerTileX / window.mapData.chunkSize);
-            const scy = Math.floor(playerTileY / window.mapData.chunkSize);
-            const sx = playerTileX - scx * window.mapData.chunkSize;
-            const sy = playerTileY - scy * window.mapData.chunkSize;
-            
-            visited.add(`${scx}-${scy}-${sx}-${sy}`);
-            queue.push({cx: scx, cy: scy, lx: sx, ly: sy});
-
-            while (queue.length > 0) {
-              const c = queue.shift()!;
-              const ck = `${c.cx}-${c.cy}`;
-              const cd = window.mapData.loadedChunks.get(ck);
-              if (!cd) continue;
-
-              const cl = cd.layers.find((l: any) => l.name === chunkLayer.name);
-              if (!cl) continue;
-
-              const tileIdx = cl.data[c.ly * cd.width + c.lx];
-              if (tileIdx === 0) continue;
-
-              connected.add(`${c.cx}-${c.cy}-${c.lx}-${c.ly}`);
-
-              const nbrs = [
-                {lx: c.lx - 1, ly: c.ly},
-                {lx: c.lx + 1, ly: c.ly},
-                {lx: c.lx, ly: c.ly - 1},
-                {lx: c.lx, ly: c.ly + 1}
-              ];
-
-              for (const n of nbrs) {
-                let nx = n.lx, ny = n.ly, ncx = c.cx, ncy = c.cy;
-
-                if (nx < 0) { ncx--; nx = window.mapData.chunkSize - 1; }
-                else if (nx >= window.mapData.chunkSize) { ncx++; nx = 0; }
-
-                if (ny < 0) { ncy--; ny = window.mapData.chunkSize - 1; }
-                else if (ny >= window.mapData.chunkSize) { ncy++; ny = 0; }
-
-                if (ncx < 0 || ncy < 0 || ncx >= window.mapData.chunksX || ncy >= window.mapData.chunksY) continue;
-
-                const nk = `${ncx}-${ncy}-${nx}-${ny}`;
-                if (visited.has(nk)) continue;
-
-                visited.add(nk);
-                queue.push({cx: ncx, cy: ncy, lx: nx, ly: ny});
-              }
+            // Check if player moved to a different tile
+            if (lastPlayerTileX !== playerTileX || lastPlayerTileY !== playerTileY) {
+              lastPlayerTileX = playerTileX;
+              lastPlayerTileY = playerTileY;
+              // Clear cache when player moves to new tile
+              layerConnectedCache.clear();
             }
+
+            // Try to get cached result for this layer
+            const cacheKey = chunkLayer.name;
+            let cachedConnected = layerConnectedCache.get(cacheKey);
+
+            if (!cachedConnected) {
+              // Compute flood-fill if not cached
+              cachedConnected = new Set<string>();
+              const visited = new Set<string>();
+              const queue: Array<{cx: number, cy: number, lx: number, ly: number}> = [];
+
+              const scx = Math.floor(playerTileX / window.mapData.chunkSize);
+              const scy = Math.floor(playerTileY / window.mapData.chunkSize);
+              const sx = playerTileX - scx * window.mapData.chunkSize;
+              const sy = playerTileY - scy * window.mapData.chunkSize;
+
+              visited.add(`${scx}-${scy}-${sx}-${sy}`);
+              queue.push({cx: scx, cy: scy, lx: sx, ly: sy});
+
+              while (queue.length > 0) {
+                const c = queue.shift()!;
+                const ck = `${c.cx}-${c.cy}`;
+                const cd = window.mapData.loadedChunks.get(ck);
+                if (!cd) continue;
+
+                const cl = cd.layers.find((l: any) => l.name === chunkLayer.name);
+                if (!cl) continue;
+
+                const tileIdx = cl.data[c.ly * cd.width + c.lx];
+                if (tileIdx === 0) continue;
+
+                cachedConnected.add(`${c.cx}-${c.cy}-${c.lx}-${c.ly}`);
+
+                const nbrs = [
+                  {lx: c.lx - 1, ly: c.ly},
+                  {lx: c.lx + 1, ly: c.ly},
+                  {lx: c.lx, ly: c.ly - 1},
+                  {lx: c.lx, ly: c.ly + 1}
+                ];
+
+                for (const n of nbrs) {
+                  let nx = n.lx, ny = n.ly, ncx = c.cx, ncy = c.cy;
+
+                  if (nx < 0) { ncx--; nx = window.mapData.chunkSize - 1; }
+                  else if (nx >= window.mapData.chunkSize) { ncx++; nx = 0; }
+
+                  if (ny < 0) { ncy--; ny = window.mapData.chunkSize - 1; }
+                  else if (ny >= window.mapData.chunkSize) { ncy++; ny = 0; }
+
+                  if (ncx < 0 || ncy < 0 || ncx >= window.mapData.chunksX || ncy >= window.mapData.chunksY) continue;
+
+                  const nk = `${ncx}-${ncy}-${nx}-${ny}`;
+                  if (visited.has(nk)) continue;
+
+                  visited.add(nk);
+                  queue.push({cx: ncx, cy: ncy, lx: nx, ly: ny});
+                }
+              }
+
+              // Cache the result
+              layerConnectedCache.set(cacheKey, cachedConnected);
+            }
+
+            connected = cachedConnected;
           }
 
           const time = performance.now() / 1000;
