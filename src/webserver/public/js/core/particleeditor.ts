@@ -105,6 +105,7 @@ class ParticleEditor {
       "pe-particle-spread-y",
       "pe-particle-visible",
       "pe-particle-weather",
+      "pe-particle-zindex",
     ];
 
     for (const id of inputIds) {
@@ -337,6 +338,7 @@ class ParticleEditor {
     if (inputs["pe-particle-spread-y"]) inputs["pe-particle-spread-y"].value = String(particle.spread.y || 0);
     if (inputs["pe-particle-visible"]) (inputs["pe-particle-visible"] as HTMLInputElement).checked = Boolean(particle.visible);
     if (inputs["pe-particle-weather"]) (inputs["pe-particle-weather"] as HTMLInputElement).checked = Boolean(particle.affected_by_weather);
+    if (inputs["pe-particle-zindex"]) inputs["pe-particle-zindex"].value = String((particle as any).zIndex || 0);
   }
 
   private getFormData(): Particle {
@@ -374,6 +376,7 @@ class ParticleEditor {
       },
       weather: "none",
       affected_by_weather: (inputs["pe-particle-weather"] as HTMLInputElement).checked,
+      zIndex: Number((inputs["pe-particle-zindex"] as HTMLInputElement).value) || 0,
       currentLife: null,
       initialVelocity: null,
     };
@@ -416,6 +419,7 @@ class ParticleEditor {
         spread: { x: 0, y: 0 },
         weather: "none",
         affected_by_weather: false,
+        zIndex: 0,
         currentLife: null,
         initialVelocity: null,
       } as Particle;
@@ -470,6 +474,7 @@ class ParticleEditor {
           gravity: `${particle.gravity.x},${particle.gravity.y}`,
           localposition: `${particle.localposition?.x || 0},${particle.localposition?.y || 0}`,
           spread: `${particle.spread.x},${particle.spread.y}`,
+          zIndex: particle.zIndex || 0,
         };
 
         sendRequest({

@@ -15,10 +15,12 @@ let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
 let cameraInitialized: boolean = false;
 
-// Upper layer tile visibility cache (for flood-fill result)
-let lastPlayerTileX: number = -1;
-let lastPlayerTileY: number = -1;
-const layerConnectedCache = new Map<string, Set<string>>();
+// Chunk load time tracking for fade-in effect
+const chunkLoadTimes = new Map<string, number>();
+const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
+
+// Tileset lookup cache for fast tile->tileset resolution
+let tilesetLookupCache: Map<number, {tileset: any, index: number}> = new Map();
 
 import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText } from "./ui.js";
 
@@ -253,6 +255,7 @@ async function loadVisibleChunks() {
   for (const chunkKey of chunksToUnload) {
     window.mapData.loadedChunks.delete(chunkKey);
     loadedChunksSet.delete(chunkKey);
+    chunkLoadTimes.delete(chunkKey); // Clean up load time tracking
   }
 
   const chunksToLoad: Array<{x: number, y: number, key: string}> = [];
@@ -652,6 +655,30 @@ function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: 
   }
 }
 
+// Build a fast tileset lookup map: tileIndex -> {tileset, tilesetIndex}
+function buildTilesetLookupMap(): Map<number, {tileset: any, index: number}> {
+  const map = new Map<number, {tileset: any, index: number}>();
+  if (!window.mapData?.tilesets) return map;
+
+  for (let i = 0; i < window.mapData.tilesets.length; i++) {
+    const ts = window.mapData.tilesets[i];
+    for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
+      map.set(tileIdx, { tileset: ts, index: i });
+    }
+  }
+  return map;
+}
+
+function invalidateTilesetLookupCache() {
+  tilesetLookupCache.clear();
+}
+
+function recordChunkLoadTime(chunkKey: string) {
+  if (!chunkLoadTimes.has(chunkKey)) {
+    chunkLoadTimes.set(chunkKey, performance.now() / 1000);
+  }
+}
+
 function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, playerTileY?: number) {
   if (!ctx || !window.mapData) return;
 
@@ -666,6 +693,12 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
   const tileEditor = (window as any).tileEditor;
   const isEditorActive = tileEditor?.isActive;
   const selectedLayer = tileEditor?.selectedLayer;
+
+  // Build tileset lookup map for this frame (cached if possible)
+  if (tilesetLookupCache.size === 0) {
+    tilesetLookupCache = buildTilesetLookupMap();
+  }
+  const images = window.mapData.images;
 
   if (isEditorActive && selectedLayer) {
     drawAllLayersWithOpacity(layer, visibleChunks, offsetX, offsetY, selectedLayer);
@@ -688,8 +721,19 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
         const screenX = chunkWorldX + offsetX;
         const screenY = chunkWorldY + offsetY;
 
+        // Calculate fade-in alpha based on chunk load time
+        let chunkAlpha = 1;
+        const loadTime = chunkLoadTimes.get(chunkKey);
+        if (loadTime !== undefined) {
+          const elapsed = (performance.now() / 1000) - loadTime;
+          const fadeProgress = Math.min(elapsed / CHUNK_FADE_DURATION, 1);
+          chunkAlpha = fadeProgress;
+        }
+
         try {
+          ctx.globalAlpha = chunkAlpha;
           ctx.drawImage(chunkCanvas, screenX, screenY);
+          ctx.globalAlpha = 1;
         } catch (error) {
           console.error("Error drawing chunk canvas:", error);
         }
@@ -717,103 +761,20 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
             continue;
           }
 
-          let connected = new Set<string>();
-
-          if (playerTileX !== undefined && playerTileY !== undefined) {
-            // Check if player moved to a different tile
-            if (lastPlayerTileX !== playerTileX || lastPlayerTileY !== playerTileY) {
-              lastPlayerTileX = playerTileX;
-              lastPlayerTileY = playerTileY;
-              // Clear cache when player moves to new tile
-              layerConnectedCache.clear();
-            }
-
-            // Try to get cached result for this layer
-            const cacheKey = chunkLayer.name;
-            let cachedConnected = layerConnectedCache.get(cacheKey);
-
-            if (!cachedConnected) {
-              // Compute flood-fill if not cached
-              cachedConnected = new Set<string>();
-              const visited = new Set<string>();
-              const queue: Array<{cx: number, cy: number, lx: number, ly: number}> = [];
-
-              const scx = Math.floor(playerTileX / window.mapData.chunkSize);
-              const scy = Math.floor(playerTileY / window.mapData.chunkSize);
-              const sx = playerTileX - scx * window.mapData.chunkSize;
-              const sy = playerTileY - scy * window.mapData.chunkSize;
-
-              visited.add(`${scx}-${scy}-${sx}-${sy}`);
-              queue.push({cx: scx, cy: scy, lx: sx, ly: sy});
-
-              while (queue.length > 0) {
-                const c = queue.shift()!;
-                const ck = `${c.cx}-${c.cy}`;
-                const cd = window.mapData.loadedChunks.get(ck);
-                if (!cd) continue;
-
-                const cl = cd.layers.find((l: any) => l.name === chunkLayer.name);
-                if (!cl) continue;
-
-                const tileIdx = cl.data[c.ly * cd.width + c.lx];
-                if (tileIdx === 0) continue;
-
-                cachedConnected.add(`${c.cx}-${c.cy}-${c.lx}-${c.ly}`);
-
-                const nbrs = [
-                  {lx: c.lx - 1, ly: c.ly},
-                  {lx: c.lx + 1, ly: c.ly},
-                  {lx: c.lx, ly: c.ly - 1},
-                  {lx: c.lx, ly: c.ly + 1}
-                ];
-
-                for (const n of nbrs) {
-                  let nx = n.lx, ny = n.ly, ncx = c.cx, ncy = c.cy;
-
-                  if (nx < 0) { ncx--; nx = window.mapData.chunkSize - 1; }
-                  else if (nx >= window.mapData.chunkSize) { ncx++; nx = 0; }
-
-                  if (ny < 0) { ncy--; ny = window.mapData.chunkSize - 1; }
-                  else if (ny >= window.mapData.chunkSize) { ncy++; ny = 0; }
-
-                  if (ncx < 0 || ncy < 0 || ncx >= window.mapData.chunksX || ncy >= window.mapData.chunksY) continue;
-
-                  const nk = `${ncx}-${ncy}-${nx}-${ny}`;
-                  if (visited.has(nk)) continue;
-
-                  visited.add(nk);
-                  queue.push({cx: ncx, cy: ncy, lx: nx, ly: ny});
-                }
-              }
-
-              // Cache the result
-              layerConnectedCache.set(cacheKey, cachedConnected);
-            }
-
-            connected = cachedConnected;
-          }
-
-          const time = performance.now() / 1000;
-          const fadeProgress = Math.min(time / 0.5, 1);
-          const fadeAlpha = 1 - fadeProgress * 0.40;
-
           for (let y = 0; y < chunkData.height; y++) {
             for (let x = 0; x < chunkData.width; x++) {
               const tileIndex = chunkLayer.data[y * chunkData.width + x];
               if (tileIndex === 0) continue;
 
-              if (connected.has(`${chunk.x}-${chunk.y}-${x}-${y}`)) {
-                ctx.globalAlpha = fadeAlpha;
-              } else {
-                ctx.globalAlpha = 1;
-              }
+              // No fade effect - render at full opacity
+              ctx.globalAlpha = 1;
 
-              const tileset = window.mapData.tilesets.find(
-                (t: any) => t.firstgid <= tileIndex && tileIndex < t.firstgid + t.tilecount
-              );
-              if (!tileset) continue;
+              // Use cached tileset lookup (O(1) instead of O(n))
+              const tilesetInfo = tilesetLookupCache.get(tileIndex);
+              if (!tilesetInfo) continue;
 
-              const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
+              const tileset = tilesetInfo.tileset;
+              const image = images[tilesetInfo.index];
               if (!image || !image.complete) continue;
 
               const localTileIndex = tileIndex - tileset.firstgid;
@@ -958,10 +919,6 @@ function animationLoop() {
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
   ctx.imageSmoothingEnabled = false;
 
-  if (!wireframeDebugCheckbox.checked) {
-    renderMap('lower');
-  }
-
   const viewportLeft = cameraX - window.innerWidth / 2;
   const viewportTop = cameraY - window.innerHeight / 2;
   const viewportRight = cameraX + window.innerWidth / 2;
@@ -996,6 +953,57 @@ function animationLoop() {
     isInView(npc.position.x, npc.position.y)
   );
 
+  const visibleEntities = cache.entities.filter(entity =>
+    isInView(entity.position.x, entity.position.y)
+  );
+
+  // Collect particles by zIndex before rendering
+  const particlesByLayer = new Map<number, Array<{
+    particle: any;
+    source: any;
+    sourceType: 'npc' | 'entity';
+  }>>();
+
+  for (const npc of visibleNpcs) {
+    if (npc.particles) {
+      for (const particle of npc.particles) {
+        if (particle.visible) {
+          const zIndex = particle.zIndex || 0;
+          if (!particlesByLayer.has(zIndex)) {
+            particlesByLayer.set(zIndex, []);
+          }
+          particlesByLayer.get(zIndex)!.push({
+            particle,
+            source: npc,
+            sourceType: 'npc'
+          });
+        }
+      }
+    }
+  }
+
+  for (const entity of visibleEntities) {
+    if (entity.particles) {
+      for (const particle of entity.particles) {
+        if (particle.visible !== false) {
+          const zIndex = particle.zIndex || 0;
+          if (!particlesByLayer.has(zIndex)) {
+            particlesByLayer.set(zIndex, []);
+          }
+          particlesByLayer.get(zIndex)!.push({
+            particle,
+            source: entity,
+            sourceType: 'entity'
+          });
+        }
+      }
+    }
+  }
+
+  if (!wireframeDebugCheckbox.checked) {
+    renderMap('lower');
+  }
+
   ctx.save();
 
   const offsetX = Math.round(window.innerWidth / 2 - smoothMapX);
@@ -1010,6 +1018,22 @@ function animationLoop() {
     ctx.save();
     renderGraveyardsAndWarps(ctx, offsetX, offsetY);
     ctx.restore();
+  }
+
+  // Render particles with zIndex < 3 (lower layers) before NPCs
+  if (!wireframeDebugCheckbox.checked) {
+    const lowerZIndices = Array.from(particlesByLayer.keys())
+      .filter(z => z < 3)
+      .sort((a, b) => a - b);
+
+    for (const zIdx of lowerZIndices) {
+      const particlesAtLayer = particlesByLayer.get(zIdx);
+      if (particlesAtLayer) {
+        for (const { particle, source } of particlesAtLayer) {
+          source.updateParticle(particle, source, ctx, deltaTime);
+        }
+      }
+    }
   }
 
   if (wireframeDebugCheckbox.checked) {
@@ -1059,13 +1083,6 @@ function animationLoop() {
     const npcEditor = (window as any).npcEditor;
     for (const npc of visibleNpcs) {
       npc.show(ctx);
-      if (npc.particles) {
-        for (const particle of npc.particles) {
-          if (particle.visible) {
-            npc.updateParticle(particle, npc, ctx, deltaTime);
-          }
-        }
-      }
       npc.dialogue(ctx);
       // Draw outline for hidden NPCs when NPC editor is active
       if (npcEditor?.isActive && npc.hidden) {
@@ -1081,19 +1098,8 @@ function animationLoop() {
     }
 
     // Render entities (same pattern as NPCs but with combat features)
-    const visibleEntities = cache.entities.filter(entity =>
-      isInView(entity.position.x, entity.position.y)
-    );
-
     for (const entity of visibleEntities) {
       entity.show(ctx);
-      if (entity.particles) {
-        for (const particle of entity.particles) {
-          if (particle.visible !== false) {
-            entity.updateParticle(particle, entity, ctx, deltaTime);
-          }
-        }
-      }
     }
 
     const now = performance.now();
@@ -1182,6 +1188,28 @@ function animationLoop() {
       playerTileY = Math.floor(currentPlayer.position.y / window.mapData.tileheight);
     }
     renderMap('upper', playerTileX, playerTileY);
+
+    // Render upper particles (zIndex >= 3) after upper map layers
+    ctx.save();
+    const upperOffsetX = Math.round(window.innerWidth / 2 - smoothMapX);
+    const upperOffsetY = Math.round(window.innerHeight / 2 - smoothMapY);
+    ctx.translate(upperOffsetX, upperOffsetY);
+
+    // Get all zIndex values >= 3 and sort them
+    const upperZIndices = Array.from(particlesByLayer.keys())
+      .filter(z => z >= 3)
+      .sort((a, b) => a - b);
+
+    for (const zIdx of upperZIndices) {
+      const particlesAtLayer = particlesByLayer.get(zIdx);
+      if (particlesAtLayer) {
+        for (const { particle, source } of particlesAtLayer) {
+          source.updateParticle(particle, source, ctx, deltaTime);
+        }
+      }
+    }
+
+    ctx.restore();
   } else {
 
     ctx.save();
@@ -1548,5 +1576,7 @@ export {
   getWeatherType,
   initializeCamera,
   setPendingRequest,
-  getPendingRequest
+  getPendingRequest,
+  invalidateTilesetLookupCache,
+  recordChunkLoadTime
 };

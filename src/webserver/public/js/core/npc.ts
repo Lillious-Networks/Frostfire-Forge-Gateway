@@ -5,6 +5,59 @@ const cache = Cache.getInstance();
 import { getIsLoaded } from "./socket.js";
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
 
+// Particle object pool to avoid GC pressure
+class ParticlePool {
+  private pool: any[] = [];
+  private poolSize = 2000;
+
+  constructor() {
+    // Pre-allocate particles
+    for (let i = 0; i < this.poolSize; i++) {
+      this.pool.push({
+        currentLife: 0,
+        lifetime: 0,
+        size: 0,
+        color: 'white',
+        opacity: 1,
+        visible: true,
+        velocity: { x: 0, y: 0 },
+        gravity: { x: 0, y: 0 },
+        localposition: { x: 0, y: 0 },
+        weather: 'none',
+        zIndex: 0
+      });
+    }
+  }
+
+  acquire(): any {
+    return this.pool.length > 0 ? this.pool.pop() : this.createNew();
+  }
+
+  release(particle: any): void {
+    if (this.pool.length < this.poolSize) {
+      this.pool.push(particle);
+    }
+  }
+
+  private createNew(): any {
+    return {
+      currentLife: 0,
+      lifetime: 0,
+      size: 0,
+      color: 'white',
+      opacity: 1,
+      visible: true,
+      velocity: { x: 0, y: 0 },
+      gravity: { x: 0, y: 0 },
+      localposition: { x: 0, y: 0 },
+      weather: 'none',
+      zIndex: 0
+    };
+  }
+}
+
+const particlePool = new ParticlePool();
+
 async function reinitNpcSprite(npc: any) {
   npc.layeredAnimation = null;
   npc.staticImage = null;
@@ -156,38 +209,66 @@ function createNPC(data: any) {
           windBias.y = Math.sin(windDirectionRad) * windSpeed * 0.5;
         }
 
-        const newParticle: Particle = {
-          ...particle,
-          localposition: {
-            x: Number(particle.localposition?.x || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.x),
-            y: Number(particle.localposition?.y || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.y)
-          },
-          velocity: {
-            x: Number(particle.velocity.x || 0) + windBias.x,
-            y: Number(particle.velocity.y || 0) + windBias.y
-          },
-          lifetime: baseLifetime + randomLifetimeExtension,
-          currentLife: baseLifetime + randomLifetimeExtension,
-          opacity: particle.opacity || 1,
-          visible: true,
-          size: particle.size || 5,
-          color: particle.color || 'white',
-          gravity: { ...particle.gravity },
-          weather: typeof particle.weather === 'object' ? { ...particle.weather } : 'none'
-        };
+        // Reuse pooled particle object
+        const newParticle = particlePool.acquire();
+        newParticle.size = particle.size || 5;
+        newParticle.color = particle.color || 'white';
+        newParticle.opacity = particle.opacity || 1;
+        newParticle.visible = true;
+        newParticle.lifetime = baseLifetime + randomLifetimeExtension;
+        newParticle.currentLife = baseLifetime + randomLifetimeExtension;
+        newParticle.zIndex = particle.zIndex || 0;
+        newParticle.gravity.x = particle.gravity.x;
+        newParticle.gravity.y = particle.gravity.y;
+        newParticle.weather = typeof particle.weather === 'object' ? { ...particle.weather } : 'none';
+        newParticle.localposition.x = Number(particle.localposition?.x || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.x);
+        newParticle.localposition.y = Number(particle.localposition?.y || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.y);
+        newParticle.velocity.x = Number(particle.velocity.x || 0) + windBias.x;
+        newParticle.velocity.y = Number(particle.velocity.y || 0) + windBias.y;
 
-        if (npc.particleArrays[particle.name || ''].length >= particle.amount) {
-          npc.particleArrays[particle.name || ''].shift();
+        const particleArray = npc.particleArrays[particle.name || ''];
+        if (particleArray.length >= particle.amount) {
+          const removed = particleArray.shift();
+          particlePool.release(removed);
         }
 
-        npc.particleArrays[particle.name || ''].push(newParticle);
+        particleArray.push(newParticle);
         npc.lastEmitTime[particle.name || ''] = currentTime;
       }
 
       const particles = npc.particleArrays[particle.name || ''];
+      if (particles.length === 0) {
+        context.globalAlpha = 1;
+        return;
+      }
+
+      const npcPosX = npc.position.x + 16;
+      const npcPosY = npc.position.y + 24;
+      const weatherData = typeof particle.weather === 'object' ? particle.weather : null;
+      const windSpeed = weatherData?.wind_speed || 0;
+      const windDirection = weatherData?.wind_direction || null;
+      let windForceX = 0, windForceY = 0;
+
+      if (windDirection !== 'none' && (windDirection === 'left' || windDirection === 'right')) {
+        const windDirectionRad = (windDirection === 'left' ? 180 : 0) * Math.PI / 180;
+        windForceX = Math.cos(windDirectionRad) * windSpeed * 0.01;
+        windForceY = Math.sin(windDirectionRad) * windSpeed * 0.01;
+      }
+
+      const maxVelX = particle.velocity.x + (windSpeed * 0.2);
+      const maxVelY = particle.velocity.y + (windSpeed * 0.2);
+      const gravX = particle.gravity.x;
+      const gravY = particle.gravity.y;
+      const fadeInDur = particle.lifetime * 0.4;
+      const fadeOutDur = particle.lifetime * 0.4;
+      const particleOpacity = particle.opacity;
+      const particleColor = particle.color || "white";
+
+      // Set blend mode once for all particles
+      context.globalCompositeOperation = 'lighter';
+
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-
         p.currentLife -= deltaTime * 1000;
 
         if (p.currentLife <= 0) {
@@ -195,66 +276,52 @@ function createNPC(data: any) {
           continue;
         }
 
-        if (!p.localposition) {
-          p.localposition = { x: 0, y: 0 };
+        // Update physics - apply forces and velocity
+        if (gravX !== 0 || gravY !== 0 || windForceX !== 0 || windForceY !== 0) {
+          p.velocity.x += gravX * deltaTime + windForceX;
+          p.velocity.y += gravY * deltaTime + windForceY;
+
+          p.velocity.x = Math.min(Math.max(p.velocity.x, -maxVelX), maxVelX);
+          p.velocity.y = Math.min(Math.max(p.velocity.y, -maxVelY), maxVelY);
         }
 
-        if (p.velocity && p.gravity) {
-          const windDirection = typeof p.weather === 'object' ? p.weather.wind_direction : null;
-          const windSpeed = typeof p.weather === 'object' ? p.weather.wind_speed || 0 : 0;
-          const windForce = {
-            x: 0,
-            y: 0
-          };
+        // Always apply velocity to position (moved outside the force check)
+        p.localposition.x += p.velocity.x * deltaTime;
+        p.localposition.y += p.velocity.y * deltaTime;
 
-          if (windDirection !== 'none' && (windDirection === 'left' || windDirection === 'right')) {
-            const windDirectionRad = (windDirection === 'left' ? 180 : 0) * Math.PI / 180;
-            windForce.x = Math.cos(windDirectionRad) * windSpeed * 0.01;
-            windForce.y = Math.sin(windDirectionRad) * windSpeed * 0.01;
-          }
-
-          p.velocity.x += p.gravity.x * deltaTime + windForce.x;
-          p.velocity.y += p.gravity.y * deltaTime + windForce.y;
-
-          const maxVelocity = {
-            x: particle.velocity.x + (windSpeed * 0.2),
-            y: particle.velocity.y + (windSpeed * 0.2)
-          };
-
-          p.velocity.x = Math.min(Math.max(p.velocity.x, -maxVelocity.x), maxVelocity.x);
-          p.velocity.y = Math.min(Math.max(p.velocity.y, -maxVelocity.y), maxVelocity.y);
-
-          p.localposition.x += p.velocity.x * deltaTime;
-          p.localposition.y += p.velocity.y * deltaTime;
-        }
-
-        const centerX = npc.position.x + 16 - (p.size / 2);
-        const centerY = npc.position.y + 24 - (p.size / 2);
-        const renderX = centerX + p.localposition.x;
-        const renderY = centerY + p.localposition.y;
-
-        const fadeInDuration = p.lifetime * 0.4;
-        const fadeOutDuration = p.lifetime * 0.4;
+        // Calculate alpha
+        const lifeElapsed = p.lifetime - p.currentLife;
         let alpha;
-
-        if (p.lifetime - p.currentLife < fadeInDuration) {
-
-          alpha = ((p.lifetime - p.currentLife) / fadeInDuration) * p.opacity;
-        } else if (p.currentLife < fadeOutDuration) {
-
-          alpha = (p.currentLife / fadeOutDuration) * p.opacity;
+        if (lifeElapsed < fadeInDur) {
+          alpha = (lifeElapsed / fadeInDur) * particleOpacity;
+        } else if (p.currentLife < fadeOutDur) {
+          alpha = (p.currentLife / fadeOutDur) * particleOpacity;
         } else {
-
-          alpha = p.opacity;
+          alpha = particleOpacity;
         }
 
         context.globalAlpha = alpha;
 
+        // Draw particle with gradient
+        const renderX = npcPosX - (p.size / 2) + p.localposition.x;
+        const renderY = npcPosY - (p.size / 2) + p.localposition.y;
+        const radius = p.size / 2;
+        const cx = renderX + radius;
+        const cy = renderY + radius;
+
+        const gradient = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
+
+        gradient.addColorStop(0, particleColor);
+        gradient.addColorStop(1, particleColor + "00");
+
         context.beginPath();
-        context.arc(renderX + p.size/2, renderY + p.size/2, p.size/2, 0, Math.PI * 2);
-        context.fillStyle = p.color || "white";
+        context.arc(cx, cy, radius, 0, Math.PI * 2);
+        context.fillStyle = gradient;
         context.fill();
       }
+
+      // Reset blend mode
+      context.globalCompositeOperation = 'source-over';
 
       context.globalAlpha = 1;
     }
@@ -276,4 +343,4 @@ function createNPC(data: any) {
   }).call(npc);
 }
 
-export { createNPC, reinitNpcSprite };
+export { createNPC, reinitNpcSprite, particlePool };

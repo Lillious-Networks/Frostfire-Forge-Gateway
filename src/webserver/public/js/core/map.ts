@@ -1,4 +1,5 @@
 import { canvas, ctx, progressBar, loadingScreen } from "../core/ui";
+import { invalidateTilesetLookupCache, recordChunkLoadTime } from "./renderer.js";
 import pako from "../libs/pako.js";
 
 declare global {
@@ -150,6 +151,9 @@ export default async function loadMap(metadata: any): Promise<boolean> {
         return getChunkUpperCanvas(chunkX, chunkY);
       },
     };
+
+    // Invalidate tileset lookup cache for the new map
+    invalidateTilesetLookupCache();
 
     const { initializeCamera } = await import('./renderer.js');
     initializeCamera(spawnX, spawnY);
@@ -430,6 +434,9 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
 
     window.mapData.loadedChunks.set(chunkKey, chunkData);
 
+    // Record chunk load time for fade-in effect
+    recordChunkLoadTime(chunkKey);
+
     return chunkData;
   } catch (error) {
     return null;
@@ -497,7 +504,19 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
   const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
 
   const PLAYER_Z_INDEX = 3;
-  const TILES_PER_FRAME = 10; // Render only 10 tiles per frame to avoid blocking
+  const TILES_PER_FRAME = 50; // Balanced: render 50 tiles per frame for speed without lag
+
+  // Build fast tileset lookup map: tileIndex -> {tileset, image}
+  const tilesetLookupMap = new Map<number, { tileset: any; image: HTMLImageElement }>();
+  for (let i = 0; i < window.mapData.tilesets.length; i++) {
+    const ts = window.mapData.tilesets[i];
+    const img = window.mapData.images[i];
+    if (img && img.complete && img.naturalWidth > 0) {
+      for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
+        tilesetLookupMap.set(tileIdx, { tileset: ts, image: img });
+      }
+    }
+  }
 
   for (let layerIdx = 0; layerIdx < sortedLayers.length; layerIdx++) {
     const layer = sortedLayers[layerIdx];
@@ -516,13 +535,12 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
         const tileIndex = layer.data[y * chunkData.width + x];
         if (tileIndex === 0) continue;
 
-        const tileset = window.mapData.tilesets.find(
-          (t: any) => t.firstgid <= tileIndex && tileIndex < t.firstgid + t.tilecount
-        );
-        if (!tileset) continue;
+        // Use fast O(1) tileset lookup
+        const tilesetInfo = tilesetLookupMap.get(tileIndex);
+        if (!tilesetInfo) continue;
 
-        const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
-        if (!image || !image.complete || image.naturalWidth === 0) continue;
+        const tileset = tilesetInfo.tileset;
+        const image = tilesetInfo.image;
 
         const localTileIndex = tileIndex - tileset.firstgid;
         const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);

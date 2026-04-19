@@ -33,7 +33,8 @@ function normalizeParticle(particle: any): any {
     initialVelocity: particle.initialVelocity || null,
     spread: particle.spread || { x: 0, y: 0 },
     weather: particle.weather || 'none',
-    affected_by_weather: particle.affected_by_weather || false
+    affected_by_weather: particle.affected_by_weather || false,
+    zIndex: particle.zIndex !== undefined ? particle.zIndex : 0
   };
 }
 
@@ -758,7 +759,7 @@ socket.onmessage = async (event) => {
         if (updatedNpc.name !== undefined) liveNpc.name = updatedNpc.name || "";
         if (updatedNpc.dialog !== undefined) liveNpc.dialog = updatedNpc.dialog || "";
         if (updatedNpc.hidden !== undefined) liveNpc.hidden = updatedNpc.hidden;
-        if (updatedNpc.particles !== undefined) liveNpc.particles = updatedNpc.particles || [];
+        if (updatedNpc.particles !== undefined) liveNpc.particles = resolveParticles(updatedNpc.particles || []);
         if (updatedNpc.quest !== undefined) liveNpc.quest = updatedNpc.quest || null;
         // Update sprite and reinit if changed
         if (updatedNpc.sprite_type !== undefined) {
@@ -791,7 +792,7 @@ socket.onmessage = async (event) => {
           location: { x: updatedNpc.position?.x ?? 0, y: updatedNpc.position?.y ?? 0, direction: updatedNpc.position?.direction || "down" },
           dialog: updatedNpc.dialog || "",
           hidden: updatedNpc.hidden ?? false,
-          particles: updatedNpc.particles || [],
+          particles: resolveParticles(updatedNpc.particles || []),
           quest: updatedNpc.quest || null,
           script: updatedNpc.script || "",
           map: updatedNpc.map,
@@ -1840,6 +1841,10 @@ socket.onmessage = async (event) => {
     case "CREATE_NPC": {
       await isLoaded();
       if (!data) return;
+      // Resolve particle names to full definitions with z-index
+      if (data.particles) {
+        data.particles = resolveParticles(data.particles);
+      }
       createNPC(data);
       break;
     }
