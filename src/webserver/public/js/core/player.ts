@@ -93,6 +93,7 @@ async function createPlayer(data: any) {
     party: data.party || null,
     mounted: data.mounted || false,
     moving: data.location.moving || false,
+    canmove: true,  // Can be set to false when being dragged by an admin
     currency: data.currency || { copper: 0, silver: 0, gold: 0 },
     chatType: "global" as "global" | "party" | "whisper",
     damageNumbers: [] as Array<{

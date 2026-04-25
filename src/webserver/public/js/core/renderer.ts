@@ -698,12 +698,10 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
   if (tilesetLookupCache.size === 0) {
     tilesetLookupCache = buildTilesetLookupMap();
   }
-  const images = window.mapData.images;
 
   if (isEditorActive && selectedLayer) {
     drawAllLayersWithOpacity(layer, visibleChunks, offsetX, offsetY, selectedLayer);
   } else {
-    const PLAYER_Z_INDEX = 3;
 
     for (const chunk of visibleChunks) {
       const chunkKey = `${chunk.x}-${chunk.y}`;
@@ -738,6 +736,10 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
           console.error("Error drawing chunk canvas:", error);
         }
       } else {
+        // Use pre-rendered upper canvas instead of redrawing tiles every frame
+        const chunkCanvas = window.mapData.getChunkUpperCanvas(chunk.x, chunk.y);
+        if (!chunkCanvas) continue;
+
         const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
         const chunkWorldX = chunk.x * chunkPixelSize;
         const chunkWorldY = chunk.y * chunkPixelSize;
@@ -745,61 +747,11 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
         const screenX = chunkWorldX + offsetX;
         const screenY = chunkWorldY + offsetY;
 
-        const sortedLayers = [...chunkData.layers].sort((a: any, b: any) => a.zIndex - b.zIndex);
-
-        for (const chunkLayer of sortedLayers) {
-          if (chunkLayer.zIndex < PLAYER_Z_INDEX) continue;
-
-          const layerNameLower = chunkLayer.name?.toLowerCase() || '';
-          if (layerNameLower.includes('collision') || layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp')) {
-            continue;
-          }
-
-          const tileEditor = (window as any).tileEditor;
-          const isLayerVisible = tileEditor?.isLayerVisible(chunkLayer.name) ?? true;
-          if (!isLayerVisible) {
-            continue;
-          }
-
-          for (let y = 0; y < chunkData.height; y++) {
-            for (let x = 0; x < chunkData.width; x++) {
-              const tileIndex = chunkLayer.data[y * chunkData.width + x];
-              if (tileIndex === 0) continue;
-
-              // No fade effect - render at full opacity
-              ctx.globalAlpha = 1;
-
-              // Use cached tileset lookup (O(1) instead of O(n))
-              const tilesetInfo = tilesetLookupCache.get(tileIndex);
-              if (!tilesetInfo) continue;
-
-              const tileset = tilesetInfo.tileset;
-              const image = images[tilesetInfo.index];
-              if (!image || !image.complete) continue;
-
-              const localTileIndex = tileIndex - tileset.firstgid;
-              const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-              const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
-              const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
-
-              const drawX = screenX + x * window.mapData.tilewidth;
-              const drawY = screenY + y * window.mapData.tileheight;
-
-              try {
-                ctx.drawImage(
-                  image,
-                  srcX, srcY,
-                  tileset.tilewidth, tileset.tileheight,
-                  drawX, drawY,
-                  window.mapData.tilewidth, window.mapData.tileheight
-                );
-              } catch (error) {
-                console.error("Error drawing tile:", error);
-              }
-            }
-          }
+        try {
+          ctx.drawImage(chunkCanvas, screenX, screenY);
+        } catch (error) {
+          console.error("Error drawing upper chunk canvas:", error);
         }
-        ctx.globalAlpha = 1;
       }
     }
   }
@@ -890,6 +842,7 @@ function animationLoop() {
       lastDirection = "";
       return;
     }
+
     const keys = pressedKeys;
     let dir = "";
     if (keys.has("KeyW") && keys.has("KeyA")) dir = "UPLEFT";

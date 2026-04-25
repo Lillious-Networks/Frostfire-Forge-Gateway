@@ -314,10 +314,20 @@ function createNPC(data: any) {
         gradient.addColorStop(0, particleColor);
         gradient.addColorStop(1, particleColor + "00");
 
+        // Add glow effect with shadow
+        context.shadowColor = particleColor;
+        context.shadowBlur = Math.max(4, radius * 0.8);
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+
         context.beginPath();
         context.arc(cx, cy, radius, 0, Math.PI * 2);
         context.fillStyle = gradient;
         context.fill();
+
+        // Reset shadow
+        context.shadowColor = "transparent";
+        context.shadowBlur = 0;
       }
 
       // Reset blend mode

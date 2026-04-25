@@ -3,7 +3,7 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { toggleUI, toggleDebugContainer, handleStatsUI, collectablesUI, hotbarSlots, adminPanelContainer } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
-import { setDirection, setPendingRequest } from "./renderer.js";
+import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { inventoryUI, spellBookUI, friendsListUI, pauseMenu, menuElements, guildContainer } from "./ui.js";
@@ -472,9 +472,169 @@ function setIsKeyPressed(value: boolean) {
     isKeyPressed = value;
 }
 
+// Drag player functionality
+let isDragging = false;
+let draggedPlayerId: number | null = null;
+let lastDragUpdateTime = 0;
+const DRAG_UPDATE_THROTTLE = 50; // ms between drag updates
+
+// Helper function to get canvas - lazy load to ensure it exists
+function getCanvas(): HTMLCanvasElement | null {
+    if (!canvas) {
+        canvas = document.getElementById("game") as HTMLCanvasElement;
+    }
+    return canvas;
+}
+
+let canvas: HTMLCanvasElement | null = null;
+
+// Helper function to find player at canvas coordinates (copied from events.ts context menu logic)
+function getPlayerAtCanvasPosition(clientX: number, clientY: number): any | null {
+    // Get canvas bounding rect to convert screen coords to canvas coords
+    const gameCanvas = getCanvas();
+    if (!gameCanvas) return null;
+
+    const rect = gameCanvas.getBoundingClientRect();
+    const screenX = clientX - rect.left;
+    const screenY = clientY - rect.top;
+
+    // Use same coordinate system as context menu
+    const worldX = screenX - window.innerWidth / 2 + getCameraX();
+    const worldY = screenY - window.innerHeight / 2 + getCameraY();
+
+    // Use same hitbox as context menu
+    const clickedPlayer = Array.from(cache.players || []).find((player: any) => {
+        const playerX = player.position.x;
+        const playerY = player.position.y;
+
+        return (
+            worldX >= playerX - 16 && worldX <= playerX + 32 &&
+            worldY >= playerY - 24 && worldY <= playerY + 48
+        );
+    });
+
+    if (clickedPlayer) {
+        return clickedPlayer;
+    }
+
+    return null;
+}
+
+// Setup drag event listeners
+function setupDragListeners() {
+    const gameCanvas = getCanvas();
+    if (!gameCanvas) {
+        setTimeout(setupDragListeners, 500);
+        return;
+    }
+
+    gameCanvas.addEventListener('mousedown', (event: MouseEvent) => {
+        // Check if admin is holding Ctrl or Shift and left-clicking
+        if ((event.ctrlKey || event.shiftKey) && event.button === 0) {
+            const player = getPlayerAtCanvasPosition(event.clientX, event.clientY);
+
+            if (player) {
+                const currentPlayer = Array.from(cache.players || []).find(p => p.id === cachedPlayerId);
+
+                // Only allow admins to drag OTHER players (not themselves)
+                if (currentPlayer && currentPlayer.isAdmin && player.id !== cachedPlayerId) {
+                    isDragging = true;
+                    draggedPlayerId = player.id;
+
+                    // Send DRAG_PLAYER_START packet
+                    sendRequest({
+                        type: "DRAG_PLAYER_START",
+                        data: { id: draggedPlayerId }
+                    });
+
+                    event.preventDefault();
+                }
+            }
+        }
+    });
+
+    document.addEventListener('mousemove', (event: MouseEvent) => {
+        if (isDragging && draggedPlayerId !== null) {
+            // Throttle drag updates to avoid overwhelming the server
+            const now = performance.now();
+            if (now - lastDragUpdateTime < DRAG_UPDATE_THROTTLE) {
+                return;
+            }
+            lastDragUpdateTime = now;
+
+            // Send position update using same coordinate system as context menu
+            const gameCanvas = getCanvas();
+            if (!gameCanvas) return;
+
+            const rect = gameCanvas.getBoundingClientRect();
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
+
+            // Use same coordinate system as context menu for consistency
+            const worldX = screenX - window.innerWidth / 2 + getCameraX();
+            const worldY = screenY - window.innerHeight / 2 + getCameraY();
+
+            sendRequest({
+                type: "DRAG_UPDATE",
+                data: {
+                    id: draggedPlayerId,
+                    x: Math.round(worldX),
+                    y: Math.round(worldY)
+                }
+            });
+        }
+    });
+
+    document.addEventListener('mouseup', (event: MouseEvent) => {
+        if (isDragging && draggedPlayerId !== null) {
+            // Send DRAG_PLAYER_STOP packet
+            sendRequest({
+                type: "DRAG_PLAYER_STOP",
+                data: { id: draggedPlayerId }
+            });
+
+            isDragging = false;
+            draggedPlayerId = null;
+        }
+    });
+
+    // Also listen for window mouseleave in case user leaves the window while dragging
+    window.addEventListener('mouseleave', (event: MouseEvent) => {
+        if (isDragging && draggedPlayerId !== null) {
+            sendRequest({
+                type: "DRAG_PLAYER_STOP",
+                data: { id: draggedPlayerId }
+            });
+
+            isDragging = false;
+            draggedPlayerId = null;
+        }
+    });
+}
+
+// Initialize drag listeners when page is ready
+function initializeDragListeners() {
+    console.log("Initializing drag listeners...");
+    setupDragListeners();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeDragListeners);
+} else {
+    // Give DOM a tick to ensure everything is loaded
+    requestAnimationFrame(initializeDragListeners);
+}
+
+// Also try to initialize after a short delay to ensure all modules are loaded
+setTimeout(initializeDragListeners, 100);
+
+// Make setupDragListeners globally available for debugging
+(window as any).setupDragListeners = setupDragListeners;
+(window as any).initializeDragListeners = initializeDragListeners;
+
 export {
     getIsKeyPressed, setIsKeyPressed, pressedKeys, movementKeys, handleKeyPress, stopMovement, setIsMoving, getIsMoving, getUserHasInteracted, setUserHasInteracted,
     getControllerConnected, setControllerConnected, getLastSentDirection, setLastSentDirection, getLastTypingPacket,
     setLastTypingPacket, cooldowns, COOLDOWN_DURATION, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys,
-    cast, mount
+    cast, mount, setupDragListeners
 };

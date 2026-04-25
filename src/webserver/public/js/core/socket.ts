@@ -488,6 +488,9 @@ async function handleLoadPlayersPacket(data: any) {
 
         if (!existingByUsername && !existingInPending) {
           await createPlayer(player);
+        } else if (existingByUsername) {
+          // Update stealth state for existing players (fixes admin unstealth visibility issue)
+          existingByUsername.isStealth = player.isStealth;
         }
       }
     }
@@ -1396,9 +1399,12 @@ socket.onmessage = async (event) => {
       if (!existingByUsername && !existingInPending) {
         await createPlayer(data);
       } else if (existingByUsername) {
-
-        cache.players.delete(existingByUsername);
-        await createPlayer(data);
+        // Update existing player instead of recreating to avoid duplicates
+        Object.assign(existingByUsername, data);
+        // Update sprite data if provided
+        if (data.spriteData) {
+          existingByUsername.spriteData = data.spriteData;
+        }
       }
 
   sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
@@ -2662,7 +2668,6 @@ socket.onmessage = async (event) => {
 
         if (player.isStealth && player.targeted) {
           player.targeted = false;
-
         }
       });
 
@@ -3221,6 +3226,50 @@ socket.onmessage = async (event) => {
     case "DEBUG_ASTAR": {
       // Store A* debug data for visualization
       (window as any).astarDebugData = data;
+      break;
+    }
+    case "DRAG_PLAYER_START": {
+      // Called when an admin starts dragging a player
+      // data = { id: playerId, adminId: adminId }
+      if (!data || !data.id) break;
+
+      const draggedPlayer = Array.from(cache.players).find((p) => p.id === data.id);
+      if (draggedPlayer) {
+        draggedPlayer.canmove = false;  // Prevent the dragged player from moving
+      }
+      break;
+    }
+    case "DRAG_PLAYER_STOP": {
+      // Called when an admin stops dragging a player
+      // data = { id: playerId, adminId: adminId }
+      if (!data || !data.id) break;
+
+      const draggedPlayer = Array.from(cache.players).find((p) => p.id === data.id);
+      if (draggedPlayer) {
+        draggedPlayer.canmove = true;  // Allow the dragged player to move again
+
+        // If the released player is the current player, send MOVEXY abort to clear stuck movement on server
+        if (draggedPlayer.id === cachedPlayerId) {
+          sendRequest({ type: "MOVEXY", data: "ABORT" });
+        }
+      }
+      break;
+    }
+    case "DRAG_UPDATE": {
+      // Server sends position updates for dragged players
+      // This handler is called when the client receives movement updates for dragged players
+      // data = { id: playerId, x: number, y: number }
+      if (!data || !data.id || data.x === undefined || data.y === undefined) break;
+
+      const draggedPlayer = Array.from(cache.players).find((p) => p.id === data.id);
+      if (draggedPlayer) {
+        // Update the dragged player's position
+        draggedPlayer.serverPosition.x = Math.round(data.x);
+        draggedPlayer.serverPosition.y = Math.round(data.y);
+        draggedPlayer.position.x = Math.round(data.x);
+        draggedPlayer.position.y = Math.round(data.y);
+        draggedPlayer.lastServerUpdate = performance.now();
+      }
       break;
     }
     default:

@@ -673,6 +673,9 @@ class ParticleEditor {
       }
     }
 
+    // Set additive blend mode to match in-game rendering
+    ctx.globalCompositeOperation = 'lighter';
+
     // Update and render particles
     for (let i = this.previewParticles.length - 1; i >= 0; i--) {
       const p = this.previewParticles[i];
@@ -716,12 +719,32 @@ class ParticleEditor {
       }
 
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = p.color;
+
+      // Draw particle with radial gradient to match in-game rendering exactly
+      const radius = p.size / 2;
+      const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+      gradient.addColorStop(0, p.color);
+      gradient.addColorStop(1, p.color + "00");
+
+      // Add glow effect with shadow
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = Math.max(4, radius * 0.8);
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+
+      ctx.fillStyle = gradient;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size / 2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = 1;
+
+      // Reset shadow
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
     }
+
+    // Reset blend mode and alpha
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
 
     // Draw guide lines
     ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
