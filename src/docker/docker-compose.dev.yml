@@ -2,7 +2,7 @@ services:
   mysql-dev:
     image: mysql:9.0
     container_name: frostfire-mysql-dev
-    restart: unless-stopped
+    restart: always
     command: --max-connections=500
     environment:
       # Not meant to be secret
@@ -24,7 +24,7 @@ services:
       context: ../..
       dockerfile: src/docker/Dockerfile.dev
     container_name: frostfire-gateway-dev
-    restart: unless-stopped
+    restart: always
     depends_on:
       mysql-dev:
         condition: service_healthy

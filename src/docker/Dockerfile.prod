@@ -1,5 +1,5 @@
-# Production Dockerfile for Frostfire Forge Asset Server
-FROM oven/bun:canary-slim AS base
+# Production Dockerfile for Frostfire Forge Gateway
+FROM oven/bun-slim AS base
 WORKDIR /app
 
 # Install dependencies
@@ -21,8 +21,5 @@ LABEL org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="Production gateway with SSL and realm-based server routing"
 
 EXPOSE 80 443 9999 9443
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:9999/status || exit 1
 
 CMD ["bun", "run", "production"]
