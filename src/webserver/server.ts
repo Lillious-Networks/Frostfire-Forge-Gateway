@@ -44,6 +44,7 @@ const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "../certs/w
 const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
 
 const routes = {
+  "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
   "/": login_html,
   "/registration": register_html,
   "/game": game_html,
@@ -146,7 +147,7 @@ Bun.serve({
     port: serverPort,
     reusePort: false,
     routes: {
-      "/swaggerui": routes["/swaggerui"],
+      "/status": routes["/status"],
       "/": routes["/"],
       "/registration": routes["/registration"],
       "/register": routes["/register"],

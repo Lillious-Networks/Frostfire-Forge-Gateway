@@ -22,4 +22,7 @@ LABEL org.opencontainers.image.version="${VERSION}" \
 
 EXPOSE 80 443 9999 9443
 
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+  CMD bun --eval "const gatewaySsl = process.env.GATEWAY_USESSL === 'true'; const gatewayPort = gatewaySsl ? (process.env.GATEWAY_PORTSSL || 9443) : (process.env.GATEWAY_PORT || 9999); const gatewayProto = gatewaySsl ? 'https' : 'http'; const websrvSsl = process.env.WEBSRV_USESSL === 'true'; const websrvPort = websrvSsl ? (process.env.WEBSRV_PORTSSL || 8082) : (process.env.WEBSRV_PORT || 80); const websrvProto = websrvSsl ? 'https' : 'http'; const gateway = await fetch(gatewayProto + '://localhost:' + gatewayPort + '/status').catch(() => ({ok: false})); const webserver = await fetch(websrvProto + '://localhost:' + websrvPort + '/status').catch(() => ({ok: false})); process.exit(gateway.ok && webserver.ok ? 0 : 1)"
+
 CMD ["bun", "run", "development"]
