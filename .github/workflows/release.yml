@@ -78,21 +78,23 @@ jobs:
               mysql:9.0 \
               --max-connections=500
 
-          # Wait for MySQL to be healthy
-          for i in {1..30}; do
-              if docker exec mysql-test mysqladmin ping -h localhost > /dev/null 2>&1; then
-              echo "MySQL is healthy!"
+          # Wait for MySQL to be fully ready (accept connections)
+          for i in {1..40}; do
+              if docker exec mysql-test mysql -h localhost -u root -pfrostfire_forge_development -e "SELECT 1" > /dev/null 2>&1; then
+              echo "MySQL is ready!"
               break
               fi
-              echo "Waiting for MySQL... ($i/30)"
+              echo "Waiting for MySQL... ($i/40)"
               sleep 1
           done
 
           # Start gateway container with MySQL dependency
+          # Override env vars to connect to mysql-test on internal port
           docker run -d --name gateway-test \
               --network gateway-test-net \
               --env-file=.env.development \
               -e DATABASE_HOST=mysql-test \
+              -e DATABASE_PORT=3306 \
               -p 9999:9999 \
               -p 80:80 \
               ghcr.io/${{ steps.dockerfile.outputs.image_tag }}:latest
