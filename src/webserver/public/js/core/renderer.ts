@@ -1,6 +1,8 @@
 import { getIsLoaded, cachedPlayerId, sendRequest } from "./socket.js";
 import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
+import { config } from "../web/global.js";
+const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 let weatherType = null as string | null;
 const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar } from "./ui.js";
@@ -293,7 +295,6 @@ let chunkLoadThrottle = 0;
 function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[], offsetX: number, offsetY: number, selectedLayerName: string) {
   if (!ctx || !window.mapData) return;
 
-  const PLAYER_Z_INDEX = 3;
   const selectedLayerLower = selectedLayerName.toLowerCase();
   const isCollisionSelected = selectedLayerLower.includes('collision');
   const isNoPvpSelected = selectedLayerLower.includes('nopvp') || selectedLayerLower.includes('no-pvp');

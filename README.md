@@ -203,6 +203,7 @@ DEFAULT_MAP=overworld.json
 TWO_FA_ENABLED=false
 DOMAIN=http://localhost
 GAME_NAME=Frostfire Forge
+PLAYER_Z_INDEX=4
 ```
 
 ---
