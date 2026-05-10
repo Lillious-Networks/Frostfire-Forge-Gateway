@@ -116,6 +116,8 @@ export async function buildAnimationFrames(
 
   const frames: AnimationFrame[] = [];
   const frameDurations = Array.isArray(animConfig.frameDurations) ? animConfig.frameDurations : null;
+  const frameOffsets = Array.isArray(animConfig.frameOffsets) ? animConfig.frameOffsets : null;
+  const defaultOffset = animConfig.offset || { x: 0, y: 0 };
 
   for (let i = 0; i < frameIndices.length; i++) {
     const frameIndex = frameIndices[i];
@@ -126,13 +128,14 @@ export async function buildAnimationFrames(
     }
 
     const delay = frameDurations ? (frameDurations[i] || animConfig.frameDuration || 150) : (animConfig.frameDuration || 150);
+    const offset = frameOffsets && frameOffsets[i] ? frameOffsets[i] : defaultOffset;
 
     frames.push({
       imageElement: sourceFrameImage,
       width: spriteSheet.frameWidth,
       height: spriteSheet.frameHeight,
       delay: delay,
-      offset: animConfig.offset || { x: 0, y: 0 }
+      offset: offset
     });
   }
   return frames;
@@ -190,6 +193,18 @@ export function validateSpriteSheetTemplate(template: any): boolean {
           return false;
         }
 
+        if (Array.isArray(direction.frameOffsets) && direction.frameOffsets.length > 0) {
+          if (direction.frameOffsets.length !== direction.frames.length) {
+            return false;
+          }
+          if (!direction.frameOffsets.every((offset: any) =>
+            typeof offset === 'object' && offset !== null &&
+            typeof offset.x === 'number' && typeof offset.y === 'number'
+          )) {
+            return false;
+          }
+        }
+
         if (typeof direction.loop !== 'boolean') {
           return false;
         }
@@ -211,6 +226,18 @@ export function validateSpriteSheetTemplate(template: any): boolean {
 
       if (!hasFrameDuration && !hasFrameDurations) {
         return false;
+      }
+
+      if (Array.isArray(anim.frameOffsets) && anim.frameOffsets.length > 0) {
+        if (anim.frameOffsets.length !== anim.frames.length) {
+          return false;
+        }
+        if (!anim.frameOffsets.every((offset: any) =>
+          typeof offset === 'object' && offset !== null &&
+          typeof offset.x === 'number' && typeof offset.y === 'number'
+        )) {
+          return false;
+        }
       }
 
       if (typeof anim.loop !== 'boolean') {

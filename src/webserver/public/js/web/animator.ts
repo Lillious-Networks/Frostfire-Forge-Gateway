@@ -1000,6 +1000,7 @@ class AnimatorTool {
         exportMetadata.animations[animName].directions[dirName] = {
           frames: dirData.frames.map(f => f.frameIndex),
           frameDurations: dirData.frames.map(f => f.duration),
+          frameOffsets: dirData.frames.map(f => ({ x: f.offsetX, y: f.offsetY })),
           loop: dirData.loop,
           offset: dirData.offset
         };
@@ -1099,14 +1100,17 @@ class AnimatorTool {
             defaultY = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, defaultY));
 
             this.metadata.animations[animName].directions[dirName] = {
-              frames: (dir.frames || []).map((frameIndex: number, index: number) => ({
-                frameIndex,
-                duration: dir.frameDurations ? (dir.frameDurations[index] || 150) : (dir.frameDuration || 150),
-                x: defaultX,
-                y: defaultY,
-                offsetX: 0,
-                offsetY: 0
-              })),
+              frames: (dir.frames || []).map((frameIndex: number, index: number) => {
+                const frameOffset = Array.isArray(dir.frameOffsets) && dir.frameOffsets[index] ? dir.frameOffsets[index] : { x: 0, y: 0 };
+                return {
+                  frameIndex,
+                  duration: dir.frameDurations ? (dir.frameDurations[index] || 150) : (dir.frameDuration || 150),
+                  x: defaultX,
+                  y: defaultY,
+                  offsetX: frameOffset.x || 0,
+                  offsetY: frameOffset.y || 0
+                };
+              }),
               loop: dir.loop || false,
               offset: { x: defaultX, y: defaultY }
             };
