@@ -115,19 +115,23 @@ export async function buildAnimationFrames(
   }
 
   const frames: AnimationFrame[] = [];
+  const frameDurations = Array.isArray(animConfig.frameDurations) ? animConfig.frameDurations : null;
 
-  for (const frameIndex of frameIndices) {
+  for (let i = 0; i < frameIndices.length; i++) {
+    const frameIndex = frameIndices[i];
     const sourceFrameImage = extractedFrames.get(frameIndex);
 
     if (!sourceFrameImage) {
       continue;
     }
 
+    const delay = frameDurations ? (frameDurations[i] || animConfig.frameDuration || 150) : (animConfig.frameDuration || 150);
+
     frames.push({
       imageElement: sourceFrameImage,
       width: spriteSheet.frameWidth,
       height: spriteSheet.frameHeight,
-      delay: animConfig.frameDuration,
+      delay: delay,
       offset: animConfig.offset || { x: 0, y: 0 }
     });
   }
@@ -179,7 +183,10 @@ export function validateSpriteSheetTemplate(template: any): boolean {
           return false;
         }
 
-        if (typeof direction.frameDuration !== 'number' || direction.frameDuration <= 0) {
+        const hasFrameDuration = typeof direction.frameDuration === 'number' && direction.frameDuration > 0;
+        const hasFrameDurations = Array.isArray(direction.frameDurations) && direction.frameDurations.length > 0 && direction.frameDurations.every((d: any) => typeof d === 'number' && d > 0);
+
+        if (!hasFrameDuration && !hasFrameDurations) {
           return false;
         }
 
@@ -199,7 +206,10 @@ export function validateSpriteSheetTemplate(template: any): boolean {
         return false;
       }
 
-      if (typeof anim.frameDuration !== 'number' || anim.frameDuration <= 0) {
+      const hasFrameDuration = typeof anim.frameDuration === 'number' && anim.frameDuration > 0;
+      const hasFrameDurations = Array.isArray(anim.frameDurations) && anim.frameDurations.length > 0 && anim.frameDurations.every((d: any) => typeof d === 'number' && d > 0);
+
+      if (!hasFrameDuration && !hasFrameDurations) {
         return false;
       }
 
