@@ -139,7 +139,9 @@ function createNPC(data: any) {
           context.drawImage(
             frame.imageElement,
             Math.round(this.position.x - frame.width / 2 + ox),
-            Math.round(this.position.y - frame.height / 2 + oy)
+            Math.round(this.position.y - frame.height / 2 + oy),
+            frame.width,
+            frame.height
           );
         }
         context.restore();
