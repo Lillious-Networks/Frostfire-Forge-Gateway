@@ -1,7 +1,9 @@
 import { canvas, ctx, progressBar, loadingScreen } from "../core/ui";
 import { invalidateTilesetLookupCache, recordChunkLoadTime } from "./renderer.js";
 import pako from "../libs/pako.js";
+import { config } from "../web/global.js";
 
+const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 declare global {
   interface Window {
     mapData?: any;
@@ -503,7 +505,6 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
 
   const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
 
-  const PLAYER_Z_INDEX = 3;
   const TILES_PER_FRAME = 50; // Balanced: render 50 tiles per frame for speed without lag
 
   // Build fast tileset lookup map: tileIndex -> {tileset, image}
@@ -526,7 +527,7 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
       continue;
     }
 
-    const ctx = layer.zIndex < PLAYER_Z_INDEX ? lowerCtx : upperCtx;
+    const ctx = layer.zIndex < Number(PLAYER_Z_INDEX) ? lowerCtx : upperCtx;
 
     let tileCount = 0;
 
