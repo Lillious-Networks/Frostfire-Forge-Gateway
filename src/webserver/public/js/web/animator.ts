@@ -296,6 +296,46 @@ class AnimatorTool {
     document.getElementById('clear-timeline-btn')?.addEventListener('click', () => this.clearTimeline());
     document.getElementById('reset-position-btn')?.addEventListener('click', () => this.resetAllFramePositions());
 
+    document.getElementById('timeline-frame-offset-x')?.addEventListener('change', (e) => {
+      if (this.selectedTimelineFrame === null) return;
+      const direction = this.getCurrentDirection();
+      if (!direction) return;
+      const frame = direction.frames[this.selectedTimelineFrame];
+      if (!frame) return;
+
+      this.pushUndoState('coords', {
+        x: frame.x,
+        y: frame.y,
+        offsetX: frame.offsetX,
+        offsetY: frame.offsetY
+      }, this.selectedTimelineFrame);
+
+      frame.offsetX = parseInt((e.target as HTMLInputElement).value) || 0;
+      frame.offsetX = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, frame.offsetX));
+      this.renderGridCanvas();
+      this.triggerAutosave();
+    });
+
+    document.getElementById('timeline-frame-offset-y')?.addEventListener('change', (e) => {
+      if (this.selectedTimelineFrame === null) return;
+      const direction = this.getCurrentDirection();
+      if (!direction) return;
+      const frame = direction.frames[this.selectedTimelineFrame];
+      if (!frame) return;
+
+      this.pushUndoState('coords', {
+        x: frame.x,
+        y: frame.y,
+        offsetX: frame.offsetX,
+        offsetY: frame.offsetY
+      }, this.selectedTimelineFrame);
+
+      frame.offsetY = parseInt((e.target as HTMLInputElement).value) || 0;
+      frame.offsetY = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, frame.offsetY));
+      this.renderGridCanvas();
+      this.triggerAutosave();
+    });
+
     const frameSeqContainer = document.getElementById('frame-sequence-list');
     if (frameSeqContainer) {
       frameSeqContainer.addEventListener('dragover', (e) => {
@@ -477,8 +517,8 @@ class AnimatorTool {
           newTotalX = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, newTotalX));
           newTotalY = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, newTotalY));
 
-          frame.x = Math.round(newTotalX - frame.offsetX);
-          frame.y = Math.round(newTotalY - frame.offsetY);
+          frame.offsetX = Math.round(newTotalX);
+          frame.offsetY = Math.round(newTotalY);
 
           this.renderGridCanvas();
         }
@@ -624,16 +664,16 @@ class AnimatorTool {
 
     switch (key) {
       case 'ArrowUp':
-        timelineFrame.y = Math.max(-this.maxCoordinateDistance, timelineFrame.y - 1);
+        timelineFrame.offsetY = Math.max(-this.maxCoordinateDistance, timelineFrame.offsetY - 1);
         break;
       case 'ArrowDown':
-        timelineFrame.y = Math.min(this.maxCoordinateDistance, timelineFrame.y + 1);
+        timelineFrame.offsetY = Math.min(this.maxCoordinateDistance, timelineFrame.offsetY + 1);
         break;
       case 'ArrowLeft':
-        timelineFrame.x = Math.max(-this.maxCoordinateDistance, timelineFrame.x - 1);
+        timelineFrame.offsetX = Math.max(-this.maxCoordinateDistance, timelineFrame.offsetX - 1);
         break;
       case 'ArrowRight':
-        timelineFrame.x = Math.min(this.maxCoordinateDistance, timelineFrame.x + 1);
+        timelineFrame.offsetX = Math.min(this.maxCoordinateDistance, timelineFrame.offsetX + 1);
         break;
     }
 
@@ -1000,9 +1040,8 @@ class AnimatorTool {
         exportMetadata.animations[animName].directions[dirName] = {
           frames: dirData.frames.map(f => f.frameIndex),
           frameDurations: dirData.frames.map(f => f.duration),
-          frameOffsets: dirData.frames.map(f => ({ x: f.offsetX, y: f.offsetY })),
-          loop: dirData.loop,
-          offset: dirData.offset
+          offsets: dirData.frames.map(f => ({ x: f.offsetX, y: f.offsetY })),
+          loop: dirData.loop
         };
       }
     }
@@ -1099,18 +1138,20 @@ class AnimatorTool {
             defaultX = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, defaultX));
             defaultY = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, defaultY));
 
+            const frames = (dir.frames || []).map((frameIndex: number, index: number) => {
+              const offset = (Array.isArray(dir.offsets) && dir.offsets[index]) ? dir.offsets[index] : { x: 0, y: 0 };
+              return {
+                frameIndex,
+                duration: dir.frameDurations ? (dir.frameDurations[index] || 150) : (dir.frameDuration || 150),
+                x: defaultX,
+                y: defaultY,
+                offsetX: parseInt(String(offset.x)) || 0,
+                offsetY: parseInt(String(offset.y)) || 0
+              };
+            });
+
             this.metadata.animations[animName].directions[dirName] = {
-              frames: (dir.frames || []).map((frameIndex: number, index: number) => {
-                const frameOffset = Array.isArray(dir.frameOffsets) && dir.frameOffsets[index] ? dir.frameOffsets[index] : { x: 0, y: 0 };
-                return {
-                  frameIndex,
-                  duration: dir.frameDurations ? (dir.frameDurations[index] || 150) : (dir.frameDuration || 150),
-                  x: defaultX,
-                  y: defaultY,
-                  offsetX: frameOffset.x || 0,
-                  offsetY: frameOffset.y || 0
-                };
-              }),
+              frames: frames,
               loop: dir.loop || false,
               offset: { x: defaultX, y: defaultY }
             };
@@ -1604,6 +1645,8 @@ class AnimatorTool {
     const direction = this.getCurrentDirection();
     if (!direction || direction.frames.length === 0) {
       container.innerHTML = '<div class="empty-message" style="color: #4b5563; font-size: 0.85em; text-align: left; width: 100%; padding: 0 12px; display: flex; align-items: center;">No frames in timeline. Drag frames here.</div>';
+      (document.getElementById('timeline-frame-offset-x') as HTMLInputElement).value = '0';
+      (document.getElementById('timeline-frame-offset-y') as HTMLInputElement).value = '0';
       return;
     }
 
@@ -1688,6 +1731,8 @@ class AnimatorTool {
       frameEl.addEventListener('click', () => {
         if (this.isPlaying) return;
         this.selectedTimelineFrame = index;
+        (document.getElementById('timeline-frame-offset-x') as HTMLInputElement).value = timelineFrame.offsetX.toString();
+        (document.getElementById('timeline-frame-offset-y') as HTMLInputElement).value = timelineFrame.offsetY.toString();
         this.renderTimelineSequence();
         this.renderTimelineScrubber();
         this.renderGridCanvas();
@@ -2287,8 +2332,13 @@ class AnimatorTool {
     const direction = this.getCurrentDirection();
     if (direction && direction.frames.length > 0) {
       this.selectedTimelineFrame = 0;
+      const frame = direction.frames[0];
+      (document.getElementById('timeline-frame-offset-x') as HTMLInputElement).value = frame.offsetX.toString();
+      (document.getElementById('timeline-frame-offset-y') as HTMLInputElement).value = frame.offsetY.toString();
     } else {
       this.selectedTimelineFrame = null;
+      (document.getElementById('timeline-frame-offset-x') as HTMLInputElement).value = '0';
+      (document.getElementById('timeline-frame-offset-y') as HTMLInputElement).value = '0';
     }
     this.renderTimelineSequence();
     this.renderTimelineScrubber();
@@ -2790,11 +2840,8 @@ class AnimatorTool {
           const scaledWidth = splitFrame.width * this.gridZoom;
           const scaledHeight = splitFrame.height * this.gridZoom;
 
-          const totalX = timelineFrame.x + timelineFrame.offsetX;
-          const totalY = timelineFrame.y + timelineFrame.offsetY;
-
-          const frameX = centerX + (totalX * this.gridZoom) - scaledWidth / 2;
-          const frameY = centerY + (totalY * this.gridZoom) - scaledHeight / 2;
+          const frameX = centerX + (timelineFrame.offsetX * this.gridZoom) - scaledWidth / 2;
+          const frameY = centerY + (timelineFrame.offsetY * this.gridZoom) - scaledHeight / 2;
 
           this.gridCtx.drawImage(
             this.currentImage,
@@ -2806,7 +2853,7 @@ class AnimatorTool {
           this.gridCtx.font = '11px monospace';
           this.gridCtx.textAlign = 'center';
           this.gridCtx.textBaseline = 'top';
-          const coordText = `(${totalX}, ${totalY})`;
+          const coordText = `(${timelineFrame.offsetX}, ${timelineFrame.offsetY})`;
 
           const textMetrics = this.gridCtx.measureText(coordText);
           const textX = frameX + scaledWidth / 2;
@@ -2872,13 +2919,10 @@ class AnimatorTool {
     const scaledWidth = splitFrame.width * this.gridZoom;
     const scaledHeight = splitFrame.height * this.gridZoom;
 
-    const totalX = timelineFrame.x + timelineFrame.offsetX;
-    const totalY = timelineFrame.y + timelineFrame.offsetY;
+    const frameX = centerX + (timelineFrame.offsetX * this.gridZoom) - scaledWidth / 2;
+    const frameY = centerY + (timelineFrame.offsetY * this.gridZoom) - scaledHeight / 2;
 
-    const frameX = centerX + (totalX * this.gridZoom) - scaledWidth / 2;
-    const frameY = centerY + (totalY * this.gridZoom) - scaledHeight / 2;
-
-    const coordText = `(${totalX}, ${totalY})`;
+    const coordText = `(${timelineFrame.offsetX}, ${timelineFrame.offsetY})`;
     this.gridCtx.font = '11px monospace';
     const textMetrics = this.gridCtx.measureText(coordText);
     const textX = frameX + scaledWidth / 2;
@@ -2909,13 +2953,10 @@ class AnimatorTool {
     const scaledWidth = splitFrame.width * this.gridZoom;
     const scaledHeight = splitFrame.height * this.gridZoom;
 
-    const totalX = timelineFrame.x + timelineFrame.offsetX;
-    const totalY = timelineFrame.y + timelineFrame.offsetY;
+    const frameX = centerX + (timelineFrame.offsetX * this.gridZoom) - scaledWidth / 2;
+    const frameY = centerY + (timelineFrame.offsetY * this.gridZoom) - scaledHeight / 2;
 
-    const frameX = centerX + (totalX * this.gridZoom) - scaledWidth / 2;
-    const frameY = centerY + (totalY * this.gridZoom) - scaledHeight / 2;
-
-    const coordText = `(${totalX}, ${totalY})`;
+    const coordText = `(${timelineFrame.offsetX}, ${timelineFrame.offsetY})`;
     this.gridCtx.font = '11px monospace';
     const textMetrics = this.gridCtx.measureText(coordText);
     const textX = frameX + scaledWidth / 2;
@@ -2962,10 +3003,10 @@ class AnimatorTool {
 
       const parts = input.value.replace(/[()]/g, '').split(',').map(s => s.trim());
       if (parts.length === 2) {
-        let newX = parseInt(parts[0]);
-        let newY = parseInt(parts[1]);
+        let newOffsetX = parseInt(parts[0]);
+        let newOffsetY = parseInt(parts[1]);
 
-        if (!isNaN(newX) && !isNaN(newY)) {
+        if (!isNaN(newOffsetX) && !isNaN(newOffsetY)) {
 
           this.pushUndoState('coords', {
             x: timelineFrame.x,
@@ -2974,11 +3015,11 @@ class AnimatorTool {
             offsetY: timelineFrame.offsetY
           }, this.selectedTimelineFrame!);
 
-          newX = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, newX));
-          newY = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, newY));
+          newOffsetX = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, newOffsetX));
+          newOffsetY = Math.max(-this.maxCoordinateDistance, Math.min(this.maxCoordinateDistance, newOffsetY));
 
-          timelineFrame.x = newX - timelineFrame.offsetX;
-          timelineFrame.y = newY - timelineFrame.offsetY;
+          timelineFrame.offsetX = newOffsetX;
+          timelineFrame.offsetY = newOffsetY;
           this.renderGridCanvas();
           this.triggerAutosave();
         }

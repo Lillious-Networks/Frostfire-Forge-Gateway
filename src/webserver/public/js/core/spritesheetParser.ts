@@ -116,7 +116,7 @@ export async function buildAnimationFrames(
 
   const frames: AnimationFrame[] = [];
   const frameDurations = Array.isArray(animConfig.frameDurations) ? animConfig.frameDurations : null;
-  const frameOffsets = Array.isArray(animConfig.frameOffsets) ? animConfig.frameOffsets : null;
+  const offsets = Array.isArray(animConfig.offsets) ? animConfig.offsets : null;
   const defaultOffset = animConfig.offset || { x: 0, y: 0 };
 
   for (let i = 0; i < frameIndices.length; i++) {
@@ -128,7 +128,7 @@ export async function buildAnimationFrames(
     }
 
     const delay = frameDurations ? (frameDurations[i] || animConfig.frameDuration || 150) : (animConfig.frameDuration || 150);
-    const offset = frameOffsets && frameOffsets[i] ? frameOffsets[i] : defaultOffset;
+    const offset = offsets && offsets[i] ? offsets[i] : defaultOffset;
 
     frames.push({
       imageElement: sourceFrameImage,
@@ -193,11 +193,11 @@ export function validateSpriteSheetTemplate(template: any): boolean {
           return false;
         }
 
-        if (Array.isArray(direction.frameOffsets) && direction.frameOffsets.length > 0) {
-          if (direction.frameOffsets.length !== direction.frames.length) {
+        if (Array.isArray(direction.offsets) && direction.offsets.length > 0) {
+          if (direction.offsets.length !== direction.frames.length) {
             return false;
           }
-          if (!direction.frameOffsets.every((offset: any) =>
+          if (!direction.offsets.every((offset: any) =>
             typeof offset === 'object' && offset !== null &&
             typeof offset.x === 'number' && typeof offset.y === 'number'
           )) {
@@ -228,11 +228,11 @@ export function validateSpriteSheetTemplate(template: any): boolean {
         return false;
       }
 
-      if (Array.isArray(anim.frameOffsets) && anim.frameOffsets.length > 0) {
-        if (anim.frameOffsets.length !== anim.frames.length) {
+      if (Array.isArray(anim.offsets) && anim.offsets.length > 0) {
+        if (anim.offsets.length !== anim.frames.length) {
           return false;
         }
-        if (!anim.frameOffsets.every((offset: any) =>
+        if (!anim.offsets.every((offset: any) =>
           typeof offset === 'object' && offset !== null &&
           typeof offset.x === 'number' && typeof offset.y === 'number'
         )) {

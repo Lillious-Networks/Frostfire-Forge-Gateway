@@ -380,9 +380,7 @@ async function createPlayer(data: any) {
         if (!frame || !frame.imageElement?.complete) continue;
 
         const isMounted: boolean = this.layeredAnimation.layers.mount !== null;
-        const offsetX = frame.offset?.x || 0;
-        const offsetY = frame.offset?.y || 0;
-        const layerKey = `${layer.type}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}_${offsetX}_${offsetY}`;
+        const layerKey = `${layer.type}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}`;
         if (!this._layerCanvases[layerKey]) {
           const layerCanvas = document.createElement('canvas');
           layerCanvas.width = frame.width;
@@ -393,18 +391,20 @@ async function createPlayer(data: any) {
 
             layerCtx.imageSmoothingEnabled = false;
             layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
-            layerCtx.drawImage(frame.imageElement, offsetX, offsetY);
+            layerCtx.drawImage(frame.imageElement, 0, 0);
           }
 
           this._layerCanvases[layerKey] = layerCanvas;
         }
 
         const layerCanvas = this._layerCanvases[layerKey];
+        const offsetX = frame.offset?.x || 0;
+        const offsetY = frame.offset?.y || 0;
 
         context.drawImage(
           layerCanvas,
-          Math.round(this.renderPosition.x - frame.width / 2),
-          Math.round(this.renderPosition.y - frame.height / 2)
+          Math.round(this.renderPosition.x - frame.width / 2 + offsetX),
+          Math.round(this.renderPosition.y - frame.height / 2 + offsetY)
         );
       }
 
