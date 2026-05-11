@@ -16,6 +16,11 @@ const spriteSheetCache: SpriteSheetCache = {};
  */
 const animationFrameCache: Map<string, AnimationFrame[]> = new Map();
 
+// Helper to debug cache state
+function logCacheState() {
+  console.log(`[AnimCache] Current size: ${animationFrameCache.size}, Keys:`, Array.from(animationFrameCache.keys()));
+}
+
 // Fetch sprite sheet template from asset server
 async function fetchSpriteSheetTemplate(templateUrl: string): Promise<any> {
   try {
@@ -311,8 +316,10 @@ async function createAnimationLayer(
     }
   }
 
+  const frameCacheKey = `${type}:${normalizedName}`;
+  console.log(`[InitLayer] ${type}: caching frames for ${actualAnimationName} (sprite: ${spriteSheet.name}, normalized: ${normalizedName}, cache key: ${frameCacheKey})`);
   const frames = await getOrBuildAnimationFrames(
-    `${type}:${normalizedName}`,
+    frameCacheKey,
     actualAnimationName,
     spriteSheet,
     new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
@@ -377,12 +384,17 @@ async function getOrBuildAnimationFrames(
 
   // Return cached frames if available
   if (animationFrameCache.has(cacheKey)) {
+    console.log(`[AnimCache] HIT: ${cacheKey}`);
+    logCacheState();
     return animationFrameCache.get(cacheKey)!;
   }
 
   // Build and cache the frames
+  console.log(`[AnimCache] MISS: ${cacheKey} - building frames...`);
   const frames = await buildAnimationFrames(spriteSheet, animationName, extractedFrames);
   animationFrameCache.set(cacheKey, frames);
+  console.log(`[AnimCache] STORED: ${cacheKey}`);
+  logCacheState();
   return frames;
 }
 
@@ -392,6 +404,7 @@ export async function changeLayeredAnimation(
 ): Promise<void> {
   if (layeredAnim.currentAnimationName === newAnimationName) return;
 
+  console.log(`[Anim] Changing animation to: ${newAnimationName}`);
   layeredAnim.currentAnimationName = newAnimationName;
 
   const isMounted = layeredAnim.layers.mount !== null;
@@ -446,8 +459,12 @@ export async function changeLayeredAnimation(
       if (!animationExists) continue;
 
       // Update this layer's frames
+      const spriteName = (layer.spriteSheet as any).name || layer.type;
+      const normalizedSpriteName = spriteName.toLowerCase();
+      const frameCacheKey = `${layer.type}:${normalizedSpriteName}`;
+      console.log(`[Anim] Layer ${layer.type}: requesting frames for ${actualAnimationName} (sprite: ${spriteName}, normalized: ${normalizedSpriteName}, cache key: ${frameCacheKey})`);
       layer.frames = await getOrBuildAnimationFrames(
-        `${layer.type}:${((layer.spriteSheet as any).name || layer.type).toLowerCase()}`,
+        frameCacheKey,
         actualAnimationName,
         cached.template,
         new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
