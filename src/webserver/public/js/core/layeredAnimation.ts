@@ -22,23 +22,38 @@ const animationFrameCache: Map<string, AnimationFrame[]> = new Map();
  */
 const pendingAnimationFrameBuilds: Map<string, Promise<AnimationFrame[]>> = new Map();
 
-// Helper to debug cache state
-function logCacheState() {
-  console.log(`[AnimCache] Current size: ${animationFrameCache.size}, Keys:`, Array.from(animationFrameCache.keys()));
-}
+/**
+ * Sprite Sheet Template Cache
+ * Caches fetched sprite sheet templates to avoid duplicate network requests
+ * Key: template URL
+ */
+const spriteSheetTemplateCache: Map<string, Promise<any>> = new Map();
 
-// Fetch sprite sheet template from asset server
+// Fetch sprite sheet template from asset server with caching
 async function fetchSpriteSheetTemplate(templateUrl: string): Promise<any> {
-  try {
-    const response = await fetch(templateUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch sprite template: ${response.statusText}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error(`Error fetching sprite template from ${templateUrl}:`, error);
-    throw error;
+  // Return cached template if available
+  if (spriteSheetTemplateCache.has(templateUrl)) {
+    return spriteSheetTemplateCache.get(templateUrl)!;
   }
+
+  // Create fetch promise and cache it immediately to prevent duplicate requests
+  const fetchPromise = (async () => {
+    try {
+      const response = await fetch(templateUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sprite template: ${response.statusText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      // Remove from cache on error so it can be retried
+      spriteSheetTemplateCache.delete(templateUrl);
+      console.error(`Error fetching sprite template from ${templateUrl}:`, error);
+      throw error;
+    }
+  })();
+
+  spriteSheetTemplateCache.set(templateUrl, fetchPromise);
+  return fetchPromise;
 }
 
 // Helper to convert SpriteUrl to SpriteSheetTemplate
@@ -324,7 +339,6 @@ async function createAnimationLayer(
   }
 
   const frameCacheKey = `${type}:${normalizedName}`;
-  console.log(`[InitLayer] ${type}: caching frames for ${actualAnimationName} (sprite: ${spriteSheet.name}, normalized: ${normalizedName}, cache key: ${frameCacheKey})`);
   const frames = await getOrBuildAnimationFrames(
     frameCacheKey,
     actualAnimationName,
@@ -391,27 +405,19 @@ async function getOrBuildAnimationFrames(
 
   // Return cached frames if available
   if (animationFrameCache.has(cacheKey)) {
-    console.log(`[AnimCache] HIT: ${cacheKey}`);
-    logCacheState();
     return animationFrameCache.get(cacheKey)!;
   }
 
   // Check if this animation is already being built by another request
   if (pendingAnimationFrameBuilds.has(cacheKey)) {
-    console.log(`[AnimCache] PENDING: ${cacheKey} - waiting for concurrent build...`);
     return pendingAnimationFrameBuilds.get(cacheKey)!;
   }
 
   // Build and cache the frames
-  console.log(`[AnimCache] MISS: ${cacheKey} - building frames...`);
-
-  // Create the build promise and store it
   const buildPromise = buildAnimationFrames(spriteSheet, animationName, extractedFrames)
     .then(frames => {
       animationFrameCache.set(cacheKey, frames);
       pendingAnimationFrameBuilds.delete(cacheKey);
-      console.log(`[AnimCache] STORED: ${cacheKey}`);
-      logCacheState();
       return frames;
     })
     .catch(err => {
@@ -429,7 +435,6 @@ export async function changeLayeredAnimation(
 ): Promise<void> {
   if (layeredAnim.currentAnimationName === newAnimationName) return;
 
-  console.log(`[Anim] Changing animation to: ${newAnimationName}`);
   layeredAnim.currentAnimationName = newAnimationName;
 
   const isMounted = layeredAnim.layers.mount !== null;
@@ -487,7 +492,6 @@ export async function changeLayeredAnimation(
       const spriteName = (layer.spriteSheet as any).name || layer.type;
       const normalizedSpriteName = spriteName.toLowerCase();
       const frameCacheKey = `${layer.type}:${normalizedSpriteName}`;
-      console.log(`[Anim] Layer ${layer.type}: requesting frames for ${actualAnimationName} (sprite: ${spriteName}, normalized: ${normalizedSpriteName}, cache key: ${frameCacheKey})`);
       layer.frames = await getOrBuildAnimationFrames(
         frameCacheKey,
         actualAnimationName,
