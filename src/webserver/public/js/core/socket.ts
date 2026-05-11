@@ -2197,7 +2197,7 @@ socket.onmessage = async (event) => {
         if (itemDetails && !itemDetails.iconUrl && itemDetails.icon) {
           itemDetails = {
             ...itemDetails,
-            iconUrl: `http://127.0.0.1:8000/icon?name=${encodeURIComponent(itemDetails.icon)}`
+            iconUrl: `${config.ASSET_SERVER_URL}/icon?name=${encodeURIComponent(itemDetails.icon)}`
           };
         }
 
@@ -2312,7 +2312,7 @@ socket.onmessage = async (event) => {
         const slots = JSON.parse(packet.decode(event.data))["slots"];
 
         // Ensure all items have iconUrl (convert from icon if needed)
-        const assetServerUrl = data.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || "http://127.0.0.1:8000";
+        const assetServerUrl = data.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || config.ASSET_SERVER_URL;
         data.forEach((item: any) => {
           if (!item.iconUrl && item.icon) {
             item.iconUrl = `${assetServerUrl}/icon?name=${encodeURIComponent(item.icon)}`;
@@ -2883,7 +2883,7 @@ socket.onmessage = async (event) => {
 
           // If item doesn't have iconUrl but has icon, generate it
           if (itemDetails && !itemDetails.iconUrl && itemDetails.icon) {
-            const assetServerUrl = targetInventory.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || "http://127.0.0.1:8000";
+            const assetServerUrl = targetInventory.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || config.ASSET_SERVER_URL;
             itemDetails = {
               ...itemDetails,
               iconUrl: `${assetServerUrl}/icon?name=${encodeURIComponent(itemDetails.icon)}`

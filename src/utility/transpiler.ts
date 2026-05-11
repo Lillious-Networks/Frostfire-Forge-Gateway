@@ -23,6 +23,7 @@ function transpileDirectory(sourceDir: string) {
                 { key: "__VAR.GATEWAY_ENABLED__", value: process.env.GATEWAY_ENABLED as string, defaultvalue: "true" },
                 { key: "__VAR.GATEWAY_URL__", value: process.env.GATEWAY_URL as string, defaultvalue: "http://localhost:9999" },
                 { key: "__VAR.PLAYER_Z_INDEX__", value: process.env.PLAYER_Z_INDEX as string, defaultvalue: "4" },
+                { key: "__VAR.ASSET_SERVER_URL__", value: process.env.ASSET_SERVER_URL as string, defaultvalue: "http://localhost:8000" },
             ];
             let replacedResult = result;
             envVars.forEach((env) => replacedResult = replacedResult.replaceAll(env.key, env.value || env.defaultvalue) );
