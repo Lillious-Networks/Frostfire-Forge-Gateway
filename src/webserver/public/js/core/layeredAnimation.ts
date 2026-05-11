@@ -437,7 +437,7 @@ export async function changeLayeredAnimation(
 
         // Use cached animation frames to avoid rebuilding on every animation change
         layer.frames = await getOrBuildAnimationFrames(
-          (layer.spriteSheet as any).name || layer.type,
+          `${layer.type}:${(layer.spriteSheet as any).name || layer.type}`,
           actualAnimationName,
           cached.template,
           new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
