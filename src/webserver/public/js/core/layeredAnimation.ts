@@ -298,7 +298,8 @@ async function createAnimationLayer(
     spriteSheetCache[cacheKey] = {
       imageElement: image,
       template: clonedTemplate,
-      extractedFrames
+      extractedFrames,
+      extractedFramesMap: new Map<number, HTMLImageElement>(Object.entries(extractedFrames).map(([k, v]) => [Number(k), v]))
     };
   }
 
@@ -467,7 +468,7 @@ export async function changeLayeredAnimation(
         frameCacheKey,
         actualAnimationName,
         cached.template,
-        new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
+        cached.extractedFramesMap
       );
 
       // Reset this layer's animation state
