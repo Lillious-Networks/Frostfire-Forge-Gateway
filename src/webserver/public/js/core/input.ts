@@ -614,7 +614,6 @@ function setupDragListeners() {
 
 // Initialize drag listeners when page is ready
 function initializeDragListeners() {
-    console.log("Initializing drag listeners...");
     setupDragListeners();
 }
 
