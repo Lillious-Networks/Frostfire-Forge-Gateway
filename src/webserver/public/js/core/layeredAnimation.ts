@@ -257,8 +257,7 @@ export async function initializeLayeredAnimation(
       armor_legs: armorLegsLayer as AnimationLayer,
       armor_weapon: armorWeaponLayer as AnimationLayer
     },
-    currentAnimationName: initialAnimation,
-    syncFrames: true
+    currentAnimationName: initialAnimation
   };
 }
 
@@ -341,18 +340,27 @@ export function updateLayeredAnimation(
 
   if (layers.length === 0) return;
 
-  layers.forEach(layer => {
-    if (layer.frames.length === 0) return;
+  // Update each layer's animation independently based on its frame duration
+  for (const layer of layers) {
+    if (layer.frames.length === 0) continue;
+
+    // Initialize lastFrameTime if not set
+    if (!layer.lastFrameTime) {
+      layer.lastFrameTime = now;
+      layer.currentFrame = 0;
+    }
 
     const currentFrame = layer.frames[layer.currentFrame];
+    if (!currentFrame) continue;
 
-    if (!currentFrame) return;
+    const frameDuration = currentFrame.delay || 125;
 
-    if (now - layer.lastFrameTime >= currentFrame.delay) {
+    // Advance frame when enough time has elapsed
+    if (now - layer.lastFrameTime >= frameDuration) {
       layer.currentFrame = (layer.currentFrame + 1) % layer.frames.length;
-      layer.lastFrameTime += currentFrame.delay;
+      layer.lastFrameTime += frameDuration;
     }
-  });
+  }
 }
 
 /**
@@ -388,69 +396,72 @@ export async function changeLayeredAnimation(
 
   const isMounted = layeredAnim.layers.mount !== null;
 
-  const layerUpdates = Object.values(layeredAnim.layers)
-    .filter(l => l !== null)
-    .map(async (layer) => {
-      if (layer && layer.spriteSheet) {
+  // Group layers by template to batch updates - reduces from 10+ individual operations to 2-3 template groups
+  const layersByTemplate = new Map<string, AnimationLayer[]>();
 
-        const cached = spriteSheetCache[(layer as any)._cacheKey];
+  for (const layer of Object.values(layeredAnim.layers)) {
+    if (!layer || !layer.spriteSheet) continue;
 
-        if (!cached) {
-          return;
+    const cacheKey = (layer as any)._cacheKey;
+    if (!layersByTemplate.has(cacheKey)) {
+      layersByTemplate.set(cacheKey, []);
+    }
+    layersByTemplate.get(cacheKey)!.push(layer);
+  }
+
+  // Update layers grouped by template
+  const templateUpdates = Array.from(layersByTemplate.entries()).map(async ([cacheKey, layersWithSameTemplate]) => {
+    const cached = spriteSheetCache[cacheKey];
+    if (!cached) return;
+
+    // All layers in this group share the same template, so check once
+    for (const layer of layersWithSameTemplate) {
+      let actualAnimationName = newAnimationName;
+
+      const isArmorLayer = layer.type.startsWith('armor_');
+
+      if (isMounted && (layer.type === 'body' || layer.type === 'head' || isArmorLayer)) {
+        if (newAnimationName.startsWith('idle_')) {
+          actualAnimationName = newAnimationName.replace('idle_', 'mount_idle_');
+        } else if (newAnimationName.startsWith('walk_')) {
+          actualAnimationName = newAnimationName.replace('walk_', 'mount_walk_');
         }
-
-        let actualAnimationName = newAnimationName;
-
-        const isArmorLayer = layer.type.startsWith('armor_');
-
-        if (isMounted && (layer.type === 'body' || layer.type === 'head' || isArmorLayer)) {
-          if (newAnimationName.startsWith('idle_')) {
-
-            actualAnimationName = newAnimationName.replace('idle_', 'mount_idle_');
-          } else if (newAnimationName.startsWith('walk_')) {
-
-            actualAnimationName = newAnimationName.replace('walk_', 'mount_walk_');
-          }
-        }
-
-        else if (layer.type === 'mount') {
-
-          actualAnimationName = newAnimationName;
-        }
-
-        let animationExists = false;
-
-        if (cached.template.animations[actualAnimationName]) {
-          animationExists = true;
-        } else if (actualAnimationName.includes('_')) {
-
-          const lastUnderscoreIndex = actualAnimationName.lastIndexOf('_');
-          const baseName = actualAnimationName.substring(0, lastUnderscoreIndex);
-          const direction = actualAnimationName.substring(lastUnderscoreIndex + 1);
-          if (cached.template.animations[baseName]?.directions?.[direction]) {
-            animationExists = true;
-          }
-        }
-
-        if (!animationExists) {
-          return;
-        }
-
-        // Use cached animation frames to avoid rebuilding on every animation change
-        layer.frames = await getOrBuildAnimationFrames(
-          `${layer.type}:${(layer.spriteSheet as any).name || layer.type}`,
-          actualAnimationName,
-          cached.template,
-          new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
-        );
-        layer.currentFrame = 0;
-        layer.lastFrameTime = performance.now();
+      } else if (layer.type === 'mount') {
+        actualAnimationName = newAnimationName;
       }
-    });
+
+      // Check if animation exists
+      let animationExists = false;
+      if (cached.template.animations[actualAnimationName]) {
+        animationExists = true;
+      } else if (actualAnimationName.includes('_')) {
+        const lastUnderscoreIndex = actualAnimationName.lastIndexOf('_');
+        const baseName = actualAnimationName.substring(0, lastUnderscoreIndex);
+        const direction = actualAnimationName.substring(lastUnderscoreIndex + 1);
+        if (cached.template.animations[baseName]?.directions?.[direction]) {
+          animationExists = true;
+        }
+      }
+
+      if (!animationExists) continue;
+
+      // Update this layer's frames
+      layer.frames = await getOrBuildAnimationFrames(
+        `${layer.type}:${(layer.spriteSheet as any).name || layer.type}`,
+        actualAnimationName,
+        cached.template,
+        new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
+      );
+
+      // Reset this layer's animation state
+      layer.currentFrame = 0;
+      layer.lastFrameTime = performance.now();
+    }
+  });
 
   // Don't block rendering - update animations asynchronously
   // This allows the animation change to be visible immediately, with layers updating in the background
-  Promise.all(layerUpdates).catch(err => console.error('Error updating animation layers:', err));
+  Promise.all(templateUpdates).catch(err => console.error('Error updating animation layers:', err));
 }
 
 export function getVisibleLayersSorted(layeredAnim: LayeredAnimation): AnimationLayer[] {
