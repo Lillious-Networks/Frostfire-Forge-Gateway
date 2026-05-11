@@ -312,9 +312,10 @@ async function createAnimationLayer(
     }
   }
 
-  const frames = await buildAnimationFrames(
-    spriteSheet,
+  const frames = await getOrBuildAnimationFrames(
+    `${type}:${normalizedName}`,
     actualAnimationName,
+    spriteSheet,
     new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
   );
 
