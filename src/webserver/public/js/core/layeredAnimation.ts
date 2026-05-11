@@ -447,7 +447,7 @@ export async function changeLayeredAnimation(
 
       // Update this layer's frames
       layer.frames = await getOrBuildAnimationFrames(
-        `${layer.type}:${(layer.spriteSheet as any).name || layer.type}`,
+        `${layer.type}:${((layer.spriteSheet as any).name || layer.type).toLowerCase()}`,
         actualAnimationName,
         cached.template,
         new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
