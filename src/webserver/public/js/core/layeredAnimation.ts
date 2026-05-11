@@ -448,7 +448,9 @@ export async function changeLayeredAnimation(
       }
     });
 
-  await Promise.all(layerUpdates);
+  // Don't block rendering - update animations asynchronously
+  // This allows the animation change to be visible immediately, with layers updating in the background
+  Promise.all(layerUpdates).catch(err => console.error('Error updating animation layers:', err));
 }
 
 export function getVisibleLayersSorted(layeredAnim: LayeredAnimation): AnimationLayer[] {
