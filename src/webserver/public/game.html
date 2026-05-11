@@ -375,101 +375,171 @@
     <!-- Particle Editor -->
     <div id="particle-editor-container" class="ui" style="display: none;">
       <!-- Properties Panel -->
-      <div id="particle-editor-properties-panel" class="ui pe-floating-panel" style="display: none; position: fixed; left: 50px; top: 50px; width: 350px; z-index: 1000;">
+      <div id="particle-editor-properties-panel" class="ui pe-floating-panel pe-modern-panel" style="display: none; position: fixed; left: 50px; top: 50px; width: 420px; z-index: 1000;">
         <div class="pe-panel-header ui">
           <button type="button" id="pe-reset-particle" class="pe-panel-reset ui" title="Reset to Defaults">↻</button>
           <span class="pe-panel-title ui">Particle Properties<span id="pe-dirty-indicator" style="display: none; margin-left: 4px;">*</span></span>
           <button type="button" id="pe-save-particle" class="pe-panel-save ui" title="Save Particle">💾</button>
           <button type="button" class="pe-panel-minimize ui">−</button>
         </div>
-        <div class="pe-panel-content ui">
-          <div style="margin-bottom: 12px;">
-            <label>Particle Name</label>
-            <div id="pe-particle-name" style="padding: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; color: rgba(255, 255, 255, 0.7);"></div>
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label>Size</label>
-            <input type="number" id="pe-particle-size" min="1" step="1">
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label>Color</label>
-            <input type="color" id="pe-particle-color">
-          </div>
-          <div class="pe-xy-pair">
-            <div style="flex: 1; margin-right: 6px;">
-              <label>Velocity X</label>
-              <input type="number" id="pe-particle-velocity-x" step="0.1">
+
+        <!-- Tab Navigation -->
+        <div class="pe-tab-navigation">
+          <button class="pe-tab-button pe-tab-active" data-tab="appearance">Appearance</button>
+          <button class="pe-tab-button" data-tab="physics">Physics</button>
+          <button class="pe-tab-button" data-tab="emission">Emission</button>
+          <button class="pe-tab-button" data-tab="advanced">Advanced</button>
+        </div>
+
+        <div class="pe-panel-content ui pe-tabbed-content">
+          <!-- APPEARANCE TAB -->
+          <div class="pe-tab-panel pe-tab-appearance-panel" style="display: block;">
+            <div style="margin-bottom: 16px;">
+              <label class="pe-field-label">Particle Name</label>
+              <div id="pe-particle-name" class="pe-display-field"></div>
             </div>
-            <div style="flex: 1;">
-              <label>Velocity Y</label>
-              <input type="number" id="pe-particle-velocity-y" step="0.1">
+
+            <div class="pe-field-row">
+              <div class="pe-field-col">
+                <label class="pe-field-label">Size</label>
+                <input type="number" id="pe-particle-size" min="1" step="1" class="pe-field-input">
+              </div>
+              <div class="pe-field-col">
+                <label class="pe-field-label">Opacity</label>
+                <input type="number" id="pe-particle-opacity" min="0" max="1" step="0.1" class="pe-field-input">
+              </div>
             </div>
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label>Lifetime (ms)</label>
-            <input type="number" id="pe-particle-lifetime" min="1" step="1">
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label>Opacity (0-1)</label>
-            <input type="number" id="pe-particle-opacity" min="0" max="1" step="0.1">
-          </div>
-          <div class="pe-xy-pair">
-            <div style="flex: 1; margin-right: 6px;">
-              <label>Gravity X</label>
-              <input type="number" id="pe-particle-gravity-x" step="0.1">
+
+            <div style="margin-bottom: 16px;">
+              <label class="pe-field-label">Color</label>
+              <input type="color" id="pe-particle-color" class="pe-field-color">
             </div>
-            <div style="flex: 1;">
-              <label>Gravity Y</label>
-              <input type="number" id="pe-particle-gravity-y" step="0.1">
+
+            <div style="margin-bottom: 16px;">
+              <label class="pe-field-label">Z-Index</label>
+              <input type="number" id="pe-particle-zindex" step="1" value="0" class="pe-field-input">
             </div>
-          </div>
-          <div class="pe-xy-pair">
-            <div style="flex: 1; margin-right: 6px;">
-              <label>Local Position X</label>
-              <input type="number" id="pe-particle-localpos-x" step="0.1">
-            </div>
-            <div style="flex: 1;">
-              <label>Local Position Y</label>
-              <input type="number" id="pe-particle-localpos-y" step="0.1">
+
+            <div class="pe-checkbox-group">
+              <label class="pe-checkbox-label">
+                <input type="checkbox" id="pe-particle-visible" class="pe-checkbox-input">
+                <span>Visible</span>
+              </label>
             </div>
           </div>
-          <div style="margin-bottom: 12px;">
-            <label>Interval (ms)</label>
-            <input type="number" id="pe-particle-interval" min="1" step="1">
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label>Max Amount</label>
-            <input type="number" id="pe-particle-amount" min="1" step="1">
-          </div>
-          <div style="margin-bottom: 12px;">
-            <label>Stagger Time</label>
-            <input type="number" id="pe-particle-staggertime" min="0" step="0.1">
-          </div>
-          <div class="pe-xy-pair">
-            <div style="flex: 1; margin-right: 6px;">
-              <label>Spread X</label>
-              <input type="number" id="pe-particle-spread-x" step="0.1">
+
+          <!-- PHYSICS TAB -->
+          <div class="pe-tab-panel pe-tab-physics-panel" style="display: none;">
+            <div style="margin-bottom: 16px;">
+              <label class="pe-section-label">Velocity</label>
+              <div class="pe-field-row">
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">X</label>
+                  <input type="number" id="pe-particle-velocity-x" step="0.1" class="pe-field-input">
+                </div>
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">Y</label>
+                  <input type="number" id="pe-particle-velocity-y" step="0.1" class="pe-field-input">
+                </div>
+              </div>
             </div>
-            <div style="flex: 1;">
-              <label>Spread Y</label>
-              <input type="number" id="pe-particle-spread-y" step="0.1">
+
+            <div style="margin-bottom: 16px;">
+              <label class="pe-section-label">Gravity</label>
+              <div class="pe-field-row">
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">X</label>
+                  <input type="number" id="pe-particle-gravity-x" step="0.1" class="pe-field-input">
+                </div>
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">Y</label>
+                  <input type="number" id="pe-particle-gravity-y" step="0.1" class="pe-field-input">
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label class="pe-section-label">Spread</label>
+              <div class="pe-field-row">
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">X</label>
+                  <input type="number" id="pe-particle-spread-x" step="0.1" class="pe-field-input">
+                </div>
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">Y</label>
+                  <input type="number" id="pe-particle-spread-y" step="0.1" class="pe-field-input">
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label class="pe-section-label">Local Position</label>
+              <div class="pe-field-row">
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">X</label>
+                  <input type="number" id="pe-particle-localpos-x" step="0.1" class="pe-field-input">
+                </div>
+                <div class="pe-field-col">
+                  <label class="pe-field-label-small">Y</label>
+                  <input type="number" id="pe-particle-localpos-y" step="0.1" class="pe-field-input">
+                </div>
+              </div>
+            </div>
+
+            <div class="pe-checkbox-group">
+              <label class="pe-checkbox-label">
+                <input type="checkbox" id="pe-particle-weather" class="pe-checkbox-input">
+                <span>Affected by Weather</span>
+              </label>
             </div>
           </div>
-          <div style="margin-bottom: 12px;">
-            <label>
-              <input type="checkbox" id="pe-particle-visible" value="1"> Visible
-            </label>
+
+          <!-- EMISSION TAB -->
+          <div class="pe-tab-panel pe-tab-emission-panel" style="display: none;">
+            <div class="pe-field-row">
+              <div class="pe-field-col">
+                <label class="pe-field-label">Lifetime (ms)</label>
+                <input type="number" id="pe-particle-lifetime" min="1" step="1" class="pe-field-input">
+              </div>
+              <div class="pe-field-col">
+                <label class="pe-field-label">Interval (ms)</label>
+                <input type="number" id="pe-particle-interval" min="1" step="1" class="pe-field-input">
+              </div>
+            </div>
+
+            <div class="pe-field-row">
+              <div class="pe-field-col">
+                <label class="pe-field-label">Max Amount</label>
+                <input type="number" id="pe-particle-amount" min="1" step="1" class="pe-field-input">
+              </div>
+              <div class="pe-field-col">
+                <label class="pe-field-label">Stagger Time</label>
+                <input type="number" id="pe-particle-staggertime" min="0" step="0.1" class="pe-field-input">
+              </div>
+            </div>
           </div>
-          <div style="margin-bottom: 12px;">
-            <label>
-              <input type="checkbox" id="pe-particle-weather" value="1"> Affected by Weather
-            </label>
+
+          <!-- ADVANCED TAB -->
+          <div class="pe-tab-panel pe-tab-advanced-panel" style="display: none;">
+            <div class="pe-checkbox-group">
+              <label class="pe-checkbox-label">
+                <input type="checkbox" id="pe-particle-time" class="pe-checkbox-input">
+                <span>Affected by Time</span>
+              </label>
+            </div>
+
+            <div style="margin-bottom: 16px; margin-top: 12px;">
+              <label class="pe-field-label">Time On (HH:MM)</label>
+              <input type="time" id="pe-particle-time-on" class="pe-field-input">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label class="pe-field-label">Time Off (HH:MM)</label>
+              <input type="time" id="pe-particle-time-off" class="pe-field-input">
+            </div>
+
+            <button type="button" id="pe-delete-particle" class="pe-delete-button">Delete Particle</button>
           </div>
-          <div style="margin-bottom: 12px;">
-            <label>Z-Index (Layer)</label>
-            <input type="number" id="pe-particle-zindex" step="1" value="0">
-          </div>
-          <button type="button" id="pe-delete-particle">Delete Particle</button>
         </div>
       </div>
 

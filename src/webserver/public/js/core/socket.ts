@@ -34,7 +34,10 @@ function normalizeParticle(particle: any): any {
     spread: particle.spread || { x: 0, y: 0 },
     weather: particle.weather || 'none',
     affected_by_weather: particle.affected_by_weather || false,
-    zIndex: particle.zIndex !== undefined ? particle.zIndex : 0
+    zIndex: particle.zIndex !== undefined ? particle.zIndex : 0,
+    affected_by_time: particle.affected_by_time || false,
+    time_on: particle.time_on || null,
+    time_off: particle.time_off || null
   };
 }
 

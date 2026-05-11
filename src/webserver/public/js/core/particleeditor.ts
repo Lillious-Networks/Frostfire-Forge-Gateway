@@ -106,6 +106,9 @@ class ParticleEditor {
       "pe-particle-visible",
       "pe-particle-weather",
       "pe-particle-zindex",
+      "pe-particle-time",
+      "pe-particle-time-on",
+      "pe-particle-time-off",
     ];
 
     for (const id of inputIds) {
@@ -153,6 +156,66 @@ class ParticleEditor {
         this.refreshParticleList();
       });
     }
+
+    // Affected by time checkbox - toggle visible checkbox readonly state
+    const affectedByTimeCheckbox = document.getElementById("pe-particle-time") as HTMLInputElement;
+    const visibleCheckbox = document.getElementById("pe-particle-visible") as HTMLInputElement;
+    const timeOnInput = document.getElementById("pe-particle-time-on") as HTMLInputElement;
+    const timeOffInput = document.getElementById("pe-particle-time-off") as HTMLInputElement;
+
+    const updateVisibleCheckbox = () => {
+      if (!affectedByTimeCheckbox || !visibleCheckbox) return;
+
+      if (affectedByTimeCheckbox.checked) {
+        visibleCheckbox.disabled = true;
+        visibleCheckbox.checked = true;
+      } else {
+        visibleCheckbox.disabled = false;
+      }
+    };
+
+    if (affectedByTimeCheckbox && visibleCheckbox) {
+      affectedByTimeCheckbox.addEventListener("change", updateVisibleCheckbox);
+    }
+
+    // Also update visible checkbox when time inputs change
+    if (timeOnInput) {
+      timeOnInput.addEventListener("change", updateVisibleCheckbox);
+    }
+    if (timeOffInput) {
+      timeOffInput.addEventListener("change", updateVisibleCheckbox);
+    }
+
+    // Tab switching functionality
+    const tabButtons = document.querySelectorAll(".pe-tab-button");
+    const tabPanels = document.querySelectorAll(".pe-tab-panel");
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
+        const tabName = (button as HTMLElement).getAttribute("data-tab");
+        if (!tabName) return;
+
+        // Remove active class from all buttons
+        tabButtons.forEach((btn) => btn.classList.remove("pe-tab-active"));
+        // Hide all tab panels
+        tabPanels.forEach((panel) => {
+          (panel as HTMLElement).style.display = "none";
+        });
+
+        // Add active class to clicked button
+        (button as HTMLElement).classList.add("pe-tab-active");
+        // Show corresponding tab panel
+        const targetPanel = document.querySelector(`.pe-tab-${tabName}-panel`) as HTMLElement;
+        if (targetPanel) {
+          targetPanel.style.display = "block";
+        }
+
+        // Store tab preference
+        if (this.selectedParticle) {
+          localStorage.setItem(`pe-tab-preference-${this.selectedParticle.name}`, tabName);
+        }
+      });
+    });
   }
 
   private setupPanelDragAndResize() {
@@ -309,11 +372,22 @@ class ParticleEditor {
     // Clear dirty flag when selecting a particle
     this.isDirty = false;
     this.updateParticleNameDisplay();
+    // Update visible checkbox state based on time
+    this.updateVisibleStateBasedOnTime();
     // Clear preview when switching particles
     this.updatePreview();
     // Show properties and preview panels when a particle is selected
     this.setPropertiesPanelVisible(true);
     this.setPreviewPanelVisible(true);
+
+    // Restore saved tab preference
+    const savedTab = localStorage.getItem(`pe-tab-preference-${particle.name}`);
+    if (savedTab) {
+      const tabButton = document.querySelector(`[data-tab="${savedTab}"]`) as HTMLElement;
+      if (tabButton) {
+        tabButton.click();
+      }
+    }
   }
 
   private populateForm(particle: Particle) {
@@ -339,6 +413,19 @@ class ParticleEditor {
     if (inputs["pe-particle-visible"]) (inputs["pe-particle-visible"] as HTMLInputElement).checked = Boolean(particle.visible);
     if (inputs["pe-particle-weather"]) (inputs["pe-particle-weather"] as HTMLInputElement).checked = Boolean(particle.affected_by_weather);
     if (inputs["pe-particle-zindex"]) inputs["pe-particle-zindex"].value = String((particle as any).zIndex || 0);
+    if (inputs["pe-particle-time"]) (inputs["pe-particle-time"] as HTMLInputElement).checked = Boolean((particle as any).affected_by_time);
+    if (inputs["pe-particle-time-on"]) inputs["pe-particle-time-on"].value = (particle as any).time_on || "";
+    if (inputs["pe-particle-time-off"]) inputs["pe-particle-time-off"].value = (particle as any).time_off || "";
+
+    // Disable visible checkbox if affected_by_time is enabled
+    const visibleCheckbox = inputs["pe-particle-visible"] as HTMLInputElement;
+    const affectedByTime = Boolean((particle as any).affected_by_time);
+    if (visibleCheckbox) {
+      visibleCheckbox.disabled = affectedByTime;
+      if (affectedByTime) {
+        visibleCheckbox.checked = true;
+      }
+    }
   }
 
   private getFormData(): Particle {
@@ -346,6 +433,10 @@ class ParticleEditor {
     // Get particle name from text element (not an input)
     const nameElement = document.getElementById("pe-particle-name");
     const particleName = nameElement?.textContent || null;
+
+    // If affected_by_time is enabled, visible must always be true (time controls visibility)
+    const affectedByTime = (inputs["pe-particle-time"] as HTMLInputElement).checked;
+    const visible = affectedByTime ? true : (inputs["pe-particle-visible"] as HTMLInputElement).checked;
 
     return {
       scale: 1,  // Add scale property to match Particle interface
@@ -358,7 +449,7 @@ class ParticleEditor {
       },
       lifetime: Number((inputs["pe-particle-lifetime"] as HTMLInputElement).value) || 100,
       opacity: Number((inputs["pe-particle-opacity"] as HTMLInputElement).value) || 1,
-      visible: (inputs["pe-particle-visible"] as HTMLInputElement).checked,
+      visible: visible,
       gravity: {
         x: Number((inputs["pe-particle-gravity-x"] as HTMLInputElement).value) || 0,
         y: Number((inputs["pe-particle-gravity-y"] as HTMLInputElement).value) || 0,
@@ -377,9 +468,12 @@ class ParticleEditor {
       weather: "none",
       affected_by_weather: (inputs["pe-particle-weather"] as HTMLInputElement).checked,
       zIndex: Number((inputs["pe-particle-zindex"] as HTMLInputElement).value) || 0,
+      affected_by_time: (inputs["pe-particle-time"] as HTMLInputElement).checked,
+      time_on: (inputs["pe-particle-time-on"] as HTMLInputElement).value || null,
+      time_off: (inputs["pe-particle-time-off"] as HTMLInputElement).value || null,
       currentLife: null,
       initialVelocity: null,
-    };
+    } as Particle;
   }
 
   private createNewParticle() {
@@ -420,6 +514,9 @@ class ParticleEditor {
         weather: "none",
         affected_by_weather: false,
         zIndex: 0,
+        affected_by_time: false,
+        time_on: null,
+        time_off: null,
         currentLife: null,
         initialVelocity: null,
       } as Particle;
@@ -592,7 +689,38 @@ class ParticleEditor {
       this.isDirty = true;
       this.updateParticleNameDisplay();
     }
+    this.updateVisibleStateBasedOnTime();
     this.updatePreview();
+  }
+
+  private updateVisibleStateBasedOnTime() {
+    const inputs = this.formInputs;
+    const affectedByTime = (inputs["pe-particle-time"] as HTMLInputElement)?.checked;
+    const visibleCheckbox = inputs["pe-particle-visible"] as HTMLInputElement;
+
+    if (!visibleCheckbox || !affectedByTime) return;
+
+    const timeOn = (inputs["pe-particle-time-on"] as HTMLInputElement)?.value;
+    const timeOff = (inputs["pe-particle-time-off"] as HTMLInputElement)?.value;
+
+    if (timeOn && timeOff) {
+      const now = new Date();
+      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      let isVisible: boolean;
+      if (timeOn < timeOff) {
+        // Normal case: time_on < time_off (e.g., 09:00 to 18:00)
+        isVisible = currentTimeStr >= timeOn && currentTimeStr < timeOff;
+      } else if (timeOn > timeOff) {
+        // Wrapped case: time_on > time_off (e.g., 22:00 to 06:00, wraps midnight)
+        isVisible = currentTimeStr >= timeOn || currentTimeStr < timeOff;
+      } else {
+        // Same time, always visible
+        isVisible = true;
+      }
+
+      visibleCheckbox.checked = isVisible;
+    }
   }
 
   private updateParticleNameDisplay() {

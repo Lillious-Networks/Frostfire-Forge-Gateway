@@ -181,6 +181,34 @@ function createNPC(data: any) {
         npc.lastEmitTime = {};
       }
 
+      // Check if particle should be visible based on time
+      if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
+        const now = new Date();
+        const currentHours = now.getHours();
+        const currentMinutes = now.getMinutes();
+        const currentTimeMinutes = currentHours * 60 + currentMinutes;
+
+        const timeOnParts = ((particle as any).time_on as string).split(':');
+        const timeOffParts = ((particle as any).time_off as string).split(':');
+        const timeOnMinutes = parseInt(timeOnParts[0]) * 60 + parseInt(timeOnParts[1]);
+        const timeOffMinutes = parseInt(timeOffParts[0]) * 60 + parseInt(timeOffParts[1]);
+
+        // Check if particle is visible based on time window
+        const isVisible = timeOnMinutes < timeOffMinutes
+          ? currentTimeMinutes >= timeOnMinutes && currentTimeMinutes < timeOffMinutes
+          : timeOnMinutes > timeOffMinutes
+            ? currentTimeMinutes >= timeOnMinutes || currentTimeMinutes < timeOffMinutes
+            : true;
+
+        // Skip particle emission if not visible based on time window
+        if (!isVisible) {
+          return;
+        }
+      } else if (!particle.visible) {
+        // If not affected by time, check the visible flag
+        return;
+      }
+
       const currentTime = performance.now();
       const emitInterval = (particle.interval || 1) * 16.67;
 
@@ -242,6 +270,32 @@ function createNPC(data: any) {
       if (particles.length === 0) {
         context.globalAlpha = 1;
         return;
+      }
+
+      // Check if we should render particles based on time window
+      if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
+        const now = new Date();
+        const currentHours = now.getHours();
+        const currentMinutes = now.getMinutes();
+        const currentTimeMinutes = currentHours * 60 + currentMinutes;
+
+        const timeOnParts = ((particle as any).time_on as string).split(':');
+        const timeOffParts = ((particle as any).time_off as string).split(':');
+        const timeOnMinutes = parseInt(timeOnParts[0]) * 60 + parseInt(timeOnParts[1]);
+        const timeOffMinutes = parseInt(timeOffParts[0]) * 60 + parseInt(timeOffParts[1]);
+
+        // Check if particle is visible based on time window
+        const isVisible = timeOnMinutes < timeOffMinutes
+          ? currentTimeMinutes >= timeOnMinutes && currentTimeMinutes < timeOffMinutes
+          : timeOnMinutes > timeOffMinutes
+            ? currentTimeMinutes >= timeOnMinutes || currentTimeMinutes < timeOffMinutes
+            : true;
+
+        // Don't render particles if outside time window
+        if (!isVisible) {
+          context.globalAlpha = 1;
+          return;
+        }
       }
 
       const npcPosX = npc.position.x + 16;
