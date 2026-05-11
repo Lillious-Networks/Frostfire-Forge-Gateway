@@ -3,6 +3,23 @@ import { serverTime, ambience } from "./ui.ts";
 let timeOfDay: string | null = null;
 let lastMinute: number | null = null;
 
+// Get server time (in 24-hour HH:MM format)
+function getServerTime(): { hours: number; minutes: number } {
+  if (!timeOfDay) {
+    return { hours: 0, minutes: 0 };
+  }
+
+  const date = new Date(timeOfDay);
+  if (isNaN(date.getTime())) {
+    return { hours: 0, minutes: 0 };
+  }
+
+  return {
+    hours: date.getHours(),
+    minutes: date.getMinutes()
+  };
+}
+
 function updateTime(time: string) {
   if (!time) return;
 
@@ -79,4 +96,4 @@ function updateAmbience() {
   ambience.style.opacity = blendedOpacity.toFixed(2);
 }
 
-export { updateTime };
+export { updateTime, getServerTime };

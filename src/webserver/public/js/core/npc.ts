@@ -4,6 +4,7 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getIsLoaded } from "./socket.js";
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
+import { getServerTime } from "./ambience.js";
 
 // Particle object pool to avoid GC pressure
 class ParticlePool {
@@ -181,12 +182,10 @@ function createNPC(data: any) {
         npc.lastEmitTime = {};
       }
 
-      // Check if particle should be visible based on time
+      // Check if particle should be visible based on time (using server time)
       if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
-        const now = new Date();
-        const currentHours = now.getHours();
-        const currentMinutes = now.getMinutes();
-        const currentTimeMinutes = currentHours * 60 + currentMinutes;
+        const serverTimeObj = getServerTime();
+        const currentTimeMinutes = serverTimeObj.hours * 60 + serverTimeObj.minutes;
 
         const timeOnParts = ((particle as any).time_on as string).split(':');
         const timeOffParts = ((particle as any).time_off as string).split(':');
@@ -272,12 +271,10 @@ function createNPC(data: any) {
         return;
       }
 
-      // Check if we should render particles based on time window
+      // Check if we should render particles based on time window (using server time)
       if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
-        const now = new Date();
-        const currentHours = now.getHours();
-        const currentMinutes = now.getMinutes();
-        const currentTimeMinutes = currentHours * 60 + currentMinutes;
+        const serverTimeObj = getServerTime();
+        const currentTimeMinutes = serverTimeObj.hours * 60 + serverTimeObj.minutes;
 
         const timeOnParts = ((particle as any).time_on as string).split(':');
         const timeOffParts = ((particle as any).time_off as string).split(':');
