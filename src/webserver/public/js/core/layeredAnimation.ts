@@ -16,6 +16,12 @@ const spriteSheetCache: SpriteSheetCache = {};
  */
 const animationFrameCache: Map<string, AnimationFrame[]> = new Map();
 
+/**
+ * Pending animation frame builds to prevent duplicate work when multiple layers request the same animation concurrently
+ * Stores promises that are currently being built to avoid race conditions
+ */
+const pendingAnimationFrameBuilds: Map<string, Promise<AnimationFrame[]>> = new Map();
+
 // Helper to debug cache state
 function logCacheState() {
   console.log(`[AnimCache] Current size: ${animationFrameCache.size}, Keys:`, Array.from(animationFrameCache.keys()));
@@ -323,7 +329,7 @@ async function createAnimationLayer(
     frameCacheKey,
     actualAnimationName,
     spriteSheet,
-    new Map<number, HTMLImageElement>(Object.entries(cached.extractedFrames).map(([k, v]) => [Number(k), v]))
+    cached.extractedFramesMap
   );
 
   const layer: any = {
@@ -390,13 +396,31 @@ async function getOrBuildAnimationFrames(
     return animationFrameCache.get(cacheKey)!;
   }
 
+  // Check if this animation is already being built by another request
+  if (pendingAnimationFrameBuilds.has(cacheKey)) {
+    console.log(`[AnimCache] PENDING: ${cacheKey} - waiting for concurrent build...`);
+    return pendingAnimationFrameBuilds.get(cacheKey)!;
+  }
+
   // Build and cache the frames
   console.log(`[AnimCache] MISS: ${cacheKey} - building frames...`);
-  const frames = await buildAnimationFrames(spriteSheet, animationName, extractedFrames);
-  animationFrameCache.set(cacheKey, frames);
-  console.log(`[AnimCache] STORED: ${cacheKey}`);
-  logCacheState();
-  return frames;
+
+  // Create the build promise and store it
+  const buildPromise = buildAnimationFrames(spriteSheet, animationName, extractedFrames)
+    .then(frames => {
+      animationFrameCache.set(cacheKey, frames);
+      pendingAnimationFrameBuilds.delete(cacheKey);
+      console.log(`[AnimCache] STORED: ${cacheKey}`);
+      logCacheState();
+      return frames;
+    })
+    .catch(err => {
+      pendingAnimationFrameBuilds.delete(cacheKey);
+      throw err;
+    });
+
+  pendingAnimationFrameBuilds.set(cacheKey, buildPromise);
+  return buildPromise;
 }
 
 export async function changeLayeredAnimation(
