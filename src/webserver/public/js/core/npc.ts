@@ -406,4 +406,12 @@ function createNPC(data: any) {
   }).call(npc);
 }
 
-export { createNPC, reinitNpcSprite, particlePool };
+function deleteNPC(npc: any) {
+  // Remove from cache
+  const idx = cache.npcs.findIndex((n: any) => n.id === npc.id);
+  if (idx >= 0) {
+    cache.npcs.splice(idx, 1);
+  }
+}
+
+export { createNPC, reinitNpcSprite, particlePool, deleteNPC };

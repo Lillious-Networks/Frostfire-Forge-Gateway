@@ -186,7 +186,7 @@ class EntityEditor {
       // List panel
       this.entityListPanel = document.createElement("div");
       this.entityListPanel.id = "entity-editor-list-panel";
-      this.entityListPanel.className = "ee-floating-panel";
+      this.entityListPanel.className = "ee-floating-panel ui";
       this.entityListPanel.style.left = "50px";
       this.entityListPanel.style.top = "50px";
       this.entityListPanel.style.width = "300px";
@@ -196,26 +196,27 @@ class EntityEditor {
       this.entityListPanel.style.pointerEvents = "auto";
 
       const listHeader = document.createElement("div");
-      listHeader.className = "ee-panel-header";
+      listHeader.className = "ee-panel-header ui";
       const listTitle = document.createElement("span");
-      listTitle.className = "ee-panel-title";
+      listTitle.className = "ee-panel-title ui";
       listTitle.textContent = "Entities";
       listHeader.appendChild(listTitle);
 
       const listMinimizeBtn = document.createElement("button");
-      listMinimizeBtn.className = "ee-panel-minimize";
+      listMinimizeBtn.className = "ee-panel-minimize ui";
       listMinimizeBtn.textContent = "−";
       listHeader.appendChild(listMinimizeBtn);
 
       const listCloseBtn = document.createElement("button");
-      listCloseBtn.className = "ee-panel-close";
+      listCloseBtn.className = "ee-panel-close ui";
       listCloseBtn.textContent = "×";
       listHeader.appendChild(listCloseBtn);
 
       const listContent = document.createElement("div");
-      listContent.className = "ee-panel-content";
+      listContent.className = "ee-panel-content ui";
 
       const searchInput = document.createElement("input");
+      searchInput.className = "ui";
       searchInput.type = "text";
       searchInput.placeholder = "Search entities...";
       searchInput.setAttribute("data-search", "entities");
@@ -225,9 +226,11 @@ class EntityEditor {
       searchInput.style.marginBottom = "8px";
 
       this.entityListEl = document.createElement("div");
+      this.entityListEl.className = "ui";
 
       const newEntityBtn = document.createElement("button");
       newEntityBtn.id = "ee-new-entity";
+      newEntityBtn.className = "ui";
       newEntityBtn.textContent = "+ New Entity";
 
       listContent.appendChild(searchInput);
@@ -240,7 +243,7 @@ class EntityEditor {
       // Properties panel
       this.propertiesPanel = document.createElement("div");
       this.propertiesPanel.id = "entity-editor-properties-panel";
-      this.propertiesPanel.className = "ee-floating-panel";
+      this.propertiesPanel.className = "ee-floating-panel ui";
       this.propertiesPanel.style.right = "50px";
       this.propertiesPanel.style.top = "50px";
       this.propertiesPanel.style.width = "350px";
@@ -250,32 +253,32 @@ class EntityEditor {
       this.propertiesPanel.style.pointerEvents = "auto";
 
       const propsHeader = document.createElement("div");
-      propsHeader.className = "ee-panel-header";
+      propsHeader.className = "ee-panel-header ui";
 
       const saveBtn = document.createElement("button");
       saveBtn.id = "ee-save-entity-header";
-      saveBtn.className = "ee-panel-save";
+      saveBtn.className = "ee-panel-save ui";
       saveBtn.textContent = "💾";
       saveBtn.title = "Save Entity";
       propsHeader.appendChild(saveBtn);
 
       const propsTitle = document.createElement("span");
-      propsTitle.className = "ee-panel-title";
+      propsTitle.className = "ee-panel-title ui";
       propsTitle.textContent = "Properties";
       propsHeader.appendChild(propsTitle);
 
       const propsMinimizeBtn = document.createElement("button");
-      propsMinimizeBtn.className = "ee-panel-minimize";
+      propsMinimizeBtn.className = "ee-panel-minimize ui";
       propsMinimizeBtn.textContent = "−";
       propsHeader.appendChild(propsMinimizeBtn);
 
       const closeBtn = document.createElement("button");
-      closeBtn.className = "ee-panel-close";
+      closeBtn.className = "ee-panel-close ui";
       closeBtn.textContent = "×";
       propsHeader.appendChild(closeBtn);
 
       const propsContent = document.createElement("div");
-      propsContent.className = "ee-panel-content";
+      propsContent.className = "ee-panel-content ui";
 
       const fields = [
         { label: "Name", field: "name", type: "text" },
@@ -586,6 +589,7 @@ class EntityEditor {
 
     for (const entity of filtered) {
       const item = document.createElement("div");
+      item.className = "ui";
       item.style.padding = "8px";
       item.style.marginBottom = "6px";
       item.style.background = "rgba(255, 255, 255, 0.05)";
@@ -602,6 +606,7 @@ class EntityEditor {
       }
 
       const name = document.createElement("strong");
+      name.className = "ui";
       name.style.display = "block";
       name.style.marginBottom = "2px";
       name.textContent = entity.name || "Unnamed";

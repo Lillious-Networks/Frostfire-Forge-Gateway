@@ -2296,9 +2296,9 @@ class TileEditor {
     const tileIndex = localTileY * chunk.width + localTileX;
     const tileId = layer.data[tileIndex];
 
-    this.copiedTile = tileId;
-
+    // Only copy if tile is not empty (tileId > 0)
     if (tileId > 0) {
+      this.copiedTile = tileId;
       this.selectedTile = tileId;
 
       const tilesetIndex = window.mapData.tilesets.findIndex((t: any) =>
@@ -2313,10 +2313,11 @@ class TileEditor {
       }
 
       this.scrollToSelectedTile();
+      this.setTool('paste');
+      this.updatePasteButtonState();
+      // Clear preview position to avoid rendering artifacts
+      this.previewTilePos = null;
     }
-
-    this.setTool('paste');
-    this.updatePasteButtonState();
   }
 
   private pasteTile(tileX: number, tileY: number) {
@@ -2817,6 +2818,7 @@ class TileEditor {
 
     // Recreate property list
     const propertyList = document.createElement("div");
+    propertyList.className = "ui";
     propertyList.style.display = 'flex';
     propertyList.style.flexDirection = 'column';
     propertyList.style.gap = '10px';
@@ -2825,10 +2827,12 @@ class TileEditor {
     for (const [key, value] of Object.entries(objectData)) {
       if (!excludedKeys.has(key)) {
         const propertyDiv = document.createElement("div");
+        propertyDiv.className = "ui";
         propertyDiv.style.borderBottom = '1px solid rgba(46, 204, 113, 0.2)';
         propertyDiv.style.paddingBottom = '10px';
 
         const label = document.createElement("div");
+        label.className = "ui";
         label.style.color = 'rgba(46, 204, 113, 0.8)';
         label.style.fontSize = '0.9em';
         label.style.fontWeight = 'bold';
@@ -2836,12 +2840,14 @@ class TileEditor {
         propertyDiv.appendChild(label);
 
         const inputContainer = document.createElement("div");
+        inputContainer.className = "ui";
         inputContainer.style.display = 'flex';
         inputContainer.style.gap = '8px';
         inputContainer.style.marginTop = '5px';
         inputContainer.style.alignItems = 'center';
 
         const valueInput = document.createElement("input");
+        valueInput.className = "ui";
         valueInput.type = 'text';
         valueInput.value = String(value);
         valueInput.style.flex = '1';
@@ -2875,6 +2881,7 @@ class TileEditor {
         });
 
         const deleteBtn = document.createElement("button");
+        deleteBtn.className = "ui";
         deleteBtn.innerText = '−';
         deleteBtn.style.background = 'rgba(255, 100, 100, 0.3)';
         deleteBtn.style.color = 'rgba(255, 100, 100, 0.8)';
@@ -2912,6 +2919,7 @@ class TileEditor {
 
     if (Object.keys(objectData).filter(k => !excludedKeys.has(k)).length === 0) {
       const noPropsDiv = document.createElement("div");
+      noPropsDiv.className = "ui";
       noPropsDiv.style.color = 'rgba(255, 255, 255, 0.6)';
       noPropsDiv.style.fontStyle = 'italic';
       noPropsDiv.innerText = 'No custom properties';
@@ -2920,11 +2928,13 @@ class TileEditor {
 
     // Add new property button
     const addPropDiv = document.createElement("div");
+    addPropDiv.className = "ui";
     addPropDiv.style.marginTop = '10px';
     addPropDiv.style.paddingTop = '10px';
     addPropDiv.style.borderTop = '1px solid rgba(46, 204, 113, 0.2)';
 
     const addPropBtn = document.createElement("button");
+    addPropBtn.className = "ui";
     addPropBtn.innerText = '+ Add Property';
     addPropBtn.style.width = '100%';
     addPropBtn.style.padding = '8px';
@@ -3190,7 +3200,9 @@ class TileEditor {
   }
 
   private onMapContextMenu(e: MouseEvent) {
-    if (!this.isActive || !window.mapData) return;
+    if (!this.isActive || !window.mapData) {
+      return;
+    }
 
     // Check if clicking on tile editor container
     if ((e.target as HTMLElement).closest('#tile-editor-container')) {
@@ -3198,6 +3210,7 @@ class TileEditor {
     }
 
     e.preventDefault();
+    e.stopPropagation();
 
     const worldPos = this.screenToWorld(e.clientX, e.clientY);
     const worldX = worldPos.x;
@@ -3209,6 +3222,7 @@ class TileEditor {
 
     // Create context menu
     const contextMenu = document.createElement("div");
+    contextMenu.className = "ui";
     contextMenu.id = 'context-menu';
     contextMenu.style.left = `${e.clientX}px`;
     contextMenu.style.top = `${e.clientY}px`;
@@ -3231,6 +3245,7 @@ class TileEditor {
     }
 
     const ul = document.createElement("ul");
+    ul.className = "ui";
 
     // Check what was clicked
     const clickedGraveyard = this.getGraveyardAtPosition(worldX, worldY);
@@ -3248,6 +3263,7 @@ class TileEditor {
     if (clickedGraveyard && this.selectedObject === 'Graveyards') {
       // Show properties option for graveyard (only if Graveyards layer is selected)
       const propertiesItem = document.createElement("li");
+      propertiesItem.className = "ui";
       propertiesItem.innerText = "Properties";
       propertiesItem.onclick = (e) => {
         e.stopPropagation();
@@ -3259,6 +3275,7 @@ class TileEditor {
 
       // Show delete option for graveyard
       const deleteItem = document.createElement("li");
+      deleteItem.className = "ui";
       deleteItem.innerText = "Delete";
       deleteItem.onclick = (e) => {
         e.stopPropagation();
@@ -3326,9 +3343,12 @@ class TileEditor {
       ul.appendChild(createItem);
     }
 
-    contextMenu.appendChild(ul);
-    document.body.appendChild(contextMenu);
-    document.addEventListener("click", () => contextMenu.remove(), { once: true });
+    // Only show context menu if there are menu items
+    if (ul.children.length > 0) {
+      contextMenu.appendChild(ul);
+      document.body.appendChild(contextMenu);
+      document.addEventListener("click", () => contextMenu.remove(), { once: true });
+    }
   }
 
   private createGraveyardAtPosition(x: number, y: number) {
@@ -3742,6 +3762,7 @@ class TileEditor {
   private openAddPropertyModal(objectData: any, excludedKeys: Set<string>, onComplete: () => void) {
     // Create modal overlay
     const modalOverlay = document.createElement("div");
+    modalOverlay.className = "ui";
     modalOverlay.style.position = 'fixed';
     modalOverlay.style.top = '0';
     modalOverlay.style.left = '0';
@@ -3755,6 +3776,7 @@ class TileEditor {
 
     // Create modal
     const modal = document.createElement("div");
+    modal.className = "ui";
     modal.style.background = 'rgba(30, 30, 40, 0.95)';
     modal.style.border = '1px solid rgba(46, 204, 113, 0.3)';
     modal.style.borderRadius = '10px';
@@ -3764,6 +3786,7 @@ class TileEditor {
 
     // Title
     const title = document.createElement("h3");
+    title.className = "ui";
     title.innerText = 'Add Property';
     title.style.color = 'rgba(46, 204, 113, 0.8)';
     title.style.margin = '0 0 20px 0';
@@ -3772,6 +3795,7 @@ class TileEditor {
 
     // Property name field
     const nameLabel = document.createElement("label");
+    nameLabel.className = "ui";
     nameLabel.innerText = 'Property Name';
     nameLabel.style.display = 'block';
     nameLabel.style.color = 'rgba(46, 204, 113, 0.8)';
@@ -3780,6 +3804,7 @@ class TileEditor {
     modal.appendChild(nameLabel);
 
     const nameInput = document.createElement("input");
+    nameInput.className = "ui";
     nameInput.type = 'text';
     nameInput.placeholder = 'e.g., targetMap';
     nameInput.style.width = '100%';
@@ -3794,6 +3819,7 @@ class TileEditor {
 
     // Type dropdown
     const typeLabel = document.createElement("label");
+    typeLabel.className = "ui";
     typeLabel.innerText = 'Value Type';
     typeLabel.style.display = 'block';
     typeLabel.style.color = 'rgba(46, 204, 113, 0.8)';
@@ -3802,6 +3828,7 @@ class TileEditor {
     modal.appendChild(typeLabel);
 
     const typeSelect = document.createElement("select");
+    typeSelect.className = "ui";
     typeSelect.style.width = '100%';
     typeSelect.style.padding = '8px';
     typeSelect.style.marginBottom = '15px';
@@ -3814,6 +3841,7 @@ class TileEditor {
     const types = ['string', 'bool', 'int', 'float', 'color', 'file', 'object'];
     types.forEach(type => {
       const option = document.createElement("option");
+      option.className = "ui";
       option.value = type;
       option.innerText = type.charAt(0).toUpperCase() + type.slice(1);
       typeSelect.appendChild(option);
@@ -3822,6 +3850,7 @@ class TileEditor {
 
     // Value field
     const valueLabel = document.createElement("label");
+    valueLabel.className = "ui";
     valueLabel.innerText = 'Value';
     valueLabel.style.display = 'block';
     valueLabel.style.color = 'rgba(46, 204, 113, 0.8)';
@@ -3830,6 +3859,7 @@ class TileEditor {
     modal.appendChild(valueLabel);
 
     const valueInput = document.createElement("input");
+    valueInput.className = "ui";
     valueInput.type = 'text';
     valueInput.placeholder = 'Enter value';
     valueInput.style.width = '100%';
@@ -3844,11 +3874,13 @@ class TileEditor {
 
     // Buttons
     const buttonContainer = document.createElement("div");
+    buttonContainer.className = "ui";
     buttonContainer.style.display = 'flex';
     buttonContainer.style.gap = '10px';
     buttonContainer.style.justifyContent = 'flex-end';
 
     const cancelBtn = document.createElement("button");
+    cancelBtn.className = "ui";
     cancelBtn.innerText = 'Cancel';
     cancelBtn.style.padding = '8px 16px';
     cancelBtn.style.background = 'rgba(100, 100, 100, 0.3)';
@@ -3862,6 +3894,7 @@ class TileEditor {
     buttonContainer.appendChild(cancelBtn);
 
     const addBtn = document.createElement("button");
+    addBtn.className = "ui";
     addBtn.innerText = 'Add';
     addBtn.style.padding = '8px 16px';
     addBtn.style.background = 'rgba(46, 204, 113, 0.3)';
@@ -4024,6 +4057,7 @@ class TileEditor {
 
     ctx.save();
     ctx.globalAlpha = 0.6;
+    ctx.imageSmoothingEnabled = false;
 
     if (this.currentTool === 'paint' && this.selectedTiles.length > 0) {
       try {

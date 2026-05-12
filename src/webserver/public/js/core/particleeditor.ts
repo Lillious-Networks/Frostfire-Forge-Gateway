@@ -148,6 +148,15 @@ class ParticleEditor {
       deleteBtn.addEventListener("click", () => this.deleteParticle());
     }
 
+    // Close button for properties panel
+    const propertiesPanel = document.getElementById("particle-editor-properties-panel");
+    if (propertiesPanel) {
+      const closeBtn = propertiesPanel.querySelector(".pe-panel-close") as HTMLButtonElement;
+      if (closeBtn) {
+        closeBtn.addEventListener("click", () => this.setPropertiesPanelVisible(false));
+      }
+    }
+
     // Search input
     const searchInput = document.getElementById("pe-particle-search") as HTMLInputElement;
     if (searchInput) {
@@ -235,6 +244,10 @@ class ParticleEditor {
         let offsetY = 0;
 
         header.addEventListener("mousedown", (e) => {
+          // Don't drag if clicking on buttons
+          if ((e.target as HTMLElement).closest("button")) {
+            return;
+          }
           isDown = true;
           offsetX = (e as MouseEvent).clientX - panel!.offsetLeft;
           offsetY = (e as MouseEvent).clientY - panel!.offsetTop;
@@ -349,7 +362,7 @@ class ParticleEditor {
 
     for (const particle of filteredParticles) {
       const item = document.createElement("div");
-      item.className = "pe-particle-item";
+      item.className = "pe-particle-item ui";
       item.textContent = particle.name || "Unnamed";
 
       // Add selected class if this is the currently selected particle

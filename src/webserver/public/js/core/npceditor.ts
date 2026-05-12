@@ -1,6 +1,6 @@
 import { getCameraX, getCameraY } from "./renderer.js";
 import Cache from "./cache.js";
-import { createNPC } from "./npc.js";
+import { createNPC, deleteNPC } from "./npc.js";
 
 const cache = Cache.getInstance();
 
@@ -13,6 +13,7 @@ class NpcEditor {
   private selectedNpc: any = null;
   private npcs: any[] = [];
   private availableParticles: string[] = [];
+  private selectedParticles: string[] = [];
   private isDirty: boolean = false;
   private searchQuery: string = "";
   private particleSearchQuery: string = "";
@@ -190,6 +191,19 @@ class NpcEditor {
     const panel = document.getElementById("npc-editor-properties-panel");
     if (panel) {
       panel.style.display = visible ? "block" : "none";
+
+      // If closing the panel and there are unsaved changes, remove the unsaved NPC from the list
+      if (!visible && this.isDirty && this.selectedNpc && this.selectedNpc.id === null) {
+        // Remove from npcs array
+        this.npcs = this.npcs.filter((npc) => npc.id !== null || npc !== this.selectedNpc);
+        // Remove from game world
+        deleteNPC(this.selectedNpc);
+        // Clear selection
+        this.selectedNpc = null;
+        this.hasPendingNew = false;
+        // Refresh the list
+        this.refreshNpcList();
+      }
     }
   }
 
@@ -220,6 +234,11 @@ class NpcEditor {
     const deleteBtn = document.getElementById("ne-delete-npc");
     if (deleteBtn) {
       deleteBtn.addEventListener("click", () => this.deleteNpc());
+    }
+
+    const closeBtn = document.querySelector(".ne-panel-close") as HTMLButtonElement;
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => this.setPropertiesPanelVisible(false));
     }
 
     const searchInput = document.getElementById("ne-npc-search") as HTMLInputElement;
@@ -278,6 +297,37 @@ class NpcEditor {
         el.addEventListener("change", () => this.markDirty());
       }
     }
+
+    // Tab switching functionality
+    const tabButtons = document.querySelectorAll(".ne-tab-button");
+    const tabPanels = document.querySelectorAll(".ne-tab-panel");
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
+        const tabName = (button as HTMLElement).getAttribute("data-tab");
+        if (!tabName) return;
+
+        // Remove active class from all buttons
+        tabButtons.forEach((btn) => btn.classList.remove("ne-tab-active"));
+        // Hide all tab panels
+        tabPanels.forEach((panel) => {
+          (panel as HTMLElement).style.display = "none";
+        });
+
+        // Add active class to clicked button
+        (button as HTMLElement).classList.add("ne-tab-active");
+        // Show corresponding tab panel
+        const targetPanel = document.querySelector(`.ne-tab-${tabName}-panel`) as HTMLElement;
+        if (targetPanel) {
+          targetPanel.style.display = "block";
+        }
+
+        // Store tab preference
+        if (this.selectedNpc) {
+          localStorage.setItem(`ne-tab-preference-${this.selectedNpc.id}`, tabName);
+        }
+      });
+    });
   }
 
   private setupPanelDragAndResize() {
@@ -405,7 +455,6 @@ class NpcEditor {
 
     container.innerHTML = "";
 
-    const selectedParticleNames = this.getSelectedParticleNames();
     const filtered = this.availableParticles.filter((name) =>
       name.toLowerCase().includes(this.particleSearchQuery)
     );
@@ -415,17 +464,36 @@ class NpcEditor {
       return;
     }
 
-    for (const name of filtered) {
+    // Sort: active particles first, then inactive
+    const sorted = filtered.sort((a, b) => {
+      const aActive = this.selectedParticles.includes(a);
+      const bActive = this.selectedParticles.includes(b);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+      return a.localeCompare(b); // Alphabetical fallback
+    });
+
+    for (const name of sorted) {
       const row = document.createElement("label");
-      row.className = "ne-particle-option";
+      row.className = "ne-particle-option ui";
 
       const checkbox = document.createElement("input");
+      checkbox.className = "ui";
       checkbox.type = "checkbox";
       checkbox.value = name;
-      checkbox.checked = selectedParticleNames.includes(name);
-      checkbox.addEventListener("change", () => this.markDirty());
+      checkbox.checked = this.selectedParticles.includes(name);
+      checkbox.addEventListener("change", () => {
+        // Update selectedParticles when checkbox changes
+        if (checkbox.checked && !this.selectedParticles.includes(name)) {
+          this.selectedParticles.push(name);
+        } else if (!checkbox.checked) {
+          this.selectedParticles = this.selectedParticles.filter(p => p !== name);
+        }
+        this.markDirty();
+      });
 
       const text = document.createElement("span");
+      text.className = "ui";
       text.textContent = name;
 
       row.appendChild(checkbox);
@@ -452,22 +520,32 @@ class NpcEditor {
 
     if (filtered.length === 0) {
       const empty = document.createElement("div");
-      empty.style.cssText = "padding: 8px; color: rgba(255,255,255,0.4); font-size: 12px; text-align: center;";
-      empty.textContent = "No NPCs in this map";
+      empty.className = "ui";
+      empty.style.cssText = "padding: 20px; color: rgba(255,255,255,0.3); font-size: 12px; text-align: center; grid-column: 1 / -1;";
+      empty.textContent = "No NPCs found in this map";
       this.npcListEl.appendChild(empty);
       return;
     }
 
     for (const npc of filtered) {
       const item = document.createElement("div");
-      item.className = "ne-npc-item";
+      item.className = "ne-npc-item ui";
       if (this.selectedNpc?.id === npc.id) item.classList.add("selected");
 
       const x = npc.position?.x ?? 0;
       const y = npc.position?.y ?? 0;
-      item.textContent = npc.id === null
-        ? "New NPC (unsaved)"
-        : `NPC #${npc.id} @ (${Math.round(x)}, ${Math.round(y)})`;
+
+      // Create sub-elements for better structure
+      const idEl = document.createElement("div");
+      idEl.className = "ne-npc-item-id ui";
+      idEl.textContent = npc.id === null ? "UNSAVED" : `#${npc.id}`;
+
+      const posEl = document.createElement("div");
+      posEl.className = "ne-npc-item-pos ui";
+      posEl.textContent = `@ (${Math.round(x)}, ${Math.round(y)})`;
+
+      item.appendChild(idEl);
+      item.appendChild(posEl);
       item.addEventListener("click", () => this.selectNpc(npc));
       this.npcListEl!.appendChild(item);
     }
@@ -480,6 +558,15 @@ class NpcEditor {
     this.refreshNpcList();
     this.updateDirtyIndicator();
     this.setPropertiesPanelVisible(true);
+
+    // Restore saved tab preference
+    const savedTab = localStorage.getItem(`ne-tab-preference-${npc.id}`);
+    if (savedTab) {
+      const tabButton = document.querySelector(`[data-tab="${savedTab}"]`) as HTMLElement;
+      if (tabButton) {
+        tabButton.click();
+      }
+    }
   }
 
   private populateForm(npc: any) {
@@ -541,13 +628,11 @@ class NpcEditor {
       npcParticleNames = npc.particles.map((p: any) => (typeof p === "string" ? p : p?.name)).filter(Boolean);
     }
 
-    const container = document.getElementById("ne-particle-options");
-    if (container) {
-      const checkboxes = container.querySelectorAll<HTMLInputElement>("input[type=checkbox]") as any;
-      for (const cb of checkboxes) {
-        cb.checked = npcParticleNames.includes(cb.value);
-      }
-    }
+    // Store selected particles in class property
+    this.selectedParticles = npcParticleNames;
+
+    // Re-render particle options to apply sorting
+    this.renderParticleOptions();
   }
 
   private getFormData(): any {
@@ -658,7 +743,9 @@ class NpcEditor {
     const cancelBtn = document.getElementById("ne-delete-cancel");
     if (!modal || !nameEl) return;
 
-    nameEl.textContent = `NPC #${this.selectedNpc.id}`;
+    // Handle both saved and unsaved NPCs
+    const isUnsaved = this.selectedNpc.id === null;
+    nameEl.textContent = isUnsaved ? "Unsaved NPC" : `NPC #${this.selectedNpc.id}`;
     modal.classList.add("visible");
 
     const cleanup = () => {
@@ -670,8 +757,20 @@ class NpcEditor {
 
     const confirmHandler = () => {
       cleanup();
-      const sendRequest = (window as any).sendRequest;
-      if (sendRequest) sendRequest({ type: "DELETE_NPC", data: { id: this.selectedNpc!.id } });
+
+      if (isUnsaved) {
+        // For unsaved NPCs, just remove from arrays
+        this.npcs = this.npcs.filter((npc) => npc !== this.selectedNpc);
+        deleteNPC(this.selectedNpc);
+        this.selectedNpc = null;
+        this.hasPendingNew = false;
+        this.refreshNpcList();
+        this.setPropertiesPanelVisible(false);
+      } else {
+        // For saved NPCs, send delete request to server
+        const sendRequest = (window as any).sendRequest;
+        if (sendRequest) sendRequest({ type: "DELETE_NPC", data: { id: this.selectedNpc!.id } });
+      }
     };
 
     const cancelHandler = () => cleanup();
