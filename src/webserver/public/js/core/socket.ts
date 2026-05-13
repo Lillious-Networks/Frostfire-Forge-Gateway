@@ -6,7 +6,7 @@ import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
 import { updateTime } from "./ambience.ts";
-import { setWeatherType } from "./renderer.ts";
+import { setWeatherType, setWeatherData } from "./renderer.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip } from "./tooltip.ts";
 const cache = Cache.getInstance();
 
@@ -481,20 +481,17 @@ async function handleLoadPlayersPacket(data: any) {
     const playerArray = Array.isArray(players) ? players : [];
 
     for (const player of playerArray) {
-      if (player.id != cachedPlayerId) {
+      const existingByUsername = Array.from(cache.players).find(
+        (p) => p.username === player.username && p.userid === player.userid
+      );
 
-        const existingByUsername = Array.from(cache.players).find(
-          (p) => p.username === player.username && p.userid === player.userid
-        );
+      const existingInPending = cache.pendingPlayers?.get(player.id);
 
-        const existingInPending = cache.pendingPlayers?.get(player.id);
-
-        if (!existingByUsername && !existingInPending) {
-          await createPlayer(player);
-        } else if (existingByUsername) {
-          // Update stealth state for existing players (fixes admin unstealth visibility issue)
-          existingByUsername.isStealth = player.isStealth;
-        }
+      if (!existingByUsername && !existingInPending) {
+        await createPlayer(player);
+      } else if (existingByUsername) {
+        // Update stealth state for existing players (fixes admin unstealth visibility issue)
+        existingByUsername.isStealth = player.isStealth;
       }
     }
 
@@ -699,6 +696,10 @@ socket.onmessage = async (event) => {
     case "WEATHER": {
       if (!data || !data.weather) return;
       setWeatherType(data.weather);
+      // Store the full weather data object if provided
+      if (data.weatherData) {
+        setWeatherData(data.weatherData);
+      }
       break;
     }
     case "CONSOLE_MESSAGE": {
@@ -3354,6 +3355,9 @@ async function hideLoadingScreen() {
   const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
 
   if (loadingScreen) {
+    // Wait 1 second before starting the fade out
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     loadingScreen.style.transition = "1s";
     loadingScreen.style.opacity = "0";
     setTimeout(() => {

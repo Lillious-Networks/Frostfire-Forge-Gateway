@@ -4,6 +4,7 @@ import Cache from "./cache.ts";
 import { config } from "../web/global.js";
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 let weatherType = null as string | null;
+let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
@@ -194,7 +195,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
 
     if (weatherType) {
       updateWeatherCanvas(cameraX, cameraY);
-      weather(weatherType);
+      weather(weatherType, currentWeatherData);
     }
   }
 }
@@ -311,10 +312,22 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
     const screenX = chunkWorldX + offsetX;
     const screenY = chunkWorldY + offsetY;
 
+    // Get the appropriate pre-rendered chunk canvas
+    const chunkCanvas = layer === 'lower'
+      ? window.mapData.getChunkLowerCanvas(chunk.x, chunk.y)
+      : window.mapData.getChunkUpperCanvas(chunk.x, chunk.y);
+
+    if (!chunkCanvas) continue;
+
     const sortedLayers = [...chunkData.layers].sort((a: any, b: any) => a.zIndex - b.zIndex);
+    const tileEditor = (window as any).tileEditor;
+    const useDimming = tileEditor?.isActive && tileEditor.dimOtherLayers;
+
+    // Check if any layer in this chunk matches our selection criteria
+    let shouldDrawChunk = false;
+    let chunkAlpha = 1.0;
 
     for (const chunkLayer of sortedLayers) {
-
       const belongsToThisCanvas = layer === 'lower'
         ? chunkLayer.zIndex < PLAYER_Z_INDEX
         : chunkLayer.zIndex >= PLAYER_Z_INDEX;
@@ -326,64 +339,35 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
       const isCollisionLayer = layerNameLower.includes('collision');
       const isNoPvpLayer = layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp');
 
-      if ((isCollisionLayer || isNoPvpLayer) && !isSelected) {
-        continue;
-      }
-
-      const tileEditor = (window as any).tileEditor;
-      const useDimming = tileEditor?.isActive && tileEditor.dimOtherLayers;
       const isLayerVisible = tileEditor?.isLayerVisible(chunkLayer.name) ?? true;
 
+      if ((isCollisionLayer || isNoPvpLayer) && !isSelected) continue;
+
+      shouldDrawChunk = true;
+
       if (isCollisionSelected || isNoPvpSelected) {
-
-        if (isCollisionLayer || isNoPvpLayer) {
-          continue;
+        if (!(isCollisionLayer || isNoPvpLayer)) {
+          chunkAlpha = isLayerVisible ? 1.0 : 0;
         }
-        ctx.globalAlpha = isLayerVisible ? 1.0 : 0;
       } else if (useDimming) {
-        ctx.globalAlpha = isSelected ? (isLayerVisible ? 1.0 : 0) : (isLayerVisible ? 0.5 : 0);
+        chunkAlpha = isSelected ? (isLayerVisible ? 1.0 : 0) : (isLayerVisible ? 0.5 : 0);
+        break;
       } else {
-        ctx.globalAlpha = isLayerVisible ? 1.0 : 0;
-      }
-
-      for (let y = 0; y < chunkData.height; y++) {
-        for (let x = 0; x < chunkData.width; x++) {
-          const tileIndex = chunkLayer.data[y * chunkData.width + x];
-          if (tileIndex === 0) continue;
-
-          const tileset = window.mapData.tilesets.find(
-            (t: any) => t.firstgid <= tileIndex && tileIndex < t.firstgid + t.tilecount
-          );
-          if (!tileset) continue;
-
-          const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
-          if (!image || !image.complete) continue;
-
-          const localTileIndex = tileIndex - tileset.firstgid;
-          const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-          const tileX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
-          const tileY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
-
-          const drawX = screenX + x * window.mapData.tilewidth;
-          const drawY = screenY + y * window.mapData.tileheight;
-
-          try {
-            ctx.drawImage(
-              image,
-              tileX, tileY,
-              tileset.tilewidth, tileset.tileheight,
-              drawX, drawY,
-              window.mapData.tilewidth, window.mapData.tileheight
-            );
-          } catch (error) {
-            console.error("Error drawing tile:", error);
-          }
-        }
+        chunkAlpha = isLayerVisible ? 1.0 : 0;
       }
     }
 
-    ctx.globalAlpha = 1;
+    if (shouldDrawChunk) {
+      try {
+        ctx.globalAlpha = chunkAlpha;
+        ctx.drawImage(chunkCanvas, screenX, screenY);
+      } catch (error) {
+        console.error("Error drawing chunk canvas:", error);
+      }
+    }
   }
+
+  ctx.globalAlpha = 1;
 }
 
 function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
@@ -686,8 +670,23 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
 
-  const offsetX = Math.round(viewportWidth / 2 - smoothMapX);
-  const offsetY = Math.round(viewportHeight / 2 - smoothMapY);
+  // Calculate map size in pixels
+  const mapWidth = window.mapData.width * window.mapData.tilewidth;
+  const mapHeight = window.mapData.height * window.mapData.tileheight;
+
+  // Calculate centering offset for small maps
+  let mapCenterOffsetX = 0;
+  let mapCenterOffsetY = 0;
+
+  if (mapWidth < viewportWidth) {
+    mapCenterOffsetX = (viewportWidth - mapWidth) / 2;
+  }
+  if (mapHeight < viewportHeight) {
+    mapCenterOffsetY = (viewportHeight - mapHeight) / 2;
+  }
+
+  const offsetX = Math.round(viewportWidth / 2 - smoothMapX + mapCenterOffsetX);
+  const offsetY = Math.round(viewportHeight / 2 - smoothMapY + mapCenterOffsetY);
 
   const visibleChunks = getVisibleChunks();
 
@@ -699,6 +698,12 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
   if (tilesetLookupCache.size === 0) {
     tilesetLookupCache = buildTilesetLookupMap();
   }
+
+  // Set up clipping region to prevent rendering outside map bounds
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(offsetX, offsetY, mapWidth, mapHeight);
+  ctx.clip();
 
   if (isEditorActive && selectedLayer) {
     drawAllLayersWithOpacity(layer, visibleChunks, offsetX, offsetY, selectedLayer);
@@ -756,6 +761,7 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
       }
     }
   }
+  ctx.restore();
 }
 
 function animationLoop() {
@@ -960,19 +966,24 @@ function animationLoop() {
 
   ctx.save();
 
-  const offsetX = Math.round(window.innerWidth / 2 - smoothMapX);
-  const offsetY = Math.round(window.innerHeight / 2 - smoothMapY);
+  // Calculate map size in pixels and centering offset for small maps
+  const mapWidth = window.mapData.width * window.mapData.tilewidth;
+  const mapHeight = window.mapData.height * window.mapData.tileheight;
+  let mapCenterOffsetX = 0;
+  let mapCenterOffsetY = 0;
+
+  if (mapWidth < window.innerWidth) {
+    mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+  }
+  if (mapHeight < window.innerHeight) {
+    mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+  }
+
+  const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+  const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
   ctx.translate(offsetX, offsetY);
 
   ctx.imageSmoothingEnabled = false;
-
-  // Render graveyards and warps when tile editor is active
-  const tileEditor = (window as any).tileEditor;
-  if (tileEditor?.isActive) {
-    ctx.save();
-    renderGraveyardsAndWarps(ctx, offsetX, offsetY);
-    ctx.restore();
-  }
 
   // Render particles with zIndex < 3 (lower layers) before NPCs
   if (!wireframeDebugCheckbox.checked) {
@@ -989,6 +1000,8 @@ function animationLoop() {
       }
     }
   }
+
+  const npcEditor = (window as any).npcEditor;
 
   if (wireframeDebugCheckbox.checked) {
 
@@ -1034,21 +1047,9 @@ function animationLoop() {
 
     for (const p of visiblePlayers) p.show(ctx, currentPlayer);
 
-    const npcEditor = (window as any).npcEditor;
     for (const npc of visibleNpcs) {
       npc.show(ctx);
       npc.dialogue(ctx);
-      // Draw outline for hidden NPCs when NPC editor is active
-      if (npcEditor?.isActive && npc.hidden) {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 80, 80, 0.9)';
-        ctx.fillStyle = 'rgba(255, 80, 80, 0.15)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        ctx.fillRect(npc.position.x - 16, npc.position.y - 24, 32, 48);
-        ctx.strokeRect(npc.position.x - 16, npc.position.y - 24, 32, 48);
-        ctx.restore();
-      }
     }
 
     // Render entities (same pattern as NPCs but with combat features)
@@ -1145,8 +1146,8 @@ function animationLoop() {
 
     // Render upper particles (zIndex >= 3) after upper map layers
     ctx.save();
-    const upperOffsetX = Math.round(window.innerWidth / 2 - smoothMapX);
-    const upperOffsetY = Math.round(window.innerHeight / 2 - smoothMapY);
+    const upperOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+    const upperOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
     ctx.translate(upperOffsetX, upperOffsetY);
 
     // Get all zIndex values >= 3 and sort them
@@ -1164,11 +1165,70 @@ function animationLoop() {
     }
 
     ctx.restore();
+
+    // Render graveyards and warps on top of all tile layers when tile editor is active
+    const tileEditor = (window as any).tileEditor;
+    if (tileEditor?.isActive) {
+      ctx.save();
+      const graveyardWarpOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+      const graveyardWarpOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+      ctx.translate(graveyardWarpOffsetX, graveyardWarpOffsetY);
+      renderGraveyardsAndWarps(ctx, graveyardWarpOffsetX, graveyardWarpOffsetY);
+      ctx.restore();
+    }
+
+    // Draw outline for hidden NPCs when NPC editor is active (z-index 15 - after upper particles)
+    if (npcEditor?.isActive) {
+      ctx.save();
+      const npcOutlineOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+      const npcOutlineOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+      ctx.translate(npcOutlineOffsetX, npcOutlineOffsetY);
+
+      for (const npc of visibleNpcs) {
+        if (npc.hidden) {
+          ctx.strokeStyle = 'rgba(255, 80, 80, 0.7)';
+          ctx.fillStyle = 'rgba(255, 80, 80, 0.1)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([]);
+          // Draw centered square (16x16) - NPC visual center is at position + (16, 24)
+          const squareSize = 16;
+          const centerX = npc.position.x + 16;
+          const centerY = npc.position.y + 24;
+          ctx.fillRect(centerX - squareSize / 2, centerY - squareSize / 2, squareSize, squareSize);
+          ctx.strokeRect(centerX - squareSize / 2, centerY - squareSize / 2, squareSize, squareSize);
+
+          // Draw NPC ID above the square
+          ctx.font = 'bold 13px monospace';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.fillStyle = 'rgba(255, 100, 100, 1)';
+          ctx.fillText(`#${npc.id}`, centerX, centerY - squareSize / 2 - 5);
+          ctx.shadowColor = 'transparent';
+        }
+      }
+      ctx.restore();
+    }
   } else {
 
     ctx.save();
-    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX);
-    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY);
+    // Calculate map size in pixels and centering offset for small maps
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapHeight = window.mapData.height * window.mapData.tileheight;
+    let mapCenterOffsetX = 0;
+    let mapCenterOffsetY = 0;
+
+    if (mapWidth < window.innerWidth) {
+      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+    if (mapHeight < window.innerHeight) {
+      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+    }
+
+    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
     ctx.translate(offsetX, offsetY);
 
     if (window.mapData) {
@@ -1427,8 +1487,21 @@ function animationLoop() {
 
   if ((window as any).tileEditor) {
     ctx.save();
-    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX);
-    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY);
+    // Calculate map size in pixels and centering offset for small maps
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapHeight = window.mapData.height * window.mapData.tileheight;
+    let mapCenterOffsetX = 0;
+    let mapCenterOffsetY = 0;
+
+    if (mapWidth < window.innerWidth) {
+      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+    if (mapHeight < window.innerHeight) {
+      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+    }
+
+    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
     ctx.translate(offsetX, offsetY);
     (window as any).tileEditor.renderPreview();
     ctx.restore();
@@ -1436,8 +1509,21 @@ function animationLoop() {
 
   if (!wireframeDebugCheckbox.checked) {
     ctx.save();
-    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX);
-    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY);
+    // Calculate map size in pixels and centering offset for small maps
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapHeight = window.mapData.height * window.mapData.tileheight;
+    let mapCenterOffsetX = 0;
+    let mapCenterOffsetY = 0;
+
+    if (mapWidth < window.innerWidth) {
+      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+    if (mapHeight < window.innerHeight) {
+      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+    }
+
+    const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+    const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
     ctx.translate(offsetX, offsetY);
     ctx.imageSmoothingEnabled = false;
 
@@ -1500,6 +1586,10 @@ function setWeatherType(type: string | null) {
   weatherType = type;
 }
 
+function setWeatherData(data: any) {
+  currentWeatherData = data;
+}
+
 function initializeCamera(x: number, y: number) {
   if (!cameraInitialized) {
     cameraX = x;
@@ -1528,6 +1618,7 @@ export {
   getCameraY,
   setWeatherType,
   getWeatherType,
+  setWeatherData,
   initializeCamera,
   setPendingRequest,
   getPendingRequest,

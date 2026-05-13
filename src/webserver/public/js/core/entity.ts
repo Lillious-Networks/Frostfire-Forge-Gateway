@@ -3,6 +3,12 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
 import { particlePool } from "./npc.js";
+import {
+  windBurst,
+  calculateWindSpeed,
+  applyWindVelocity,
+  getWindBias,
+} from "./windphysics.ts";
 
 // Normalize particle to ensure all required properties exist
 function normalizeParticle(particle: any): any {
@@ -337,18 +343,7 @@ function createEntity(data: any) {
         const windDirection = typeof particle.weather === 'object' ? particle.weather.wind_direction : null;
         const windSpeed = typeof particle.weather === 'object' ? particle.weather.wind_speed || 0 : 0;
 
-        const windBias = {
-          x: 0,
-          y: 0
-        }
-
-        if (windDirection !== null && (windDirection === 'left' || windDirection === 'right')) {
-
-          const windDirectionRad = (windDirection === 'left' ? 180 :
-                                  windDirection === 'right' ? 0 : 180) * Math.PI / 180;
-          windBias.x = Math.cos(windDirectionRad) * windSpeed * 0.5;
-          windBias.y = Math.sin(windDirectionRad) * windSpeed * 0.5;
-        }
+        const windBias = getWindBias(windSpeed, windDirection);
 
         // Reuse pooled particle object
         const newParticle = particlePool.acquire();
@@ -382,27 +377,34 @@ function createEntity(data: any) {
         return;
       }
 
+      // Update wind burst cycle - creates pulsating wind effect
+      const deltaTimeMs = deltaTime * 1000; // Convert deltaTime back to ms
+      windBurst.update(deltaTimeMs);
+
       const entityPosX = entity.position.x;
       const entityPosY = entity.position.y;
-      const weatherData = typeof particle.weather === 'object' ? particle.weather : null;
-      const windSpeed = weatherData?.wind_speed || 0;
-      const windDirection = weatherData?.wind_direction || null;
-      let windForceX = 0, windForceY = 0;
 
-      if (windDirection !== 'none' && (windDirection === 'left' || windDirection === 'right')) {
-        const windDirectionRad = (windDirection === 'left' ? 180 : 0) * Math.PI / 180;
-        windForceX = Math.cos(windDirectionRad) * windSpeed * 0.01;
-        windForceY = Math.sin(windDirectionRad) * windSpeed * 0.01;
+      // Only apply wind if particle is affected by weather
+      let windSpeed = 0;
+      let windDirection = null;
+      if (particle.affected_by_weather) {
+        const weatherData = typeof particle.weather === 'object' ? particle.weather : null;
+        const baseWindSpeed = weatherData?.wind_speed || 0;
+        windSpeed = calculateWindSpeed(baseWindSpeed, windBurst.getIntensity());
+        windDirection = weatherData?.wind_direction || null;
       }
 
-      const maxVelX = (particle.velocity?.x || 0) + (windSpeed * 0.2);
-      const maxVelY = (particle.velocity?.y || 0) + (windSpeed * 0.2);
       const gravX = particle.gravity?.x || 0;
       const gravY = particle.gravity?.y || 0;
+
+      // Velocity caps based on base particle velocity, wind can push beyond this
+      const maxVelX = Math.abs(particle.velocity?.x || 0) || 1;
+      const maxVelY = Math.abs(particle.velocity?.y || 0) || 1;
       const fadeInDur = particle.lifetime * 0.4;
       const fadeOutDur = particle.lifetime * 0.4;
       const particleOpacity = particle.opacity;
       const particleColor = particle.color || "white";
+      const glowIntensity = particle.glow_intensity || 0;
 
       // Set blend mode once for all particles
       context.globalCompositeOperation = 'lighter';
@@ -417,16 +419,24 @@ function createEntity(data: any) {
           continue;
         }
 
-        // Update physics - apply forces and velocity
-        if (gravX !== 0 || gravY !== 0 || windForceX !== 0 || windForceY !== 0) {
-          p.velocity.x += gravX * deltaTime + windForceX;
-          p.velocity.y += gravY * deltaTime + windForceY;
+        // Update physics - apply forces and velocity (match preview logic exactly)
+        // Apply gravity
+        p.velocity.y += gravY * deltaTime;
+        p.velocity.x += gravX * deltaTime;
 
-          p.velocity.x = Math.min(Math.max(p.velocity.x, -maxVelX), maxVelX);
-          p.velocity.y = Math.min(Math.max(p.velocity.y, -maxVelY), maxVelY);
-        }
+        // Apply wind velocity clamping
+        const newVelocity = applyWindVelocity(
+          p.velocity.x,
+          p.velocity.y,
+          windSpeed,
+          windDirection,
+          maxVelX,
+          maxVelY
+        );
+        p.velocity.x = newVelocity.vx;
+        p.velocity.y = newVelocity.vy;
 
-        // Always apply velocity to position (moved outside the force check)
+        // Always apply velocity to position
         p.localposition.x += p.velocity.x * deltaTime;
         p.localposition.y += p.velocity.y * deltaTime;
 
@@ -455,20 +465,48 @@ function createEntity(data: any) {
         gradient.addColorStop(0, particleColor);
         gradient.addColorStop(1, particleColor + "00");
 
-        // Add glow effect with shadow
-        context.shadowColor = particleColor;
-        context.shadowBlur = Math.max(4, radius * 0.8);
-        context.shadowOffsetX = 0;
-        context.shadowOffsetY = 0;
+        if (glowIntensity > 0) {
+          // Add glow effect with multiple layers
+          context.shadowColor = particleColor;
+          context.shadowOffsetX = 0;
+          context.shadowOffsetY = 0;
 
-        context.beginPath();
-        context.arc(cx, cy, radius, 0, Math.PI * 2);
-        context.fillStyle = gradient;
-        context.fill();
+          // Draw multiple glow layers for stronger effect
+          const baseBlur = Math.max(4, radius * 0.8);
+          const glowLayers = Math.ceil(glowIntensity);
+          const glowOpacity = (glowIntensity - Math.floor(glowIntensity));
 
-        // Reset shadow
-        context.shadowColor = "transparent";
-        context.shadowBlur = 0;
+          // Draw main glow layers
+          for (let g = 0; g < glowLayers; g++) {
+            context.shadowBlur = baseBlur + (g * 8 * glowIntensity);
+            context.globalAlpha = alpha * Math.max(0.3, 1 - (g * 0.2));
+            context.beginPath();
+            context.arc(cx, cy, radius, 0, Math.PI * 2);
+            context.fillStyle = gradient;
+            context.fill();
+          }
+
+          // Draw partial glow layer if fractional intensity
+          if (glowOpacity > 0) {
+            context.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * glowIntensity);
+            context.globalAlpha = alpha * glowOpacity * 0.5;
+            context.beginPath();
+            context.arc(cx, cy, radius, 0, Math.PI * 2);
+            context.fillStyle = gradient;
+            context.fill();
+          }
+
+          // Restore alpha and reset shadow
+          context.globalAlpha = alpha;
+          context.shadowColor = "transparent";
+          context.shadowBlur = 0;
+        } else {
+          // No glow when intensity is 0
+          context.beginPath();
+          context.arc(cx, cy, radius, 0, Math.PI * 2);
+          context.fillStyle = gradient;
+          context.fill();
+        }
       }
 
       // Reset blend mode

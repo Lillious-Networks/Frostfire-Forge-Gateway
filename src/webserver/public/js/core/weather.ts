@@ -1,4 +1,8 @@
 import { weatherCanvas, weatherCtx } from "./ui.ts";
+import {
+  windBurst,
+  calculateWindSpeed
+} from "./windphysics.ts";
 
 const dpr = window.devicePixelRatio || 1;
 const buffer = 200;
@@ -105,9 +109,17 @@ class RainParticle {
     this.splashHeight = height * (0.4 + Math.random() * 0.6);
   }
 
-  update(deltaTime: number) {
+  update(deltaTime: number, windSpeed: number = 0, windDirection: string | null = null) {
     this.y += this.speed * deltaTime;
-    this.x += this.tilt * deltaTime;
+
+    // Apply wind force to horizontal movement
+    let windTilt = this.tilt;
+    if (windDirection && (windDirection === 'left' || windDirection === 'right')) {
+      const windDirectionRad = (windDirection === 'left' ? 180 : 0) * Math.PI / 180;
+      windTilt = Math.cos(windDirectionRad) * windSpeed * 0.5;
+    }
+
+    this.x += windTilt * deltaTime;
 
     this.trail.push({ x: this.x, y: this.y, alpha: this.opacity });
     if (this.trail.length > this.length) this.trail.shift();
@@ -180,11 +192,24 @@ class SnowParticle {
     this.meltHeight = height * (0.4 + Math.random() * 0.6);
   }
 
-  update(deltaTime: number) {
+  update(deltaTime: number, windSpeed: number = 0, windDirection: string | null = null) {
 
     this.y += this.speed * deltaTime;
 
-    this.x += this.windSpeed * deltaTime;
+    // Use provided wind speed if available, otherwise use the particle's internal wind speed
+    const effectiveWindSpeed = windSpeed || this.windSpeed;
+
+    // Apply wind force to horizontal movement
+    let windTilt: number;
+    if (windDirection && (windDirection === 'left' || windDirection === 'right')) {
+      const windDirectionRad = (windDirection === 'left' ? 180 : 0) * Math.PI / 180;
+      windTilt = Math.cos(windDirectionRad) * effectiveWindSpeed * 0.5;
+    } else {
+      // Use default wind behavior when no specific direction
+      windTilt = effectiveWindSpeed * deltaTime;
+    }
+
+    this.x += windTilt * deltaTime;
 
     this.time += 0.02 * deltaTime;
     this.x += Math.sin(this.time * this.turbulence) * 0.8 * deltaTime;
@@ -288,7 +313,7 @@ for (let i = 0; i < splashPoolSize; i++) {
   splashPool.push(new SplashParticle());
 }
 
-function weather(type: string): void {
+function weather(type: string, weatherData?: any): void {
   if (!weatherCtx) return;
 
   const currentTime = performance.now();
@@ -297,12 +322,21 @@ function weather(type: string): void {
 
   const deltaTime = deltaMs / FRAME_TIME;
 
+  // Update wind burst cycle - creates pulsating wind effect
+  windBurst.update(deltaMs);
+
+  // Extract wind parameters from weather data
+  // Wind is always applied at base speed, burst adds extra intensity on top
+  const baseWindSpeed = weatherData?.wind_speed || 0;
+  const windSpeed = calculateWindSpeed(baseWindSpeed, windBurst.getIntensity());
+  const windDirection = weatherData?.wind_direction || null;
+
   weatherCtx.clearRect(0, 0, width, height);
 
   if (type === "rainy") {
 
     for (const p of rainParticles) {
-      p.update(deltaTime);
+      p.update(deltaTime, windSpeed, windDirection);
       p.draw(weatherCtx);
     }
 
@@ -313,7 +347,7 @@ function weather(type: string): void {
   } else if (type === "snowy") {
 
     for (const p of snowParticles) {
-      p.update(deltaTime);
+      p.update(deltaTime, windSpeed, windDirection);
       p.draw(weatherCtx);
     }
 

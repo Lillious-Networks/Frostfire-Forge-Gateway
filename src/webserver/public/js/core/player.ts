@@ -603,6 +603,27 @@ async function createPlayer(data: any) {
   if (layeredAnimationPromise) {
     player.layeredAnimation = await layeredAnimationPromise;
 
+    // Wait for all animation frames to actually load before showing player
+    await new Promise<void>((resolve) => {
+      const checkFramesLoaded = () => {
+        const layers = Object.values(player.layeredAnimation!.layers).filter(l => l !== null);
+        const allFramesLoaded = layers.every(layer => {
+          if (!layer || !layer.frames || layer.frames.length === 0) return true;
+          return layer.frames.every(frame => {
+            if (!frame || !frame.imageElement) return false;
+            return frame.imageElement.complete && frame.imageElement.naturalWidth > 0;
+          });
+        });
+
+        if (allFramesLoaded) {
+          resolve();
+        } else {
+          requestAnimationFrame(checkFramesLoaded);
+        }
+      };
+      checkFramesLoaded();
+    });
+
     cache.players.add(player);
 
     if (cache.pendingPlayers) {
@@ -611,14 +632,6 @@ async function createPlayer(data: any) {
 
     if (data.id === cachedPlayerId) {
       setSelfPlayerSpriteLoaded(true);
-    }
-  } else {
-
-
-    cache.players.add(player);
-
-    if (cache.pendingPlayers) {
-      cache.pendingPlayers.delete(player.id);
     }
   }
 

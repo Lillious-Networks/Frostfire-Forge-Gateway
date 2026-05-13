@@ -391,8 +391,22 @@ document.addEventListener("contextmenu", (event) => {
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  const worldX = screenX - window.innerWidth / 2 + getCameraX();
-  const worldY = screenY - window.innerHeight / 2 + getCameraY();
+  // Account for map centering offset for small maps
+  let mapCenterOffsetX = 0;
+  let mapCenterOffsetY = 0;
+  if (window.mapData) {
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapHeight = window.mapData.height * window.mapData.tileheight;
+    if (mapWidth < window.innerWidth) {
+      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+    if (mapHeight < window.innerHeight) {
+      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+    }
+  }
+
+  const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
+  const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
 
   const clickedPlayer = Array.from(cache.players).find(player => {
     const playerX = player.position.x;
@@ -439,8 +453,22 @@ document.addEventListener("click", (event) => {
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  const worldX = screenX - window.innerWidth / 2 + getCameraX();
-  const worldY = screenY - window.innerHeight / 2 + getCameraY();
+  // Account for map centering offset for small maps
+  let mapCenterOffsetX = 0;
+  let mapCenterOffsetY = 0;
+  if (window.mapData) {
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapHeight = window.mapData.height * window.mapData.tileheight;
+    if (mapWidth < window.innerWidth) {
+      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+    if (mapHeight < window.innerHeight) {
+      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+    }
+  }
+
+  const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
+  const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
 
   // Clear previous target
   const prevPlayer = Array.from(cache.players).find(player => player.targeted);

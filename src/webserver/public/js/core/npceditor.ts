@@ -22,9 +22,18 @@ class NpcEditor {
 
   // Drag state
   private draggingNpc: any = null; // live cache.npcs reference
+  private lastDraggedNpc: any = null; // track the last NPC that was dragged
   private dragStarted: boolean = false;
   private dragOffsetX: number = 0;
   private dragOffsetY: number = 0;
+
+  // Undo/Redo state
+  private positionHistory: Array<{ npcId: number; x: number; y: number }[]> = [];
+  private historyIndex: number = -1;
+
+  // Track last saved NPC to preserve data after server response
+  private lastSavedNpcId: number | null = null;
+  private lastSavedNpcData: any = null;
 
   // Bound handlers (stored for removeEventListener)
   private boundMouseDown: (e: MouseEvent) => void;
@@ -85,9 +94,23 @@ class NpcEditor {
     for (const liveNpc of cache.npcs) {
       const nx = liveNpc.position?.x ?? 0;
       const ny = liveNpc.position?.y ?? 0;
+
+      // Check standard NPC hitbox
       if (wx >= nx - NPC_HIT_W / 2 && wx <= nx + NPC_HIT_W / 2 && wy >= ny - NPC_HIT_H / 2 && wy <= ny + NPC_HIT_H / 2) {
         const data = this.npcs.find((n) => n.id === liveNpc.id) ?? null;
         return { live: liveNpc, data };
+      }
+
+      // Also check red square for hidden NPCs (16x16 centered at position + (16, 24))
+      if (liveNpc.hidden) {
+        const centerX = nx + 16;
+        const centerY = ny + 24;
+        const squareSize = 16;
+        if (wx >= centerX - squareSize / 2 && wx <= centerX + squareSize / 2 &&
+            wy >= centerY - squareSize / 2 && wy <= centerY + squareSize / 2) {
+          const data = this.npcs.find((n) => n.id === liveNpc.id) ?? null;
+          return { live: liveNpc, data };
+        }
       }
     }
     return null;
@@ -108,25 +131,32 @@ class NpcEditor {
     this.dragOffsetX = wx - (hit.live.position?.x ?? 0);
     this.dragOffsetY = wy - (hit.live.position?.y ?? 0);
     document.body.style.cursor = "grabbing";
+
+    // Save initial position snapshot before dragging starts
+    this.savePositionHistory();
   }
 
   private onMouseMove(e: MouseEvent) {
-    if (!this.draggingNpc) return;
-
-    this.dragStarted = true;
     const { x: wx, y: wy } = this.screenToWorld(e.clientX, e.clientY);
 
-    const newX = wx - this.dragOffsetX;
-    const newY = wy - this.dragOffsetY;
+    if (this.draggingNpc) {
+      this.dragStarted = true;
+      const newX = wx - this.dragOffsetX;
+      const newY = wy - this.dragOffsetY;
 
-    // Update live NPC position (moves it in the game world immediately)
-    this.draggingNpc.position.x = newX;
-    this.draggingNpc.position.y = newY;
+      // Update live NPC position (moves it in the game world immediately)
+      this.draggingNpc.position.x = newX;
+      this.draggingNpc.position.y = newY;
 
-    // Update position display if this NPC is selected
-    if (this.selectedNpc?.id === this.draggingNpc.id) {
-      const posEl = document.getElementById("ne-npc-position");
-      if (posEl) posEl.textContent = `(${newX}, ${newY})`;
+      // Update position display if this NPC is selected
+      if (this.selectedNpc?.id === this.draggingNpc.id) {
+        const posEl = document.getElementById("ne-npc-position");
+        if (posEl) posEl.textContent = `(${newX}, ${newY})`;
+      }
+    } else {
+      // Show hand cursor when hovering over draggable NPCs
+      const hit = this.findNpcAtWorld(wx, wy);
+      document.body.style.cursor = hit ? "grab" : "default";
     }
   }
 
@@ -160,8 +190,15 @@ class NpcEditor {
         ...this.npcs[dataIdx],
         position: { ...this.npcs[dataIdx].position, x: finalX, y: finalY },
       };
-      this.selectNpc(this.npcs[dataIdx]);
+      // Only update selected NPC position, don't open properties panel on drag
+      if (this.selectedNpc?.id === id) {
+        this.selectedNpc.position.x = finalX;
+        this.selectedNpc.position.y = finalY;
+      }
       this.markDirty();
+
+      // Save final position to undo history (initial state saved on mouse down)
+      this.savePositionHistory();
     } else {
       // NPC not in editor list yet — queue selection and refresh
       this.pendingSelectId = id;
@@ -174,17 +211,104 @@ class NpcEditor {
 
   private onKeyDown(e: KeyboardEvent) {
     if (e.ctrlKey && e.key === "s") {
-      if (this.selectedNpc) {
+      // Allow saving if editor is active and there are unsaved changes (dirty flag)
+      if (this.isActive && this.isDirty) {
         e.preventDefault();
-        this.saveNpc();
+        // If no NPC is selected but editor is dirty, use the last dragged NPC
+        if (!this.selectedNpc && this.lastDraggedNpc) {
+          // Find the editor NPC with matching ID (not the live cache NPC)
+          const editorNpc = this.npcs.find((n) => n.id === this.lastDraggedNpc.id);
+          if (editorNpc) {
+            this.selectedNpc = editorNpc;
+            // Populate the form with the NPC's data so that getFormData()
+            // sees the correct values instead of stale form fields.
+            this.populateForm(editorNpc);
+            this.saveNpc();
+          }
+        } else if (this.selectedNpc) {
+          this.saveNpc();
+        }
       }
+    } else if (e.ctrlKey && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      this.undo();
+    } else if (e.ctrlKey && (e.key === "y" || e.key === "Y")) {
+      e.preventDefault();
+      this.redo();
     }
   }
 
   private stopDrag() {
+    if (this.draggingNpc) {
+      this.lastDraggedNpc = this.draggingNpc;
+    }
     this.draggingNpc = null;
     this.dragStarted = false;
     document.body.style.cursor = "";
+  }
+
+  private savePositionHistory() {
+    // Create a snapshot of all NPC positions
+    const snapshot = cache.npcs.map((npc: any) => ({
+      npcId: npc.id,
+      x: npc.position.x,
+      y: npc.position.y,
+    }));
+
+    // Remove any redo history if we're making a new change
+    this.positionHistory = this.positionHistory.slice(0, this.historyIndex + 1);
+
+    // Add new snapshot
+    this.positionHistory.push(snapshot);
+    this.historyIndex++;
+
+    // Limit history to 50 states
+    if (this.positionHistory.length > 50) {
+      this.positionHistory.shift();
+      this.historyIndex--;
+    }
+  }
+
+  private undo() {
+    if (this.historyIndex <= 0) return;
+
+    this.historyIndex--;
+    const snapshot = this.positionHistory[this.historyIndex];
+    this.applyPositionSnapshot(snapshot);
+    this.refreshNpcList();
+  }
+
+  private redo() {
+    if (this.historyIndex >= this.positionHistory.length - 1) return;
+
+    this.historyIndex++;
+    const snapshot = this.positionHistory[this.historyIndex];
+    this.applyPositionSnapshot(snapshot);
+    this.refreshNpcList();
+  }
+
+  private applyPositionSnapshot(snapshot: Array<{ npcId: number; x: number; y: number }>) {
+    for (const change of snapshot) {
+      const liveNpc = cache.npcs.find((npc: any) => npc.id === change.npcId);
+      if (liveNpc) {
+        liveNpc.position.x = change.x;
+        liveNpc.position.y = change.y;
+      }
+
+      const editorNpc = this.npcs.find((n) => n.id === change.npcId);
+      if (editorNpc) {
+        editorNpc.position.x = change.x;
+        editorNpc.position.y = change.y;
+      }
+    }
+
+    // Update position display if an NPC is selected
+    if (this.selectedNpc) {
+      const posEl = document.getElementById("ne-npc-position");
+      if (posEl) posEl.textContent = `(${this.selectedNpc.position.x}, ${this.selectedNpc.position.y})`;
+    }
+
+    this.markDirty();
   }
 
   private setPropertiesPanelVisible(visible: boolean) {
@@ -425,7 +549,35 @@ class NpcEditor {
   }
 
   public setNpcs(npcs: any[]) {
-    this.npcs = npcs;
+    // Merge new NPC data from server with existing editor data to preserve saved changes
+    this.npcs = npcs.map((serverNpc) => {
+      // If this NPC was just saved, use the saved data with only the position/id updated by server
+      if (this.lastSavedNpcId !== null && serverNpc.id === this.lastSavedNpcId && this.lastSavedNpcData) {
+        // Start with our saved data and only merge server fields that represent actual DB updates
+        const result = { ...this.lastSavedNpcData };
+        // Server may update id if it's a new NPC
+        if (serverNpc.id !== null && this.lastSavedNpcData.id === null) {
+          result.id = serverNpc.id;
+        }
+        return result;
+      }
+
+      const existingNpc = this.npcs.find((n) => n.id === serverNpc.id);
+      if (existingNpc && this.isDirty && existingNpc.id === this.selectedNpc?.id) {
+        // If this is the selected NPC and there are unsaved changes, preserve the local position
+        return {
+          ...serverNpc,
+          position: existingNpc.position,
+          particles: existingNpc.particles || serverNpc.particles,
+        };
+      }
+      return serverNpc;
+    });
+
+    // Clear the last saved NPC tracking once we've processed the response
+    this.lastSavedNpcId = null;
+    this.lastSavedNpcData = null;
+
     this.refreshNpcList();
 
     // Auto-select if a click arrived before the list was loaded
@@ -653,41 +805,65 @@ class NpcEditor {
       position: {
         x: this.selectedNpc.position?.x ?? 0,
         y: this.selectedNpc.position?.y ?? 0,
-        direction: directionEl?.value || "down",
+        direction: directionEl?.value || this.selectedNpc.position?.direction || "down",
       },
-      hidden: hiddenEl?.checked ?? false,
-      name: nameEl?.value?.trim() || null,
-      dialog: dialogEl?.value || null,
-      script: scriptEl?.value || null,
-      quest: questEl?.value ? Number(questEl.value) : null,
-      particles: this.getSelectedParticleNames(),
-      sprite_type: (spriteTypeEl?.value || "none") as 'none' | 'static' | 'animated',
-      sprite_body: g("ne-npc-sprite-body"),
-      sprite_head: g("ne-npc-sprite-head"),
-      sprite_helmet: g("ne-npc-sprite-helmet"),
-      sprite_shoulderguards: g("ne-npc-sprite-shoulderguards"),
-      sprite_neck: g("ne-npc-sprite-neck"),
-      sprite_hands: g("ne-npc-sprite-hands"),
-      sprite_chest: g("ne-npc-sprite-chest"),
-      sprite_feet: g("ne-npc-sprite-feet"),
-      sprite_legs: g("ne-npc-sprite-legs"),
-      sprite_weapon: g("ne-npc-sprite-weapon"),
+      hidden: hiddenEl?.checked !== undefined ? hiddenEl.checked : (this.selectedNpc.hidden ?? false),
+      name: (nameEl?.value?.trim() || this.selectedNpc.name) || null,
+      dialog: (dialogEl?.value || this.selectedNpc.dialog) || null,
+      script: (scriptEl?.value || this.selectedNpc.script) || null,
+      quest: questEl?.value ? Number(questEl.value) : (this.selectedNpc.quest ?? null),
+      particles: this.getSelectedParticleNames() || (this.selectedNpc.particles ?? []),
+      sprite_type: (spriteTypeEl?.value || this.selectedNpc.sprite_type || "none") as 'none' | 'static' | 'animated',
+      sprite_body: g("ne-npc-sprite-body") || (this.selectedNpc.sprite_body ?? null),
+      sprite_head: g("ne-npc-sprite-head") || (this.selectedNpc.sprite_head ?? null),
+      sprite_helmet: g("ne-npc-sprite-helmet") || (this.selectedNpc.sprite_helmet ?? null),
+      sprite_shoulderguards: g("ne-npc-sprite-shoulderguards") || (this.selectedNpc.sprite_shoulderguards ?? null),
+      sprite_neck: g("ne-npc-sprite-neck") || (this.selectedNpc.sprite_neck ?? null),
+      sprite_hands: g("ne-npc-sprite-hands") || (this.selectedNpc.sprite_hands ?? null),
+      sprite_chest: g("ne-npc-sprite-chest") || (this.selectedNpc.sprite_chest ?? null),
+      sprite_feet: g("ne-npc-sprite-feet") || (this.selectedNpc.sprite_feet ?? null),
+      sprite_legs: g("ne-npc-sprite-legs") || (this.selectedNpc.sprite_legs ?? null),
+      sprite_weapon: g("ne-npc-sprite-weapon") || (this.selectedNpc.sprite_weapon ?? null),
     };
   }
 
   private saveNpc() {
-    if (!this.selectedNpc) return;
+    if (!this.selectedNpc) {
+      return;
+    }
     const data = this.getFormData();
-    if (!data) return;
+    if (!data) {
+      return;
+    }
 
     const sendRequest = (window as any).sendRequest;
-    if (!sendRequest) return;
+    if (!sendRequest) {
+      return;
+    }
+
+    // Store the ENTIRE NPC state before sending - preserve everything
+    this.lastSavedNpcId = this.selectedNpc.id;
+    this.lastSavedNpcData = { ...this.selectedNpc };
 
     if (this.selectedNpc.id === null) {
       sendRequest({ type: "ADD_NPC", data });
     } else {
       sendRequest({ type: "SAVE_NPC", data });
     }
+
+    // Update editor NPC with saved data to prevent reset
+    const npcIndex = this.npcs.findIndex((n) => n.id === this.selectedNpc.id);
+    if (npcIndex >= 0) {
+      this.npcs[npcIndex] = { ...this.npcs[npcIndex], ...data };
+      this.selectedNpc = this.npcs[npcIndex];
+    }
+
+    // Also update the live cache NPC position
+    const liveNpc = cache.npcs.find((n: any) => n.id === this.selectedNpc.id);
+    if (liveNpc) {
+      liveNpc.position = { ...liveNpc.position, ...data.position };
+    }
+
     this.isDirty = false;
     this.updateDirtyIndicator();
   }
@@ -786,7 +962,6 @@ class NpcEditor {
   }
 
   private markDirty() {
-    if (!this.selectedNpc) return;
     this.isDirty = true;
     this.updateDirtyIndicator();
   }
@@ -814,7 +989,19 @@ class NpcEditor {
 
     const idx = this.npcs.findIndex((n) => n.id === npc.id);
     if (idx >= 0) {
-      this.npcs[idx] = npc;
+      // If this is the NPC we just saved, preserve all our local data
+      if (this.lastSavedNpcId !== null && npc.id === this.lastSavedNpcId && this.lastSavedNpcData) {
+        const preserved = { ...this.lastSavedNpcData };
+        // Only accept the ID if it changed (new NPC case)
+        if (npc.id !== null && this.lastSavedNpcData.id === null) {
+          preserved.id = npc.id;
+        }
+        this.npcs[idx] = preserved;
+        this.lastSavedNpcId = null;
+        this.lastSavedNpcData = null;
+      } else {
+        this.npcs[idx] = npc;
+      }
     } else {
       this.npcs.push(npc);
     }
@@ -822,7 +1009,7 @@ class NpcEditor {
     this.refreshNpcList();
 
     if (this.selectedNpc?.id === npc.id) {
-      this.selectedNpc = npc;
+      this.selectedNpc = this.npcs[idx] || npc;
       this.isDirty = false;
       this.updateDirtyIndicator();
     }

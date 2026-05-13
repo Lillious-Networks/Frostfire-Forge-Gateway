@@ -437,20 +437,20 @@ class TileEditor {
 
     // Convert warps array to object with name keys
     if (Array.isArray(window.mapData.warps)) {
-      const warpsObj: any = {};
-      window.mapData.warps.forEach((w: any) => {
-        warpsObj[w.name] = {
-          map: w.map,
-          x: w.x,
-          y: w.y,
-          position: w.position,
-          size: w.size,
-          layer: w.layer
-        };
-      });
-      window.mapData.warps = warpsObj;
+        const warpsObj: any = {};
+        window.mapData.warps.forEach((w: any) => {
+          warpsObj[w.name] = {
+            map: w.map || 'default_map', // Good practice to have a fallback map name too
+            x: w.x !== undefined ? w.x : 0, // Fallback to 0 instead of ''
+            y: w.y !== undefined ? w.y : 0, // Fallback to 0 instead of ''
+            position: w.position || { x: 0, y: 0 },
+            size: w.size || { width: 32, height: 32 },
+            layer: w.layer
+          };
+        });
+        window.mapData.warps = warpsObj;
+      }
     }
-  }
 
   private loadLayers() {
     if (!window.mapData) return;
@@ -1332,13 +1332,12 @@ class TileEditor {
         newHeight = Math.max(1, Math.min(newHeight, mapMaxHeight - newY));
 
         // Update position and size
+        // Note: x and y are destination coordinates from properties - do NOT update them during resize
         if (!warpData.position) {
           warpData.position = {};
         }
         warpData.position.x = newX;
         warpData.position.y = newY;
-        warpData.x = newX;
-        warpData.y = newY;
 
         if (!warpData.size) {
           warpData.size = {};
@@ -1747,8 +1746,13 @@ class TileEditor {
           warpData.position.x = Math.round(warpData.position.x);
           warpData.position.y = Math.round(warpData.position.y);
         }
-        warpData.x = Math.round(warpData.x);
-        warpData.y = Math.round(warpData.y);
+        // Custom x/y are destination coordinates (strings from properties panel) - convert to numbers before rounding
+        if (warpData.x !== undefined && warpData.x !== '') {
+          warpData.x = Math.round(Number(warpData.x));
+        }
+        if (warpData.y !== undefined && warpData.y !== '') {
+          warpData.y = Math.round(Number(warpData.y));
+        }
 
         // Snap size to whole numbers
         if (warpData.size) {
@@ -2117,9 +2121,23 @@ class TileEditor {
     const cameraX = (window as any).cameraX || 0;
     const cameraY = (window as any).cameraY || 0;
 
+    // Account for map centering offset for small maps
+    let mapCenterOffsetX = 0;
+    let mapCenterOffsetY = 0;
+    if (window.mapData) {
+      const mapWidth = window.mapData.width * window.mapData.tilewidth;
+      const mapHeight = window.mapData.height * window.mapData.tileheight;
+      if (mapWidth < window.innerWidth) {
+        mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+      }
+      if (mapHeight < window.innerHeight) {
+        mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+      }
+    }
+
     return {
-      x: screenX - (window.innerWidth / 2) + cameraX,
-      y: screenY - (window.innerHeight / 2) + cameraY
+      x: screenX - (window.innerWidth / 2) + cameraX - mapCenterOffsetX,
+      y: screenY - (window.innerHeight / 2) + cameraY - mapCenterOffsetY
     };
   }
 
@@ -2473,12 +2491,10 @@ class TileEditor {
             if (mutation.oldState.x !== undefined) {
               if (!warpData.position) warpData.position = {};
               warpData.position.x = mutation.oldState.x;
-              warpData.x = mutation.oldState.x;
             }
             if (mutation.oldState.y !== undefined) {
               if (!warpData.position) warpData.position = {};
               warpData.position.y = mutation.oldState.y;
-              warpData.y = mutation.oldState.y;
             }
             if (mutation.oldState.width !== undefined) {
               if (!warpData.size) warpData.size = {};
@@ -3087,14 +3103,12 @@ class TileEditor {
         }))
       : [];
 
-    const warpsArray = window.mapData?.warps
-      ? Object.entries(window.mapData.warps).map(([name, data]: [string, any]) => ({
-          name,
-          ...data
-        }))
-      : [];
-
-    const objectCount = graveyardsArray.length + warpsArray.length;
+      const warpsArray = Object.entries(window.mapData.warps).map(([name, data]: any) => ({
+        name,
+        ...data,
+        x: data.x ?? '',
+        y: data.y ?? '',
+      }));
 
     const savePayload: any = {
       type: 'SAVE_MAP',
@@ -3118,12 +3132,6 @@ class TileEditor {
     // Clear unsaved layers tracking
     this.unsavedLayers.clear();
     this.updateLayerList();
-
-    // Show save notification with object count
-    const message = objectCount > 0
-      ? `Saved with ${objectCount} object${objectCount !== 1 ? 's' : ''}`
-      : 'Saved';
-    console.log(message);
   }
 
   private setTool(tool: 'paint' | 'erase' | 'copy' | 'paste') {
@@ -3212,7 +3220,12 @@ class TileEditor {
     e.preventDefault();
     e.stopPropagation();
 
-    const worldPos = this.screenToWorld(e.clientX, e.clientY);
+    // Convert client coordinates to canvas-relative coordinates
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    const worldPos = this.screenToWorld(screenX, screenY);
     const worldX = worldPos.x;
     const worldY = worldPos.y;
 
@@ -3352,7 +3365,12 @@ class TileEditor {
   }
 
   private createGraveyardAtPosition(x: number, y: number) {
-    if (!window.mapData || !window.mapData.graveyards) return;
+    if (!window.mapData) return;
+
+    // Initialize graveyards object if it doesn't exist
+    if (!window.mapData.graveyards) {
+      window.mapData.graveyards = {};
+    }
 
     // Generate unique name
     let counter = 1;
@@ -3393,7 +3411,14 @@ class TileEditor {
   }
 
   private createWarpAtPosition(x: number, y: number) {
-    if (!window.mapData || !window.mapData.warps) return;
+    if (!window.mapData) {
+      return;
+    }
+
+    // Initialize warps object if it doesn't exist
+    if (!window.mapData.warps) {
+      window.mapData.warps = {};
+    }
 
     // Generate unique name
     let counter = 1;
@@ -3634,7 +3659,8 @@ class TileEditor {
           // Add input to tracking array
           propertyInputs.push(valueInput);
 
-          valueInput.addEventListener('change', () => {
+          // Use both 'input' and 'change' events to catch edits while typing and on blur
+          const handlePropertyChange = () => {
             const oldValue = objectData[key];
             const newValue = valueInput.value;
             if (oldValue !== newValue) {
@@ -3653,7 +3679,10 @@ class TileEditor {
                 this.updateLayerList();
               }
             }
-          });
+          };
+
+          valueInput.addEventListener('input', handlePropertyChange);
+          valueInput.addEventListener('change', handlePropertyChange);
 
           // Handle Tab key navigation between inputs
           valueInput.addEventListener('keydown', (e) => {

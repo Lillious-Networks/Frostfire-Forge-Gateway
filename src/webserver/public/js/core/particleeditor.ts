@@ -1,3 +1,10 @@
+import {
+  windBurst,
+  calculateWindSpeed,
+  applyWindVelocity,
+  getWindBias,
+} from "./windphysics.ts";
+
 class ParticleEditor {
   public isActive: boolean = false;
   private selectedParticle: Particle | null = null;
@@ -22,6 +29,7 @@ class ParticleEditor {
 
   // Animation loop
   private animationFrameId: number | null = null;
+  private lastFrameTime: number = 0;
 
   public toggle() {
     this.isActive = !this.isActive;
@@ -106,19 +114,31 @@ class ParticleEditor {
       "pe-particle-visible",
       "pe-particle-weather",
       "pe-particle-zindex",
+      "pe-particle-glow-intensity",
       "pe-particle-time",
       "pe-particle-time-on",
       "pe-particle-time-off",
     ];
+
+    const checkboxIds = new Set([
+      "pe-particle-visible",
+      "pe-particle-weather",
+      "pe-particle-time",
+    ]);
 
     for (const id of inputIds) {
       const element = document.getElementById(id) as HTMLInputElement | HTMLSelectElement;
       if (element) {
         this.formInputs[id] = element;
         // Store initial value to detect actual changes
-        element.setAttribute("data-initial-value", element.value);
-        // Update preview only when value actually changes (input event fires as user types)
-        element.addEventListener("input", () => this.onFormValueChange());
+        if (checkboxIds.has(id)) {
+          element.setAttribute("data-initial-value", (element as HTMLInputElement).checked ? "true" : "false");
+        } else {
+          element.setAttribute("data-initial-value", element.value);
+        }
+        // Use 'change' event for checkboxes, 'input' for other elements
+        const eventType = checkboxIds.has(id) ? "change" : "input";
+        element.addEventListener(eventType, () => this.onFormValueChange());
       }
     }
   }
@@ -403,6 +423,22 @@ class ParticleEditor {
     }
   }
 
+  /**
+   * Coerce any value to a boolean, handling strings, numbers, and actual booleans
+   * "0", 0, false, null, undefined, "" -> false
+   * "1", 1, true, "true", "yes" -> true
+   */
+  private coerceToBoolean(value: any): boolean {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const lower = value.toLowerCase().trim();
+      return lower === "1" || lower === "true" || lower === "yes";
+    }
+    return Boolean(value);
+  }
+
   private populateForm(particle: Particle) {
     const inputs = this.formInputs;
     // Set particle name as text (not an input)
@@ -423,16 +459,19 @@ class ParticleEditor {
     if (inputs["pe-particle-staggertime"]) inputs["pe-particle-staggertime"].value = String(particle.staggertime || 0);
     if (inputs["pe-particle-spread-x"]) inputs["pe-particle-spread-x"].value = String(particle.spread.x || 0);
     if (inputs["pe-particle-spread-y"]) inputs["pe-particle-spread-y"].value = String(particle.spread.y || 0);
-    if (inputs["pe-particle-visible"]) (inputs["pe-particle-visible"] as HTMLInputElement).checked = Boolean(particle.visible);
-    if (inputs["pe-particle-weather"]) (inputs["pe-particle-weather"] as HTMLInputElement).checked = Boolean(particle.affected_by_weather);
+    if (inputs["pe-particle-visible"]) (inputs["pe-particle-visible"] as HTMLInputElement).checked = this.coerceToBoolean(particle.visible);
+    if (inputs["pe-particle-weather"]) (inputs["pe-particle-weather"] as HTMLInputElement).checked = this.coerceToBoolean(particle.affected_by_weather);
     if (inputs["pe-particle-zindex"]) inputs["pe-particle-zindex"].value = String((particle as any).zIndex || 0);
-    if (inputs["pe-particle-time"]) (inputs["pe-particle-time"] as HTMLInputElement).checked = Boolean((particle as any).affected_by_time);
+    if (inputs["pe-particle-glow-intensity"]) {
+      inputs["pe-particle-glow-intensity"].value = String((particle as any).glow_intensity || 0);
+    }
+    if (inputs["pe-particle-time"]) (inputs["pe-particle-time"] as HTMLInputElement).checked = this.coerceToBoolean((particle as any).affected_by_time);
     if (inputs["pe-particle-time-on"]) inputs["pe-particle-time-on"].value = (particle as any).time_on || "";
     if (inputs["pe-particle-time-off"]) inputs["pe-particle-time-off"].value = (particle as any).time_off || "";
 
     // Disable visible checkbox if affected_by_time is enabled
     const visibleCheckbox = inputs["pe-particle-visible"] as HTMLInputElement;
-    const affectedByTime = Boolean((particle as any).affected_by_time);
+    const affectedByTime = this.coerceToBoolean((particle as any).affected_by_time);
     if (visibleCheckbox) {
       visibleCheckbox.disabled = affectedByTime;
       if (affectedByTime) {
@@ -478,9 +517,18 @@ class ParticleEditor {
         x: Number((inputs["pe-particle-spread-x"] as HTMLInputElement).value) || 0,
         y: Number((inputs["pe-particle-spread-y"] as HTMLInputElement).value) || 0,
       },
-      weather: "none",
+      weather: (inputs["pe-particle-weather"] as HTMLInputElement).checked ? {
+        name: "rainy",
+        wind_speed: 20,
+        wind_direction: "left",
+        ambience: 0,
+        temperature: 15,
+        humidity: 80,
+        precipitation: 5,
+      } : "none",
       affected_by_weather: (inputs["pe-particle-weather"] as HTMLInputElement).checked,
       zIndex: Number((inputs["pe-particle-zindex"] as HTMLInputElement).value) || 0,
+      glow_intensity: inputs["pe-particle-glow-intensity"] ? Number((inputs["pe-particle-glow-intensity"] as HTMLInputElement).value) || 0 : 0,
       affected_by_time: (inputs["pe-particle-time"] as HTMLInputElement).checked,
       time_on: (inputs["pe-particle-time-on"] as HTMLInputElement).value || null,
       time_off: (inputs["pe-particle-time-off"] as HTMLInputElement).value || null,
@@ -512,6 +560,7 @@ class ParticleEditor {
 
       const newParticle: Particle = {
         name,
+        scale: 1,
         size: 1,
         color: "white",
         velocity: { x: 0, y: 0 },
@@ -527,6 +576,7 @@ class ParticleEditor {
         weather: "none",
         affected_by_weather: false,
         zIndex: 0,
+        glow_intensity: 0,
         affected_by_time: false,
         time_on: null,
         time_off: null,
@@ -781,10 +831,20 @@ class ParticleEditor {
     ctx.fillStyle = "#222";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Flip canvas horizontally for preview display
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+
     const now = performance.now();
-    const timeSinceLastFrame = Math.min(33, now - this.lastEmitTime || 0); // Clamp to 33ms max
-    const deltaTime = timeSinceLastFrame / 1000; // Convert to seconds
-    this.lastEmitTime = now;
+    let deltaTime = (now - this.lastFrameTime) / 1000; // Convert to seconds (matches renderer.ts)
+    // Clamp deltaTime to max 16.67ms (60 FPS) to prevent large jumps when tab loses focus
+    deltaTime = Math.min(deltaTime, 0.01667);
+    const deltaTimeMs = deltaTime * 1000; // Back to milliseconds for wind burst
+    this.lastFrameTime = now;
+
+    // Update wind burst cycle - creates pulsating wind effect
+    windBurst.update(deltaTimeMs);
 
     // Emit new particles - match NPC emission timing (interval in milliseconds based on 16.67ms frame time)
     if (particle.interval && particle.interval > 0) {
@@ -795,6 +855,12 @@ class ParticleEditor {
         const randomLifetimeExtension = Math.random() * (particle.staggertime || 0);
         const baseLifetime = particle.lifetime || 1000;
 
+        // Get wind bias for initial velocity
+        const weatherData = typeof particle.weather === 'object' ? particle.weather : null;
+        const windDirection = weatherData?.wind_direction || null;
+        const windSpeed = weatherData?.wind_speed || 0;
+        const windBias = getWindBias(windSpeed, windDirection);
+
         // Use same spread calculation as NPC: (Math.random() < 0.5 ? -1 : 1) * Math.random() * spread
         const spreadX = (Math.random() < 0.5 ? -1 : 1) * Math.random() * particle.spread.x;
         const spreadY = (Math.random() < 0.5 ? -1 : 1) * Math.random() * particle.spread.y;
@@ -802,12 +868,13 @@ class ParticleEditor {
         this.previewParticles.push({
           x: canvas.width / 2 + (particle.localposition?.x || 0) + spreadX,
           y: canvas.height / 2 + (particle.localposition?.y || 0) + spreadY,
-          vx: particle.velocity.x,
-          vy: particle.velocity.y,
+          vx: particle.velocity.x + windBias.x,
+          vy: particle.velocity.y + windBias.y,
           lifetime: baseLifetime + randomLifetimeExtension,
           currentLife: baseLifetime + randomLifetimeExtension,
           size: particle.size || 5,
           color: particle.color || "white",
+          glow_intensity: particle.glow_intensity || 0,
         });
 
         this.lastEmitInterval -= emitInterval;
@@ -830,15 +897,38 @@ class ParticleEditor {
         continue;
       }
 
-      // Update physics - match NPC physics
+      // Apply weather effects if affected_by_weather is enabled
+      let windSpeed = 0;
+      let windDirection = null;
+      if (particle.affected_by_weather) {
+        const weatherData = typeof particle.weather === 'object' ? particle.weather : null;
+        const baseWindSpeed = weatherData?.wind_speed || 0;
+        windSpeed = calculateWindSpeed(
+          baseWindSpeed,
+          windBurst.getIntensity()
+        );
+        windDirection = weatherData?.wind_direction || null;
+      }
+
+      // Update physics - apply gravity
       p.vy += particle.gravity.y * deltaTime;
       p.vx += particle.gravity.x * deltaTime;
 
-      // Clamp velocity to match NPC velocity limiting
-      const maxVelocityX = Math.abs(particle.velocity.x);
-      const maxVelocityY = Math.abs(particle.velocity.y);
-      p.vx = Math.min(Math.max(p.vx, -maxVelocityX), maxVelocityX);
-      p.vy = Math.min(Math.max(p.vy, -maxVelocityY), maxVelocityY);
+      // Clamp velocity based on base particle velocity only
+      const maxVelX = Math.abs(particle.velocity.x) || 1;
+      const maxVelY = Math.abs(particle.velocity.y) || 1;
+
+      // Apply wind velocity clamping using shared function (matches npc.ts)
+      const newVelocity = applyWindVelocity(
+        p.vx,
+        p.vy,
+        windSpeed,
+        windDirection,
+        maxVelX,
+        maxVelY
+      );
+      p.vx = newVelocity.vx;
+      p.vy = newVelocity.vy;
 
       p.x += p.vx * deltaTime;
       p.y += p.vy * deltaTime;
@@ -867,27 +957,58 @@ class ParticleEditor {
       gradient.addColorStop(0, p.color);
       gradient.addColorStop(1, p.color + "00");
 
-      // Add glow effect with shadow
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = Math.max(4, radius * 0.8);
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
+      // Add glow effect with shadow based on glow_intensity
+      if (p.glow_intensity > 0) {
+        ctx.shadowColor = p.color;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
 
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-      ctx.fill();
+        // Draw multiple glow layers for stronger effect
+        const baseBlur = Math.max(4, radius * 0.8);
+        const glowLayers = Math.ceil(p.glow_intensity);
+        const glowOpacity = (p.glow_intensity - Math.floor(p.glow_intensity));
 
-      // Reset shadow
-      ctx.shadowColor = "transparent";
-      ctx.shadowBlur = 0;
+        // Draw main glow layers
+        for (let g = 0; g < glowLayers; g++) {
+          ctx.shadowBlur = baseBlur + (g * 8 * p.glow_intensity);
+          ctx.globalAlpha = alpha * Math.max(0.3, 1 - (g * 0.2));
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Draw partial glow layer if fractional intensity
+        if (glowOpacity > 0) {
+          ctx.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * p.glow_intensity);
+          ctx.globalAlpha = alpha * glowOpacity * 0.5;
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Restore alpha and reset shadow
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      } else {
+        // No glow when intensity is 0
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // Reset blend mode and alpha
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
 
-    // Draw guide lines
+    // Restore canvas transform (undo flip)
+    ctx.restore();
+
+    // Draw guide lines (after restore so they're not flipped)
     ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
     ctx.setLineDash([5, 5]);
     ctx.beginPath();
