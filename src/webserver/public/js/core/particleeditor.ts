@@ -10,7 +10,6 @@ class ParticleEditor {
   private selectedParticle: Particle | null = null;
   private particles: Particle[] = [];
   private previewParticles: Array<any> = [];
-  private lastEmitTime: number = 0;
   private lastEmitInterval: number = 0;
   private isDirty: boolean = false;
   private searchQuery: string = "";
@@ -804,7 +803,6 @@ class ParticleEditor {
   private updatePreview() {
     // Update preview particles with current form data
     this.previewParticles = [];
-    this.lastEmitTime = performance.now();
     this.lastEmitInterval = 0;
   }
 
