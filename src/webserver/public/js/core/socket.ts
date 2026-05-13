@@ -37,7 +37,8 @@ function normalizeParticle(particle: any): any {
     zIndex: particle.zIndex !== undefined ? particle.zIndex : 0,
     affected_by_time: particle.affected_by_time || false,
     time_on: particle.time_on || null,
-    time_off: particle.time_off || null
+    time_off: particle.time_off || null,
+    glow_intensity: particle.glow_intensity !== undefined ? particle.glow_intensity : 0
   };
 }
 
