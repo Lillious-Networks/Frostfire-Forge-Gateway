@@ -123,6 +123,10 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     // Extract object layers from metadata
     const objectLayers = metadata?.objectLayers || [];
 
+    // Check for preloaded chunks from warp preloading
+    const preloadedMapData = (window as any).__preloadedMaps?.[mapName];
+    const preloadedChunks = preloadedMapData?.loadedChunks || new Map<string, ChunkData>();
+
     window.mapData = {
       name: mapName,
       width: mapWidth,
@@ -134,7 +138,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       chunksX: chunksX,
       chunksY: chunksY,
       chunkSize: CHUNK_SIZE,
-      loadedChunks: new Map<string, ChunkData>(),
+      loadedChunks: preloadedChunks,
       spawnX: spawnX,
       spawnY: spawnY,
       warps: metadata?.warps || null,
@@ -256,6 +260,60 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     await new Promise(resolve => setTimeout(resolve, 1500));
 
     return true;
+}
+
+export async function preloadChunks(data: any): Promise<void> {
+  if (!window.mapData) return;
+
+  const { mapName, chunks, tilewidth, tileheight, chunkSize, width, height, tilesets } = data;
+
+  let preloadMapData = (window as any).__preloadedMaps?.[mapName];
+
+  if (!preloadMapData) {
+    const CHUNK_SIZE_CONFIG: { [key: number]: number } = {
+      16: 64,
+      32: 32,
+      64: 16,
+    };
+    const actualChunkSize = CHUNK_SIZE_CONFIG[tilewidth] || 32;
+
+    preloadMapData = {
+      name: mapName,
+      width: width,
+      height: height,
+      tilewidth: tilewidth,
+      tileheight: tileheight,
+      chunkSize: actualChunkSize,
+      loadedChunks: new Map<string, ChunkData>(),
+    };
+
+    if (!(window as any).__preloadedMaps) {
+      (window as any).__preloadedMaps = {};
+    }
+    (window as any).__preloadedMaps[mapName] = preloadMapData;
+  }
+
+  if (Array.isArray(chunks)) {
+    for (const chunk of chunks) {
+      const chunkKey = `${chunk.x}-${chunk.y}`;
+
+      if (!preloadMapData.loadedChunks.has(chunkKey)) {
+        try {
+          const chunkData = await requestChunkViaAssetServer(mapName, chunk.x, chunk.y);
+          if (chunkData) {
+            preloadMapData.loadedChunks.set(chunkKey, chunkData);
+            try {
+              saveChunkToCache(mapName, chunk.x, chunk.y, chunkData);
+            } catch (err) {
+              // Cache save error is non-fatal
+            }
+          }
+        } catch (err) {
+          console.warn(`Failed to preload chunk ${chunkKey} for map ${mapName}: ${err}`);
+        }
+      }
+    }
+  }
 }
 
 async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {

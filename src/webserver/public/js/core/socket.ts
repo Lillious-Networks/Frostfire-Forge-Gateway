@@ -1944,6 +1944,14 @@ socket.onmessage = async (event) => {
         }
       }
       break;
+    case "PRELOAD_MAP_CHUNKS":
+      {
+        const { preloadChunks } = await import('./map.js');
+        preloadChunks(data).catch((err: any) =>
+          console.warn(`Failed to preload map chunks: ${err}`)
+        );
+      }
+      break;
     case "LOGIN_SUCCESS":
       {
         const connectionId = JSON.parse(packet.decode(event.data))["data"];
@@ -3358,8 +3366,8 @@ async function hideLoadingScreen() {
   const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
 
   if (loadingScreen) {
-    // Wait 100ms before starting the fade out
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Wait 500ms before starting the fade out
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     loadingScreen.style.transition = "1s";
     loadingScreen.style.opacity = "0";
