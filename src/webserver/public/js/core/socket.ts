@@ -3358,8 +3358,8 @@ async function hideLoadingScreen() {
   const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
 
   if (loadingScreen) {
-    // Wait 1 second before starting the fade out
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait 100ms before starting the fade out
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     loadingScreen.style.transition = "1s";
     loadingScreen.style.opacity = "0";
