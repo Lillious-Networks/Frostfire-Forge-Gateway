@@ -5,7 +5,7 @@ import "./events.ts";
 import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
-import { updateTime } from "./ambience.ts";
+import { updateTime, setHasWeather } from "./ambience.ts";
 import { setWeatherType, setWeatherData } from "./renderer.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip } from "./tooltip.ts";
 const cache = Cache.getInstance();
@@ -696,6 +696,8 @@ socket.onmessage = async (event) => {
     }
     case "WEATHER": {
       if (!data || !data.weather) return;
+      // Set flag that this map has weather/ambience
+      setHasWeather(true);
       setWeatherType(data.weather);
       // Store the full weather data object if provided
       if (data.weatherData) {

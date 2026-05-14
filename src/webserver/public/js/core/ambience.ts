@@ -2,6 +2,7 @@ import { serverTime, ambience } from "./ui.ts";
 
 let timeOfDay: string | null = null;
 let lastMinute: number | null = null;
+let hasWeather: boolean = false;
 
 // Get server time (in 24-hour HH:MM format)
 function getServerTime(): { hours: number; minutes: number } {
@@ -41,7 +42,13 @@ function updateTime(time: string) {
 }
 
 function updateAmbience() {
-  if (!timeOfDay) return;
+  // Only apply ambience if the map has a defined weather/world
+  if (!timeOfDay || !hasWeather) {
+    // Clear the ambience overlay if no weather is defined for this map
+    ambience.style.backgroundColor = "transparent";
+    ambience.style.opacity = "0";
+    return;
+  }
 
   const date = new Date(timeOfDay);
   if (isNaN(date.getTime())) return;
@@ -96,4 +103,10 @@ function updateAmbience() {
   ambience.style.opacity = blendedOpacity.toFixed(2);
 }
 
-export { updateTime, getServerTime };
+function setHasWeather(weather: boolean) {
+  hasWeather = weather;
+  // Immediately update ambience when weather status changes
+  updateAmbience();
+}
+
+export { updateTime, getServerTime, setHasWeather };
