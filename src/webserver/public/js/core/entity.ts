@@ -327,7 +327,7 @@ function createEntity(data: any) {
       }
 
       const currentTime = performance.now();
-      const emitInterval = (particle.interval || 1) * 16.67;
+      const emitInterval = (particle.interval || 1) / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
 
       if (!entity.lastEmitTime[particle.name || '']) {
         entity.lastEmitTime[particle.name || ''] = currentTime;

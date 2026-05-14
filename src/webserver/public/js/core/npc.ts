@@ -215,7 +215,7 @@ function createNPC(data: any) {
       }
 
       const currentTime = performance.now();
-      const emitInterval = (particle.interval || 1) * 16.67;
+      const emitInterval = (particle.interval || 1) / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
 
       if (!npc.lastEmitTime[particle.name || '']) {
         npc.lastEmitTime[particle.name || ''] = currentTime;

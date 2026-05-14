@@ -773,8 +773,8 @@ function animationLoop() {
   let deltaTime = (now - lastFrameTime) / 1000;
 
   // Clamp deltaTime to prevent huge jumps when tab is hidden/visible
-  // If more than 100ms has passed, assume it was a pause and cap at 16ms (60fps)
-  const maxDeltaTime = 0.016; // 16ms for 60fps
+  // Use a max of 2 frames worth of time at target FPS to handle tab visibility changes
+  const maxDeltaTime = (frameDuration * 2) / 1000; // 2 frames at target FPS
   if (deltaTime > maxDeltaTime) {
     deltaTime = maxDeltaTime;
   }

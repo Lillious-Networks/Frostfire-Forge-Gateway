@@ -846,7 +846,7 @@ class ParticleEditor {
 
     // Emit new particles - match NPC emission timing (interval in milliseconds based on 16.67ms frame time)
     if (particle.interval && particle.interval > 0) {
-      const emitInterval = particle.interval * 16.67;
+      const emitInterval = particle.interval / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
       this.lastEmitInterval += deltaTime * 1000;
 
       while (this.lastEmitInterval >= emitInterval && this.previewParticles.length < particle.amount) {
