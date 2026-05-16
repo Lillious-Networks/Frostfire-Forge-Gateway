@@ -32,11 +32,13 @@ interface ChunkData {
 }
 
 export default async function loadMap(metadata: any): Promise<boolean> {
-    if (loadingScreen) {
-      loadingScreen.style.display = "flex";
-      loadingScreen.style.opacity = "1";
-      loadingScreen.style.transition = "0s";
-      progressBar.style.width = "0%";
+    if (!(window as any).__suppressLoadingScreen) {
+      if (loadingScreen) {
+        loadingScreen.style.display = "flex";
+        loadingScreen.style.opacity = "1";
+        loadingScreen.style.transition = "0s";
+        progressBar.style.width = "0%";
+      }
     }
 
     if (window.mapData) {
@@ -125,7 +127,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 
     // Check for preloaded chunks from warp preloading
     const preloadedMapData = (window as any).__preloadedMaps?.[mapName];
-    const preloadedChunks = preloadedMapData?.loadedChunks || new Map<string, ChunkData>();
+    const preloadedChunks = new Map(preloadedMapData?.loadedChunks || []);
 
     window.mapData = {
       name: mapName,
@@ -217,6 +219,27 @@ export default async function loadMap(metadata: any): Promise<boolean> {
         if (!window.mapData.loadedChunks.has(chunkKey)) {
           await requestChunk(chunk.x, chunk.y);
         }
+      }
+    }
+
+    if (window.mapData.loadedChunks.size > 0) {
+      if (!(window as any).__preloadedMaps) {
+        (window as any).__preloadedMaps = {};
+      }
+      if (!(window as any).__preloadedMaps[mapName]) {
+        (window as any).__preloadedMaps[mapName] = {
+          name: mapName,
+          width: mapWidth,
+          height: mapHeight,
+          tilewidth: tilewidth,
+          tileheight: tileheight,
+          chunkSize: CHUNK_SIZE,
+          loadedChunks: new Map(),
+        };
+      }
+      const canonical = (window as any).__preloadedMaps[mapName].loadedChunks;
+      for (const [key, value] of window.mapData.loadedChunks.entries()) {
+        canonical.set(key, value);
       }
     }
 
@@ -457,8 +480,9 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
 
   const chunkKey = `${chunkX}-${chunkY}`;
 
-  if (window.mapData.loadedChunks.has(chunkKey)) {
-    return window.mapData.loadedChunks.get(chunkKey)!;
+  const existingChunk = window.mapData.loadedChunks.get(chunkKey);
+  if (existingChunk && existingChunk.canvas && existingChunk.lowerCanvas && existingChunk.upperCanvas) {
+    return existingChunk;
   }
 
   if (chunkX < 0 || chunkY < 0 || chunkX >= window.mapData.chunksX || chunkY >= window.mapData.chunksY) {
@@ -493,6 +517,11 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
     chunkData.canvas = lowerCanvas;
 
     window.mapData.loadedChunks.set(chunkKey, chunkData);
+
+    const preloadCache = (window as any).__preloadedMaps?.[window.mapData.name]?.loadedChunks;
+    if (preloadCache) {
+      preloadCache.set(chunkKey, chunkData);
+    }
 
     // Record chunk load time for fade-in effect
     recordChunkLoadTime(chunkKey);

@@ -203,6 +203,7 @@ let snapshotRevision: number | null = null;
 let snapshotApplied: boolean = false;
 let animationUpdateBuffer: Array<{id: string, name: string, data: any, revision: number}> = [];
 let pendingMovements: Array<{id: string, _data: any, revision: number}> = [];
+let pendingSpriteAnimations: Array<{id: string, animationState: string, bodySprite: any, headSprite: any, mountSprite: any, armorHelmetSprite: any, armorShoulderguardsSprite: any, armorNeckSprite: any, armorHandsSprite: any, armorChestSprite: any, armorFeetSprite: any, armorLegsSprite: any, armorWeaponSprite: any}> = [];
 
 const setupEquipmentSlotHandlers = () => {
   const allEquipmentSlots = [
@@ -385,6 +386,7 @@ function initializeConnection() {
   snapshotApplied = false;
   animationUpdateBuffer = [];
   pendingMovements = [];
+  pendingSpriteAnimations = [];
 
   sendRequest({
     type: "PING",
@@ -504,14 +506,24 @@ async function handleLoadPlayersPacket(data: any) {
           (p) => p.id === movement.id
         );
         if (player && movement._data) {
-          player.position.x = Math.round(movement._data.x);
-          player.position.y = Math.round(movement._data.y);
+          const px = Math.round(movement._data.x);
+          const py = Math.round(movement._data.y);
+          player.position.x = px;
+          player.position.y = py;
+          player.serverPosition.x = px;
+          player.serverPosition.y = py;
+          player.renderPosition.x = px;
+          player.renderPosition.y = py;
+          if (movement._data.dr) {
+            player.lastDirection = movement._data.dr;
+          }
           if (movement.id === cachedPlayerId) {
             positionText.innerText = `Position: ${player.position.x}, ${player.position.y}`;
           }
         }
       }
       pendingMovements = [];
+      pendingSpriteAnimations = [];
     }
 
     const bufferedAnimations = animationUpdateBuffer
@@ -578,6 +590,56 @@ async function handleLoadPlayersPacket(data: any) {
     }
 
     animationUpdateBuffer = [];
+
+    for (const anim of pendingSpriteAnimations) {
+      const player = Array.from(cache.players).find((p: any) => p.id === anim.id);
+      if (player) {
+        try {
+          const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
+          let animationState = anim.animationState || 'idle';
+          if (animationState.includes('_')) {
+            player.lastDirection = animationState.split('_')[1];
+          } else {
+            animationState = `${animationState}_${player.lastDirection}`;
+          }
+          const hasExisting = player.layeredAnimation;
+          const spriteSheetsChanged = hasExisting ? (
+            player.layeredAnimation.layers.mount?.spriteSheet?.name !== anim.mountSprite?.name ||
+            player.layeredAnimation.layers.body?.spriteSheet?.name !== anim.bodySprite?.name ||
+            player.layeredAnimation.layers.head?.spriteSheet?.name !== anim.headSprite?.name ||
+            player.layeredAnimation.layers.armor_helmet?.spriteSheet?.name !== anim.armorHelmetSprite?.name ||
+            player.layeredAnimation.layers.armor_shoulderguards?.spriteSheet?.name !== anim.armorShoulderguardsSprite?.name ||
+            player.layeredAnimation.layers.armor_neck?.spriteSheet?.name !== anim.armorNeckSprite?.name ||
+            player.layeredAnimation.layers.armor_hands?.spriteSheet?.name !== anim.armorHandsSprite?.name ||
+            player.layeredAnimation.layers.armor_chest?.spriteSheet?.name !== anim.armorChestSprite?.name ||
+            player.layeredAnimation.layers.armor_feet?.spriteSheet?.name !== anim.armorFeetSprite?.name ||
+            player.layeredAnimation.layers.armor_legs?.spriteSheet?.name !== anim.armorLegsSprite?.name ||
+            player.layeredAnimation.layers.armor_weapon?.spriteSheet?.name !== anim.armorWeaponSprite?.name
+          ) : true;
+          if (!hasExisting || spriteSheetsChanged) {
+            player.layeredAnimation = await initializeLayeredAnimation(
+              anim.mountSprite || null,
+              anim.bodySprite || null,
+              anim.headSprite || null,
+              anim.armorHelmetSprite || null,
+              anim.armorShoulderguardsSprite || null,
+              anim.armorNeckSprite || null,
+              anim.armorHandsSprite || null,
+              anim.armorChestSprite || null,
+              anim.armorFeetSprite || null,
+              anim.armorLegsSprite || null,
+              anim.armorWeaponSprite || null,
+              animationState
+            );
+          } else if (player.layeredAnimation) {
+            changeLayeredAnimation(player.layeredAnimation, animationState);
+          }
+        } catch (error) {
+          console.error("Error handling buffered sprite sheet animation:", error);
+        }
+      }
+    }
+    pendingSpriteAnimations = [];
   } finally {
 
     loadPlayersProcessing = false;
@@ -696,6 +758,10 @@ socket.onmessage = async (event) => {
     }
     case "WEATHER": {
       if (!data || !data.weather) return;
+      if ((window as any).__pendingWeather !== undefined) {
+        (window as any).__pendingWeather = data;
+        break;
+      }
       // Set flag that this map has weather/ambience
       setHasWeather(true);
       setWeatherType(data.weather);
@@ -1179,6 +1245,25 @@ socket.onmessage = async (event) => {
             player = cache.pendingPlayers.get(data.id) || null;
           }
 
+          if (!player && !snapshotApplied) {
+            pendingSpriteAnimations.push({
+              id: data.id,
+              animationState: data.animationState,
+              bodySprite: data.bodySprite,
+              headSprite: data.headSprite,
+              mountSprite: data.mountSprite,
+              armorHelmetSprite: data.armorHelmetSprite,
+              armorShoulderguardsSprite: data.armorShoulderguardsSprite,
+              armorNeckSprite: data.armorNeckSprite,
+              armorHandsSprite: data.armorHandsSprite,
+              armorChestSprite: data.armorChestSprite,
+              armorFeetSprite: data.armorFeetSprite,
+              armorLegsSprite: data.armorLegsSprite,
+              armorWeaponSprite: data.armorWeaponSprite,
+            });
+            return;
+          }
+
           if (player) {
 
             const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
@@ -1318,6 +1403,25 @@ socket.onmessage = async (event) => {
 
           const targetPlayer = player || pendingPlayer;
 
+          if (!targetPlayer && !snapshotApplied) {
+            pendingSpriteAnimations.push({
+              id: animationData.id,
+              animationState: animationData.animationState,
+              bodySprite: animationData.bodySprite,
+              headSprite: animationData.headSprite,
+              mountSprite: animationData.mountSprite,
+              armorHelmetSprite: animationData.armorHelmetSprite,
+              armorShoulderguardsSprite: animationData.armorShoulderguardsSprite,
+              armorNeckSprite: animationData.armorNeckSprite,
+              armorHandsSprite: animationData.armorHandsSprite,
+              armorChestSprite: animationData.armorChestSprite,
+              armorFeetSprite: animationData.armorFeetSprite,
+              armorLegsSprite: animationData.armorLegsSprite,
+              armorWeaponSprite: animationData.armorWeaponSprite,
+            });
+            continue;
+          }
+
           if (targetPlayer) {
 
             const { initializeLayeredAnimation, changeLayeredAnimation } = await import('./layeredAnimation.js');
@@ -1404,6 +1508,19 @@ socket.onmessage = async (event) => {
       const existingInPending = cache.pendingPlayers?.get(data.id);
 
       if (!existingByUsername && !existingInPending) {
+        if (data.id === cachedPlayerId) {
+          const pendingWeather = (window as any).__pendingWeather;
+          if (pendingWeather !== undefined) {
+            if (pendingWeather) {
+              setHasWeather(true);
+              setWeatherType(pendingWeather.weather);
+              if (pendingWeather.weatherData) {
+                setWeatherData(pendingWeather.weatherData);
+              }
+            }
+            delete (window as any).__pendingWeather;
+          }
+        }
         await createPlayer(data);
       } else if (existingByUsername) {
         // Update existing player instead of recreating to avoid duplicates
@@ -1411,6 +1528,57 @@ socket.onmessage = async (event) => {
         // Update sprite data if provided
         if (data.spriteData) {
           existingByUsername.spriteData = data.spriteData;
+          if (data.spriteData.animationState && data.spriteData.animationState.includes('_')) {
+            existingByUsername.lastDirection = data.spriteData.animationState.split('_')[1];
+          }
+          // Re-initialize layered animation for the self-player to ensure armor layers are loaded
+          if (data.id === cachedPlayerId) {
+            const { initializeLayeredAnimation } = await import('./layeredAnimation.js');
+            try {
+              existingByUsername.layeredAnimation = await initializeLayeredAnimation(
+                data.spriteData.mountSprite || null,
+                data.spriteData.bodySprite || null,
+                data.spriteData.headSprite || null,
+                data.spriteData.armorHelmetSprite || null,
+                data.spriteData.armorShoulderguardsSprite || null,
+                data.spriteData.armorNeckSprite || null,
+                data.spriteData.armorHandsSprite || null,
+                data.spriteData.armorChestSprite || null,
+                data.spriteData.armorFeetSprite || null,
+                data.spriteData.armorLegsSprite || null,
+                data.spriteData.armorWeaponSprite || null,
+                data.spriteData.animationState || 'idle'
+              );
+            } catch (e) {
+              console.error("Error initializing layered animation:", e);
+            }
+          }
+        }
+        // Sync position fields that Object.assign doesn't remap from data.location
+        if (data.location) {
+          existingByUsername.position.x = Math.round(data.location.x);
+          existingByUsername.position.y = Math.round(data.location.y);
+          existingByUsername.serverPosition.x = Math.round(data.location.x);
+          existingByUsername.serverPosition.y = Math.round(data.location.y);
+          existingByUsername.renderPosition.x = Math.round(data.location.x);
+          existingByUsername.renderPosition.y = Math.round(data.location.y);
+        }
+        if (data.id === cachedPlayerId && loaded) {
+          const pendingWeather = (window as any).__pendingWeather;
+          if (pendingWeather !== undefined) {
+            if (pendingWeather) {
+              setHasWeather(true);
+              setWeatherType(pendingWeather.weather);
+              if (pendingWeather.weatherData) {
+                setWeatherData(pendingWeather.weatherData);
+              }
+            }
+            delete (window as any).__pendingWeather;
+          }
+          const { setCameraX, setCameraY, getCameraX, getCameraY } = await import('./renderer.js');
+          setCameraX(existingByUsername.position.x - window.innerWidth / 2 + 8);
+          setCameraY(existingByUsername.position.y - window.innerHeight / 2 + 48);
+          window.scrollTo(getCameraX(), getCameraY());
         }
       }
 
@@ -1711,6 +1879,8 @@ socket.onmessage = async (event) => {
         if (playerId == cachedPlayerId) {
           positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
         }
+      } else if (!snapshotApplied) {
+        pendingMovements.push({ id: playerId, _data: moveData, revision: data.r || 0 });
       } else {
         // Handle entity movement
         const entity = cache.entities.find((e: any) => e.id === playerId);
@@ -1827,7 +1997,7 @@ socket.onmessage = async (event) => {
         if (!player) {
 
           if (!snapshotApplied) {
-            pendingMovements.push(movement);
+            pendingMovements.push({ id: playerId, _data: moveData, revision: movement.r || 0 });
           }
           continue;
         }
@@ -1933,9 +2103,96 @@ socket.onmessage = async (event) => {
     }
     case "LOAD_MAP":
       {
+        const isTransition = loaded;
+
+        loaded = false;
+        selfPlayerSpriteLoaded = false;
+        snapshotApplied = false;
+
+        if (_hideScreenTimer) {
+          clearTimeout(_hideScreenTimer);
+          _hideScreenTimer = null;
+        }
+
+        if (isTransition) {
+          (window as any).__pendingWeather = null;
+
+          const mapName = data?.name || '';
+          const tw = data?.tilewidth || 32;
+          const mapW = data?.width || 0;
+          const mapH = data?.height || 0;
+          const sX = data?.spawnX || 0;
+          const sY = data?.spawnY || 0;
+          const CHUNK_MAP: Record<number, number> = { 16: 64, 32: 32, 64: 16 };
+          const cs = CHUNK_MAP[tw] || 32;
+          const cps = cs * tw;
+          const scx = Math.floor(sX / cps);
+          const scy = Math.floor(sY / cps);
+          const totalCX = Math.ceil(mapW / cs);
+          const totalCY = Math.ceil(mapH / cs);
+          const pad = cps;
+          const needCX = Math.ceil((window.innerWidth + pad * 2) / cps / 2);
+          const needCY = Math.ceil((window.innerHeight + pad * 2) / cps / 2);
+
+          let needed = 0;
+          let cached = 0;
+          const preloadedChunks = (window as any).__preloadedMaps?.[mapName]?.loadedChunks;
+          for (let dy = -needCY; dy <= needCY; dy++) {
+            for (let dx = -needCX; dx <= needCX; dx++) {
+              const cx = scx + dx;
+              const cy = scy + dy;
+              if (cx >= 0 && cy >= 0 && cx < totalCX && cy < totalCY) {
+                needed++;
+                const ck = `${cx}-${cy}`;
+                if (preloadedChunks?.has(ck) || localStorage.getItem(`chunk_${mapName}_${ck}`)) {
+                  cached++;
+                }
+              }
+            }
+          }
+          const mostChunksCached = cached > 0;
+          const hasWorld = data?.hasWeather === true;
+          const useBlackFade = !hasWorld && mostChunksCached;
+
+          const { weatherCanvas, weatherCtx, loadingScreen } = await import('./ui.js');
+
+          if (useBlackFade) {
+            if (loadingScreen) loadingScreen.style.display = 'none';
+
+            const blackOverlay = document.createElement('div');
+            blackOverlay.id = 'map-transition-overlay';
+            blackOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:99999;opacity:0;transition:opacity 0.3s;pointer-events:none;';
+            document.body.appendChild(blackOverlay);
+            blackOverlay.offsetHeight;
+            blackOverlay.style.opacity = '1';
+
+            await new Promise(resolve => setTimeout(resolve, 350));
+          }
+
+          if (weatherCanvas && weatherCtx) {
+            weatherCtx.clearRect(0, 0, weatherCanvas.width, weatherCanvas.height);
+          }
+          setWeatherType(null);
+          setWeatherData(null);
+          setHasWeather(false);
+
+          if (cache?.pendingPlayers) cache.pendingPlayers.clear();
+          if (cache?.entities) cache.entities = [];
+          if (cache?.npcs) cache.npcs = [];
+          if (cache?.projectiles) cache.projectiles = [];
+
+          const { resetCameraInitialized } = await import('./renderer.js');
+          resetCameraInitialized();
+
+          (window as any).__suppressLoadingScreen = useBlackFade;
+        }
+
         loaded = await loadMap(data);
 
-        if (loaded && selfPlayerSpriteLoaded) {
+        if (loaded) {
+          const { progressBar } = await import('./ui.js');
+          if (progressBar) progressBar.style.width = '100%';
+          await new Promise(resolve => setTimeout(resolve, 1000));
           hideLoadingScreen();
         }
 
@@ -1972,6 +2229,8 @@ socket.onmessage = async (event) => {
         snapshotApplied = false;
         animationUpdateBuffer = [];
         pendingMovements = [];
+        pendingSpriteAnimations = [];
+      pendingSpriteAnimations = [];
 
         const sessionToken = getCookie("token");
         if (!sessionToken) {
@@ -3356,13 +3615,18 @@ export let selfPlayerSpriteLoaded: boolean = false;
 
 export function setSelfPlayerSpriteLoaded(value: boolean) {
   selfPlayerSpriteLoaded = value;
-
-  if (value && loaded) {
-    hideLoadingScreen();
-  }
 }
 
+let _hideScreenTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function hideLoadingScreen() {
+  const transitionOverlay = document.getElementById('map-transition-overlay');
+  if (transitionOverlay) {
+    transitionOverlay.style.transition = 'opacity 0.4s';
+    transitionOverlay.style.opacity = '0';
+    setTimeout(() => transitionOverlay.remove(), 400);
+  }
+
   const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
 
   if (loadingScreen) {
@@ -3371,7 +3635,9 @@ async function hideLoadingScreen() {
 
     loadingScreen.style.transition = "1s";
     loadingScreen.style.opacity = "0";
-    setTimeout(() => {
+    if (_hideScreenTimer) clearTimeout(_hideScreenTimer);
+    _hideScreenTimer = setTimeout(() => {
+      _hideScreenTimer = null;
       if (loadingScreen) {
         loadingScreen.style.display = "none";
         if (progressBar) progressBar.style.width = "0%";

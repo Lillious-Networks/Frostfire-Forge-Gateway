@@ -1590,6 +1590,10 @@ function setWeatherData(data: any) {
   currentWeatherData = data;
 }
 
+function resetCameraInitialized() {
+  cameraInitialized = false;
+}
+
 function initializeCamera(x: number, y: number) {
   if (!cameraInitialized) {
     cameraX = x;
@@ -1620,6 +1624,7 @@ export {
   getWeatherType,
   setWeatherData,
   initializeCamera,
+  resetCameraInitialized,
   setPendingRequest,
   getPendingRequest,
   invalidateTilesetLookupCache,

@@ -601,7 +601,11 @@ async function createPlayer(data: any) {
   cache.pendingPlayers.set(player.id, player);
 
   if (layeredAnimationPromise) {
-    player.layeredAnimation = await layeredAnimationPromise;
+    const anim = await layeredAnimationPromise;
+    // Don't overwrite if SPRITE_SHEET_ANIMATION already set a richer animation (e.g. with armor)
+    if (!player.layeredAnimation) {
+      player.layeredAnimation = anim;
+    }
 
     // Wait for all animation frames to actually load before showing player
     await new Promise<void>((resolve) => {
@@ -623,16 +627,16 @@ async function createPlayer(data: any) {
       };
       checkFramesLoaded();
     });
+  }
 
-    cache.players.add(player);
+  cache.players.add(player);
 
-    if (cache.pendingPlayers) {
-      cache.pendingPlayers.delete(player.id);
-    }
+  if (cache.pendingPlayers) {
+    cache.pendingPlayers.delete(player.id);
+  }
 
-    if (data.id === cachedPlayerId) {
-      setSelfPlayerSpriteLoaded(true);
-    }
+  if (data.id === cachedPlayerId) {
+    setSelfPlayerSpriteLoaded(true);
   }
 
   if (data.id === cachedPlayerId) {
