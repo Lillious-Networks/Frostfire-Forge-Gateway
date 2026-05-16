@@ -15,6 +15,10 @@ let selectedServerId: string | null = null;
 let servers: any[] = [];
 const serverPings = new Map<string, number>();
 
+function isMobileDevice(): boolean {
+    return window.innerWidth <= 768 || window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+}
+
 async function measureServerPing(server: any): Promise<number | null> {
     try {
         const protocol = server.useSSL ? 'https' : 'http';
@@ -159,6 +163,11 @@ function renderServers(): void {
                         <p>${server.description || 'No description available.'}</p>
                     `;
                 }
+            }
+
+            // On mobile, join immediately
+            if (isMobileDevice()) {
+                continueToGame(selectedServerId);
             }
         });
     });
