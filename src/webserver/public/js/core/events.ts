@@ -1,4 +1,4 @@
-import { sendRequest, getIsLoaded } from "./socket.js";
+import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getCameraX, getCameraY } from "./renderer.js";
@@ -499,6 +499,55 @@ canvas.addEventListener("touchmove", (e) => {
   if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
+  }
+});
+
+// Double-tap on mobile for admin warp
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
+
+canvas.addEventListener("touchend", (e) => {
+  if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+  if ((window as any).tileEditor?.isActive) return;
+
+  const now = Date.now();
+  const touch = (e as any).changedTouches?.[0];
+  if (!touch) return;
+
+  const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
+  if (!currentPlayer?.isAdmin) return;
+
+  if (now - lastTapTime < 300 &&
+      Math.abs(touch.clientX - lastTapX) < 30 &&
+      Math.abs(touch.clientY - lastTapY) < 30) {
+
+    const rect = canvas.getBoundingClientRect();
+    const screenX = touch.clientX - rect.left;
+    const screenY = touch.clientY - rect.top;
+
+    let mapCenterOffsetX = 0;
+    let mapCenterOffsetY = 0;
+    if (window.mapData) {
+      const mapWidth = window.mapData.width * window.mapData.tilewidth;
+      const mapHeight = window.mapData.height * window.mapData.tileheight;
+      if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+      if (mapHeight < window.innerHeight) mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+    }
+
+    const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
+    const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
+
+    sendRequest({
+      type: "TELEPORTXY",
+      data: { x: Math.floor(worldX), y: Math.floor(worldY) },
+    });
+
+    lastTapTime = 0;
+  } else {
+    lastTapTime = now;
+    lastTapX = touch.clientX;
+    lastTapY = touch.clientY;
   }
 });
 
