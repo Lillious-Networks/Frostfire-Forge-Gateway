@@ -5383,6 +5383,14 @@ body.ipad-device #game-notification-container {
   }
 }
 
+/* Mobile-only scaling for character stats sheet */
+@media (hover: none) and (pointer: coarse) {
+  #stat-screen {
+    transform: scale(0.75);
+    transform-origin: top left;
+  }
+}
+
 /* Loading screen animations */
 @keyframes float {
   0%, 100% {
