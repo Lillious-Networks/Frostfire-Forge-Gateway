@@ -1,129 +1,122 @@
 import { inventoryUI, spellBookUI, friendsListUI, guildContainer, collectablesUI } from "./ui.js";
 
-let toggleInventory = false;
-let toggleSpellBook = false;
-let toggleFriendsList = false;
-let toggleGuild = false;
-let toggleCollectables = false;
+// State management
+let isMenuOpen = false;
 
-const mobileInventoryBtn = document.getElementById('mobile-inventory-button');
-const mobileSpellbookBtn = document.getElementById('mobile-spellbook-button');
-const mobileCollectablesBtn = document.getElementById('mobile-collectables-button');
-const mobileFriendsBtn = document.getElementById('mobile-friends-button');
-const mobileGuildBtn = document.getElementById('mobile-guild-button');
-const mobileBackdrop = document.getElementById('mobile-ui-backdrop');
+// DOM elements
+const radialMenuBtn = document.getElementById('radial-menu-btn');
+const radialMenu = document.getElementById('radial-menu');
+const radialOverlay = document.getElementById('radial-menu-overlay');
+const radialItems = document.querySelectorAll('.radial-item');
 
+// Detect touch device
 const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-function updateOverlay() {
-  const anyOpen = toggleInventory || toggleSpellBook || toggleFriendsList || toggleGuild || toggleCollectables;
-  if (isTouchDevice && mobileBackdrop) {
-    if (anyOpen) {
-      mobileBackdrop.classList.add('active');
-    } else {
-      mobileBackdrop.classList.remove('active');
+/**
+ * Calculate circular positions for radial items
+ * 8 items at 45° intervals, starting from top (12 o'clock)
+ */
+function calculateRadialPositions() {
+  const itemCount = radialItems.length;
+  const radius = 110; // Distance from center
+
+  radialItems.forEach((item, index) => {
+    const angle = (index / itemCount) * Math.PI * 2 - Math.PI / 2; // Start from top
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+
+    // Position relative to 140x140 center (50% of 280x280 container)
+    item.style.left = `calc(50% + ${x}px - 25px)`;
+    item.style.top = `calc(50% + ${y}px - 25px)`;
+  });
+}
+
+/**
+ * Open the radial menu
+ */
+function openRadialMenu() {
+  isMenuOpen = true;
+  radialMenu.classList.remove('hidden', 'closing');
+  radialMenu.classList.add('active');
+  radialOverlay.classList.add('active');
+  radialMenuBtn.classList.add('active');
+}
+
+/**
+ * Close the radial menu
+ */
+function closeRadialMenu() {
+  if (!isMenuOpen) return;
+
+  isMenuOpen = false;
+  radialMenu.classList.add('closing');
+  radialMenu.classList.remove('active');
+  radialOverlay.classList.remove('active');
+  radialMenuBtn.classList.remove('active');
+
+  // Remove hidden class after animation completes
+  setTimeout(() => {
+    if (!isMenuOpen) {
+      radialMenu.classList.add('hidden');
     }
+  }, 300);
+}
+
+/**
+ * Toggle radial menu open/close
+ */
+function toggleRadialMenu() {
+  if (isMenuOpen) {
+    closeRadialMenu();
+  } else {
+    openRadialMenu();
   }
 }
 
-function togglePanel(panel: HTMLElement, isOpen: boolean): boolean {
-  if (isTouchDevice) {
-    if (isOpen) {
-      panel.classList.remove('open');
-    } else {
-      panel.classList.add('open');
-    }
-  } else {
-    if (isOpen) {
-      panel.style.right = panel === inventoryUI ? '-350px' : '-450px';
-    } else {
-      panel.style.right = '25px';
-    }
-  }
-  return !isOpen;
+/**
+ * Dispatch a hotkey event as if user pressed the key
+ */
+function dispatchHotkey(keyCode: string) {
+  const event = new KeyboardEvent('keydown', {
+    code: keyCode,
+    key: keyCode === 'KeyB' ? 'b' :
+         keyCode === 'KeyP' ? 'p' :
+         keyCode === 'KeyC' ? 'c' :
+         keyCode === 'KeyO' ? 'o' :
+         keyCode === 'KeyG' ? 'g' :
+         keyCode === 'KeyK' ? 'k' :
+         keyCode === 'KeyQ' ? 'q' : '',
+    bubbles: true,
+    cancelable: true,
+  });
+  window.dispatchEvent(event);
 }
 
-function closeOtherPanels(except: string) {
-  if (except !== 'inventory' && toggleInventory) {
-    toggleInventory = togglePanel(inventoryUI, toggleInventory);
-    mobileInventoryBtn?.classList.remove('active');
-  }
-  if (except !== 'spellbook' && toggleSpellBook) {
-    toggleSpellBook = togglePanel(spellBookUI, toggleSpellBook);
-    mobileSpellbookBtn?.classList.remove('active');
-  }
-  if (except !== 'collectables' && toggleCollectables) {
-    toggleCollectables = togglePanel(collectablesUI, toggleCollectables);
-    mobileCollectablesBtn?.classList.remove('active');
-  }
-  if (except !== 'friends' && toggleFriendsList) {
-    toggleFriendsList = togglePanel(friendsListUI, toggleFriendsList);
-    mobileFriendsBtn?.classList.remove('active');
-  }
-  if (except !== 'guild' && toggleGuild) {
-    toggleGuild = togglePanel(guildContainer, toggleGuild);
-    mobileGuildBtn?.classList.remove('active');
-  }
-}
+// Event listeners
+radialMenuBtn?.addEventListener('click', toggleRadialMenu);
 
-mobileInventoryBtn?.addEventListener('click', () => {
-  closeOtherPanels('inventory');
-  toggleInventory = togglePanel(inventoryUI, toggleInventory);
-  if (toggleInventory) {
-    mobileInventoryBtn.classList.add('active');
-  } else {
-    mobileInventoryBtn.classList.remove('active');
-  }
-  updateOverlay();
+radialOverlay?.addEventListener('click', closeRadialMenu);
+
+radialItems.forEach((item) => {
+  item.addEventListener('click', (e) => {
+    const hotkey = item.getAttribute('data-hotkey');
+
+    // Don't dispatch if no hotkey (e.g., Settings)
+    if (hotkey && hotkey !== 'null') {
+      dispatchHotkey(hotkey);
+    }
+
+    closeRadialMenu();
+  });
 });
 
-mobileSpellbookBtn?.addEventListener('click', () => {
-  closeOtherPanels('spellbook');
-  toggleSpellBook = togglePanel(spellBookUI, toggleSpellBook);
-  if (toggleSpellBook) {
-    mobileSpellbookBtn.classList.add('active');
-  } else {
-    mobileSpellbookBtn.classList.remove('active');
-  }
-  updateOverlay();
+// Initialize positions on load
+document.addEventListener('DOMContentLoaded', () => {
+  calculateRadialPositions();
 });
 
-mobileCollectablesBtn?.addEventListener('click', () => {
-  closeOtherPanels('collectables');
-  toggleCollectables = togglePanel(collectablesUI, toggleCollectables);
-  if (toggleCollectables) {
-    mobileCollectablesBtn.classList.add('active');
-  } else {
-    mobileCollectablesBtn.classList.remove('active');
-  }
-  updateOverlay();
-});
+// Recalculate on resize
+window.addEventListener('resize', calculateRadialPositions);
 
-mobileFriendsBtn?.addEventListener('click', () => {
-  closeOtherPanels('friends');
-  toggleFriendsList = togglePanel(friendsListUI, toggleFriendsList);
-  if (toggleFriendsList) {
-    mobileFriendsBtn.classList.add('active');
-  } else {
-    mobileFriendsBtn.classList.remove('active');
-  }
-  updateOverlay();
-});
-
-mobileGuildBtn?.addEventListener('click', () => {
-  closeOtherPanels('guild');
-  toggleGuild = togglePanel(guildContainer, toggleGuild);
-  if (toggleGuild) {
-    mobileGuildBtn.classList.add('active');
-  } else {
-    mobileGuildBtn.classList.remove('active');
-  }
-  updateOverlay();
-});
-
-mobileBackdrop?.addEventListener('click', () => {
-  if (isTouchDevice) {
-    closeOtherPanels('none');
-    updateOverlay();
-  }
-});
+// Export closeRadialMenu for use in other modules
+export { closeRadialMenu, openRadialMenu, toggleRadialMenu };
