@@ -5392,31 +5392,6 @@ body.ipad-device #game-notification-container {
     right: auto !important;
     bottom: auto !important;
     left: max(10px, env(safe-area-inset-left)) !important;
-    background-size: contain;
-  }
-
-  /* Adjust equipment column positions for 0.5 scale */
-  #equipment-left-column {
-    top: 74px !important;
-    left: 19px !important;
-  }
-
-  #equipment-right-column {
-    top: 74px !important;
-    right: 121px !important;
-  }
-
-  #equipment-bottom-center {
-    bottom: 22.5px !important;
-    left: 80px !important;
-  }
-
-  /* Scale all children equally */
-  #equipment-left-column .slot,
-  #equipment-right-column .slot,
-  #equipment-bottom-center .slot {
-    width: 18px !important;
-    height: 18px !important;
   }
 }
 
