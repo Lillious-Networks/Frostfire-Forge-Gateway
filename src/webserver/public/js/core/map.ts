@@ -245,14 +245,14 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 
     progressBar.style.width = "100%";
 
-    const dpr = window.devicePixelRatio || 1;
+    const rawDpr = window.devicePixelRatio || 1;
+    const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
 
     const actualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
     const fullHeight = actualHeight;
     canvas.width = window.innerWidth * dpr;
     canvas.height = fullHeight * dpr;
-
-    const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
     document.documentElement.style.setProperty('--viewport-height', `${actualHeight}px`);
 
@@ -288,7 +288,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 export async function preloadChunks(data: any): Promise<void> {
   if (!window.mapData) return;
 
-  const { mapName, chunks, tilewidth, tileheight, chunkSize, width, height, tilesets } = data;
+  const { mapName, chunks, tilewidth, tileheight, width, height } = data;
 
   let preloadMapData = (window as any).__preloadedMaps?.[mapName];
 

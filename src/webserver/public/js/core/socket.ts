@@ -1522,6 +1522,10 @@ socket.onmessage = async (event) => {
           }
         }
         await createPlayer(data);
+        if (data.id === cachedPlayerId && data.isAdmin) {
+          document.querySelectorAll(".radial-item.admin-only").forEach(el => el.classList.add("visible"));
+          import("./mobileui.js").then(m => m.calculateRadialPositions());
+        }
       } else if (existingByUsername) {
         // Update existing player instead of recreating to avoid duplicates
         Object.assign(existingByUsername, data);
@@ -2502,6 +2506,30 @@ socket.onmessage = async (event) => {
             });
           };
 
+          let lastTapTime = 0;
+          slotElement.addEventListener("touchend", (e) => {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+
+              hideItemTooltip();
+
+              const inventorySlots = inventoryGrid.querySelectorAll(".slot");
+              let firstEmptySlot = -1;
+              inventorySlots.forEach((invSlot, idx) => {
+                if (firstEmptySlot === -1 && invSlot.classList.contains("empty")) {
+                  firstEmptySlot = idx;
+                }
+              });
+
+              sendRequest({
+                type: "UNEQUIP_ITEM",
+                data: { slot: slotName, targetSlotIndex: firstEmptySlot >= 0 ? firstEmptySlot : undefined },
+              });
+            }
+            lastTapTime = now;
+          });
+
           slotElement.ondragstart = (event: DragEvent) => {
 
             hideItemTooltip();
@@ -2553,6 +2581,30 @@ socket.onmessage = async (event) => {
               type: "UNEQUIP_ITEM",
               data: { slot: slotName, targetSlotIndex: firstEmptySlot >= 0 ? firstEmptySlot : undefined },
             });
+          });
+
+          let lastTapTime = 0;
+          slotElement.addEventListener("touchend", (e) => {
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              e.preventDefault();
+
+              hideItemTooltip();
+
+              const inventorySlots = inventoryGrid.querySelectorAll(".slot");
+              let firstEmptySlot = -1;
+              inventorySlots.forEach((invSlot, idx) => {
+                if (firstEmptySlot === -1 && invSlot.classList.contains("empty")) {
+                  firstEmptySlot = idx;
+                }
+              });
+
+              sendRequest({
+                type: "UNEQUIP_ITEM",
+                data: { slot: slotName, targetSlotIndex: firstEmptySlot >= 0 ? firstEmptySlot : undefined },
+              });
+            }
+            lastTapTime = now;
           });
 
           slotElement.draggable = true;

@@ -14,7 +14,8 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     COOLDOWN_DURATION,
     cooldowns,
     stopMovement,
-    setIsMoving} from "./input.js";
+    setIsMoving,
+    closeAllPanels} from "./input.js";
 import { friendsListSearch } from "./friends.js";
 import { createContextMenu, createPartyContextMenu } from "./actions.js";
 import { closeRadialMenu } from "./mobileui.js";
@@ -253,8 +254,7 @@ function updateOrientationClass() {
   }
 }
 
-window.addEventListener("resize", () => {
-
+function updateViewportDimensions() {
   const actualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
 
   // Don't update viewport height if tile editor is active (it would break NPC dialog positioning)
@@ -263,7 +263,9 @@ window.addEventListener("resize", () => {
     document.documentElement.style.setProperty('--viewport-height', `${actualHeight}px`);
   }
 
-  const dpr = window.devicePixelRatio || 1;
+  const rawDpr = window.devicePixelRatio || 1;
+  const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
   canvas.width = window.innerWidth * dpr;
   canvas.height = actualHeight * dpr;
 
@@ -272,8 +274,6 @@ window.addEventListener("resize", () => {
 
   if (ctx) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-    const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
     if (isTouchDevice) {
       const mobileZoom = 0.85;
@@ -292,8 +292,12 @@ window.addEventListener("resize", () => {
   }
 
   updateOrientationClass();
+}
 
-});
+window.addEventListener("resize", updateViewportDimensions);
+
+window.visualViewport?.addEventListener("resize", updateViewportDimensions);
+window.visualViewport?.addEventListener("scroll", updateViewportDimensions);
 
 window.addEventListener("orientationchange", () => {
 
@@ -331,6 +335,18 @@ document
           data: null,
     });
     window.location.href = "/";
+  });
+
+document
+  .getElementById("pause-menu-close")
+  ?.addEventListener("click", () => {
+    pauseMenu.style.display = "none";
+  });
+
+document
+  .getElementById("options-menu-close")
+  ?.addEventListener("click", () => {
+    optionsMenu.style.display = "none";
   });
 
 fpsSlider.addEventListener("input", () => {
@@ -375,7 +391,7 @@ document.addEventListener("contextmenu", (event) => {
     return;
   }
 
-  if ((event.target as HTMLElement)?.classList.contains("ui")) {
+  if ((event.target as HTMLElement)?.closest(".ui")) {
 
     const partyMember = (event.target as HTMLElement).closest(".party-member") as HTMLElement;
     if (partyMember) {
@@ -435,12 +451,63 @@ document.addEventListener("contextmenu", (event) => {
   });
 });
 
+// Long-press player on mobile to show context menu
+let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+let longPressStartX = 0;
+let longPressStartY = 0;
+
+canvas.addEventListener("touchstart", (e) => {
+  const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  if (!isTouchDevice) return;
+  if ((window as any).tileEditor?.isActive) return;
+  if (e.touches.length !== 1) { longPressTimer && clearTimeout(longPressTimer); longPressTimer = null; return; }
+
+  const touch = e.touches[0];
+  longPressStartX = touch.clientX;
+  longPressStartY = touch.clientY;
+
+  longPressTimer = setTimeout(() => {
+    const rect = canvas.getBoundingClientRect();
+    const screenX = longPressStartX - rect.left;
+    const screenY = longPressStartY - rect.top;
+
+    const worldX = screenX - rect.width / 2 + getCameraX();
+    const worldY = screenY - rect.height / 2 + getCameraY();
+
+    const clickedPlayer = Array.from(cache.players).find(player => {
+      return worldX >= player.position.x - 16 && worldX <= player.position.x + 32 &&
+             worldY >= player.position.y - 24 && worldY <= player.position.y + 48;
+    });
+
+    if (clickedPlayer) {
+      createContextMenu({ clientX: longPressStartX, clientY: longPressStartY } as MouseEvent, clickedPlayer.id);
+    }
+
+    longPressTimer = null;
+  }, 500);
+});
+
+canvas.addEventListener("touchend", () => {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+});
+
+canvas.addEventListener("touchmove", (e) => {
+  if (!longPressTimer) return;
+  const touch = e.touches[0];
+  const dx = touch.clientX - longPressStartX;
+  const dy = touch.clientY - longPressStartY;
+  if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+});
+
 document.addEventListener("click", (event) => {
 
   if (!getIsLoaded()) return;
 
   if ((window as any).tileEditor?.isActive) return;
-  if ((event.target as HTMLElement)?.classList.contains("ui")) return;
+  if ((event.target as HTMLElement)?.closest(".ui")) return;
 
   // Don't untarget when clicking on entity editor UI
   const entityEditorContainer = document.getElementById("entity-editor-container");
@@ -580,4 +647,36 @@ friendsListSearch.addEventListener("input", () => {
       item.style.display = 'none';
     }
   });
+});
+
+// Party member click on mobile shows context menu
+document.addEventListener("click", (e) => {
+  const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  if (!isTouchDevice) return;
+
+  const partyMember = (e.target as HTMLElement).closest(".party-member") as HTMLElement;
+  if (!partyMember) return;
+
+  const username = partyMember.dataset.username;
+  if (username) {
+    createPartyContextMenu(e as MouseEvent, username);
+  }
+});
+
+// Close open panels when tapping outside on mobile
+document.addEventListener("click", (e) => {
+  const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  if (!isTouchDevice) return;
+
+  const target = e.target as HTMLElement;
+  // Don't close if clicking radial menu items — they toggle panels themselves
+  if (target.closest(".radial-item") || target.closest(".radial-menu-btn") || target.closest("#radial-menu")) return;
+
+  const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #friends-list-container.open, #guild-container.open, #admin-panel-container.open");
+  if (openPanels.length === 0) return;
+
+  const clickedInside = Array.from(openPanels).some(panel => panel.contains(target));
+  if (!clickedInside) {
+    closeAllPanels();
+  }
 });

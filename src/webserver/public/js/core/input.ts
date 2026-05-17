@@ -27,43 +27,43 @@ const cooldowns: { [key: string]: number } = {};
 const COOLDOWN_DURATION = 100;
 const KEY_COOLDOWN_DURATION = 500;
 
+function closeOtherPanels(_except: string) {
+  if (_except !== "inventory" && toggleInventory) {
+    toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
+  }
+  if (_except !== "spellbook" && toggleSpellBook) {
+    toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
+  }
+  if (_except !== "friends" && toggleFriendsList) {
+    toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
+  }
+  if (_except !== "collectables" && toggleCollectables) {
+    toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
+  }
+  if (_except !== "guild" && toggleGuild) {
+    toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
+  }
+  if (_except !== "admin" && toggleAdminPanel) {
+    toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
+  }
+}
+
 export const keyHandlers = {
   F2: () => {
     toggleDebugContainer();
   },
   Escape: () => handleEscapeKey(),
   KeyB: () => {
+    closeOtherPanels("inventory");
     toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
   },
 
   KeyP: () => {
-    if (toggleFriendsList) {
-      toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
-    }
-
-    if (toggleGuild) {
-      toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
-    }
-
-    if (toggleCollectables) {
-      toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
-    }
-
+    closeOtherPanels("spellbook");
     toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
   },
   KeyO: () => {
-    if (toggleSpellBook) {
-      toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
-    }
-
-    if (toggleGuild) {
-      toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
-    }
-
-    if (toggleCollectables) {
-      toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -400);
-    }
-
+    closeOtherPanels("friends");
     toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
   },
   KeyC: () => handleStatsUI(),
@@ -78,33 +78,11 @@ export const keyHandlers = {
     sendRequest({ type: "NOCLIP", data: null });
   },
   KeyK: () => {
-    if (toggleFriendsList) {
-      toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
-    }
-
-    if (toggleSpellBook) {
-      toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
-    }
-
-    if (toggleGuild) {
-      toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
-    }
-
+    closeOtherPanels("collectables");
     toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
   },
   KeyG: () => {
-    if (toggleFriendsList) {
-      toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
-    }
-
-    if (toggleSpellBook) {
-      toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
-    }
-
-    if (toggleCollectables) {
-      toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
-    }
-
+    closeOtherPanels("guild");
     toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
   },
   KeyQ: () => {
@@ -278,7 +256,7 @@ function handleEscapeKey() {
   // Check if currently casting a spell and cancel it instead of opening pause menu
   const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
 
-  if (currentPlayer && currentPlayer.castingSpell) {
+  if (currentPlayer && currentPlayer.castingSpell && !currentPlayer.castingInterrupted) {
     // Cancel the spell cast
     currentPlayer.castingSpell = null;
     currentPlayer.castingInterrupted = true;
@@ -631,9 +609,30 @@ setTimeout(initializeDragListeners, 100);
 (window as any).setupDragListeners = setupDragListeners;
 (window as any).initializeDragListeners = initializeDragListeners;
 
+function closeAllPanels() {
+  if (toggleInventory) {
+    toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
+  }
+  if (toggleSpellBook) {
+    toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
+  }
+  if (toggleFriendsList) {
+    toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
+  }
+  if (toggleCollectables) {
+    toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
+  }
+  if (toggleGuild) {
+    toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
+  }
+  if (toggleAdminPanel) {
+    toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
+  }
+}
+
 export {
     getIsKeyPressed, setIsKeyPressed, pressedKeys, movementKeys, handleKeyPress, stopMovement, setIsMoving, getIsMoving, getUserHasInteracted, setUserHasInteracted,
     getControllerConnected, setControllerConnected, getLastSentDirection, setLastSentDirection, getLastTypingPacket,
     setLastTypingPacket, cooldowns, COOLDOWN_DURATION, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys,
-    cast, mount, setupDragListeners
+    cast, mount, setupDragListeners, closeAllPanels
 };

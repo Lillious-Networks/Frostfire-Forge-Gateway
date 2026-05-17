@@ -4,10 +4,12 @@ import {
   calculateWindSpeed
 } from "./windphysics.ts";
 
-const dpr = window.devicePixelRatio || 1;
+const rawDpr = window.devicePixelRatio || 1;
+const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
 const buffer = 200;
 let width: number = window.innerWidth + buffer * 2;
-let height: number = window.innerHeight + buffer * 2;
+let height: number = (window.visualViewport?.height || window.innerHeight) + buffer * 2;
 weatherCanvas.width = width * dpr;
 weatherCanvas.height = height * dpr;
 weatherCanvas.style.width = width + "px";
@@ -24,9 +26,25 @@ const TARGET_FPS = 60;
 const FRAME_TIME = 1000 / TARGET_FPS;
 
 window.addEventListener("resize", () => {
-  const dpr = window.devicePixelRatio || 1;
+  const rawDpr = window.devicePixelRatio || 1;
+  const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
   width = window.innerWidth + buffer * 2;
-  height = window.innerHeight + buffer * 2;
+  height = (window.visualViewport?.height || window.innerHeight) + buffer * 2;
+  weatherCanvas.width = width * dpr;
+  weatherCanvas.height = height * dpr;
+  weatherCanvas.style.width = width + "px";
+  weatherCanvas.style.height = height + "px";
+  if (weatherCtx) {
+    weatherCtx.setTransform(1, 0, 0, 1, 0, 0);
+    weatherCtx.scale(dpr, dpr);
+  }
+});
+
+window.visualViewport?.addEventListener("resize", () => {
+  const rawDpr = window.devicePixelRatio || 1;
+  const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
+  width = window.innerWidth + buffer * 2;
+  height = window.visualViewport!.height + buffer * 2;
   weatherCanvas.width = width * dpr;
   weatherCanvas.height = height * dpr;
   weatherCanvas.style.width = width + "px";
@@ -252,8 +270,7 @@ class SnowParticle {
 }
 
 const rainParticles: RainParticle[] = [];
-const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-const rainCount = isMobileDevice ? 50 : 100;
+const rainCount = isMobileDevice ? 25 : 100;
 for (let i = 0; i < rainCount; i++) {
   rainParticles.push(new RainParticle(Math.random() * height));
 }
@@ -296,18 +313,18 @@ class MeltParticle {
 }
 
 const snowParticles: SnowParticle[] = [];
-const snowCount = isMobileDevice ? 200 : 400;
+const snowCount = isMobileDevice ? 80 : 400;
 for (let i = 0; i < snowCount; i++) {
   snowParticles.push(new SnowParticle(Math.random() * height));
 }
 
-const meltPoolSize = isMobileDevice ? 50 : 100;
+const meltPoolSize = isMobileDevice ? 25 : 100;
 const meltPool: MeltParticle[] = [];
 for (let i = 0; i < meltPoolSize; i++) {
   meltPool.push(new MeltParticle());
 }
 
-const splashPoolSize = isMobileDevice ? 50 : 100;
+const splashPoolSize = isMobileDevice ? 25 : 100;
 const splashPool: SplashParticle[] = [];
 for (let i = 0; i < splashPoolSize; i++) {
   splashPool.push(new SplashParticle());
@@ -361,7 +378,7 @@ function weather(type: string, weatherData?: any): void {
 function updateWeatherCanvas(cameraX: number, cameraY: number): void {
 
   const halfViewportWidth = (window.innerWidth / 2);
-  const halfViewportHeight = (window.innerHeight / 2);
+  const halfViewportHeight = ((window.visualViewport?.height || window.innerHeight) / 2);
 
   cameraOffsetX = cameraX - halfViewportWidth - buffer;
   cameraOffsetY = cameraY - halfViewportHeight - buffer;

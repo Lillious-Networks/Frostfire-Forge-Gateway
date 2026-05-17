@@ -72,9 +72,15 @@ const hotbarSlots = hotbarGrid.querySelectorAll(".slot") as NodeListOf<HTMLDivEl
 const castbar = document.getElementById("castbar") as HTMLDivElement;
 const adminPanelContainer = document.getElementById("admin-panel-container") as HTMLDivElement;
 
+let touchDragJustEnded = false;
+
 hotbarSlots.forEach((slot, index) => {
   slot.addEventListener("click", (event) => {
     event.preventDefault();
+    if (touchDragJustEnded) {
+      touchDragJustEnded = false;
+      return;
+    }
     cast(index);
   });
 });
@@ -244,6 +250,7 @@ let activeCastbarClone: HTMLDivElement | null = null;
 function toggleUI(element: HTMLElement, toggleFlag: boolean, hidePosition: number) {
   element.style.transition = "1s";
   element.style.right = toggleFlag ? hidePosition.toString() : "10";
+  element.classList.toggle("open", !toggleFlag);
   return !toggleFlag;
 }
 
@@ -262,6 +269,434 @@ function handleStatsUI() {
     sendRequest({ type: "INSPECTPLAYER", data: null });
   }
 }
+
+const statScreenClose = document.getElementById("stat-screen-close") as HTMLButtonElement;
+if (statScreenClose) {
+  statScreenClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (statUI.style.left === "10px") {
+      statUI.style.transition = "1s";
+      statUI.style.left = "-600px";
+    }
+  });
+}
+
+// Touch-based drag from spellbook to hotbar, and hotbar rearrange/remove (mobile)
+let touchDragActive = false;
+let touchDragSource: "spellbook" | "hotbar" | "inventory" = "spellbook";
+let touchDragSourceIndex = -1;
+let touchDragSpellName: string | null = null;
+let touchDragImageSrc: string | null = null;
+let touchDragGhost: HTMLDivElement | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+
+function createTouchGhost(x: number, y: number) {
+  const ghost = document.createElement("div");
+  ghost.id = "touch-drag-ghost";
+  ghost.style.position = "fixed";
+  ghost.style.width = "40px";
+  ghost.style.height = "40px";
+  ghost.style.pointerEvents = "none";
+  ghost.style.zIndex = "9999";
+  ghost.style.opacity = "0.85";
+  ghost.style.transform = "translate(-50%, -50%)";
+
+  if (touchDragImageSrc) {
+    const ghostImg = document.createElement("img");
+    ghostImg.src = touchDragImageSrc;
+    ghostImg.width = 40;
+    ghostImg.height = 40;
+    ghostImg.style.pointerEvents = "none";
+    ghostImg.draggable = false;
+    ghost.appendChild(ghostImg);
+  } else {
+    ghost.textContent = touchDragSpellName || "";
+    ghost.style.background = "rgba(30, 30, 45, 0.92)";
+    ghost.style.color = "#e0e7ff";
+    ghost.style.borderRadius = "6px";
+    ghost.style.border = "1px solid rgba(255,255,255,0.25)";
+    ghost.style.display = "flex";
+    ghost.style.alignItems = "center";
+    ghost.style.justifyContent = "center";
+    ghost.style.fontSize = "9px";
+    ghost.style.padding = "2px";
+    ghost.style.boxSizing = "border-box";
+    ghost.style.width = "auto";
+    ghost.style.minWidth = "36px";
+    ghost.style.maxWidth = "64px";
+    ghost.style.whiteSpace = "nowrap";
+    ghost.style.overflow = "hidden";
+    ghost.style.textOverflow = "ellipsis";
+    ghost.style.backdropFilter = "blur(4px)";
+  }
+
+  ghost.style.left = x + "px";
+  ghost.style.top = y + "px";
+  document.body.appendChild(ghost);
+  touchDragGhost = ghost;
+}
+
+function startTouchDrag(source: "spellbook" | "hotbar" | "inventory", slot: HTMLDivElement, index: number) {
+  touchDragActive = true;
+  touchDragSource = source;
+  touchDragSourceIndex = index;
+  touchDragSpellName = slot.dataset.spellName || slot.dataset.itemName || null;
+  let img = slot.querySelector("img") as HTMLImageElement;
+  if (!img && source === "inventory") {
+    const cache = Cache.getInstance();
+    const item = cache.inventory?.find((i: any) => i.name === touchDragSpellName);
+    if (item?.iconUrl) {
+      img = new Image();
+      img.src = item.iconUrl;
+    }
+  }
+  touchDragImageSrc = img ? img.src : null;
+  createTouchGhost(touchStartX, touchStartY);
+}
+
+function clearTouchDrag() {
+  if (touchDragGhost) {
+    touchDragGhost.remove();
+    touchDragGhost = null;
+  }
+  if (touchDragSource === "inventory" && touchDragSourceIndex >= 0) {
+    const invSlots = inventoryGrid.querySelectorAll(".slot");
+    const sourceSlot = invSlots[touchDragSourceIndex] as HTMLDivElement;
+    if (sourceSlot) sourceSlot.style.opacity = "1";
+  }
+  touchDragActive = false;
+  touchDragSpellName = null;
+  touchDragImageSrc = null;
+  touchDragSourceIndex = -1;
+  touchStartTime = 0;
+  inventoryPendingSlot = null;
+  inventoryPendingIndex = -1;
+  inventoryPendingStartTime = 0;
+}
+
+// Spellbook: immediate drag on touch start
+spellBookUI.addEventListener("touchstart", (e: TouchEvent) => {
+  if (touchDragActive) return;
+  const touch = e.touches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement;
+  const slot = target?.closest(".slot") as HTMLDivElement;
+  if (!slot?.dataset?.spellName) return;
+
+  e.preventDefault();
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  startTouchDrag("spellbook", slot, -1);
+}, { passive: false });
+
+// Hotbar: long-press (500ms detected in touchmove) then drag
+let hotbarPendingSlot: HTMLDivElement | null = null;
+let hotbarPendingIndex = -1;
+
+hotbar.addEventListener("touchstart", (e: TouchEvent) => {
+  if (touchDragActive) return;
+  const touch = e.touches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement;
+  const slot = target?.closest(".slot") as HTMLDivElement;
+  if (!slot?.dataset?.spellName) return;
+
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+  touchStartTime = performance.now();
+  hotbarPendingSlot = slot;
+  hotbarPendingIndex = Array.from(hotbarSlots).indexOf(slot);
+}, { passive: true });
+
+// Inventory: long-press (500ms) then drag to rearrange
+let inventoryPendingSlot: HTMLDivElement | null = null;
+let inventoryPendingIndex = -1;
+let inventoryPendingStartX = 0;
+let inventoryPendingStartY = 0;
+let inventoryPendingStartTime = 0;
+
+inventoryUI.addEventListener("touchstart", (e: TouchEvent) => {
+  if (touchDragActive) return;
+  const touch = e.touches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement;
+  const slot = target?.closest(".slot") as HTMLDivElement;
+  if (!slot?.dataset?.itemName) return;
+
+  inventoryPendingSlot = slot;
+  inventoryPendingIndex = Array.from(inventoryGrid.querySelectorAll(".slot")).indexOf(slot);
+  inventoryPendingStartX = touch.clientX;
+  inventoryPendingStartY = touch.clientY;
+  inventoryPendingStartTime = performance.now();
+}, { passive: true });
+
+// Shared touchmove: handles long-press detection AND ghost movement
+document.addEventListener("touchmove", (e: TouchEvent) => {
+  if (touchDragActive && touchDragGhost) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    touchDragGhost.style.left = touch.clientX + "px";
+    touchDragGhost.style.top = touch.clientY + "px";
+    return;
+  }
+
+  // Hotbar long-press detection
+  if (hotbarPendingSlot && !touchDragActive) {
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStartX;
+    const dy = touch.clientY - touchStartY;
+    if (Math.abs(dx) > 20 || Math.abs(dy) > 20) {
+      hotbarPendingSlot = null;
+      hotbarPendingIndex = -1;
+      touchStartTime = 0;
+    } else if (performance.now() - touchStartTime >= 500) {
+      e.preventDefault();
+      const slot = hotbarPendingSlot;
+      const idx = hotbarPendingIndex;
+      hotbarPendingSlot = null;
+      hotbarPendingIndex = -1;
+      startTouchDrag("hotbar", slot, idx);
+      touchDragGhost!.style.left = touch.clientX + "px";
+      touchDragGhost!.style.top = touch.clientY + "px";
+    }
+  }
+
+  // Inventory long-press detection
+  if (inventoryPendingSlot && !touchDragActive) {
+    const touch = e.touches[0];
+    const dx = touch.clientX - inventoryPendingStartX;
+    const dy = touch.clientY - inventoryPendingStartY;
+    if (Math.abs(dx) > 20 || Math.abs(dy) > 20) {
+      inventoryPendingSlot = null;
+      inventoryPendingIndex = -1;
+      inventoryPendingStartTime = 0;
+    } else if (performance.now() - inventoryPendingStartTime >= 500) {
+      e.preventDefault();
+      const slot = inventoryPendingSlot;
+      const idx = inventoryPendingIndex;
+      inventoryPendingSlot = null;
+      inventoryPendingIndex = -1;
+      startTouchDrag("inventory", slot, idx);
+      slot.style.opacity = "0.4";
+      touchDragGhost!.style.left = touch.clientX + "px";
+      touchDragGhost!.style.top = touch.clientY + "px";
+    }
+  }
+}, { passive: false });
+
+hotbar.addEventListener("touchend", () => {
+  if (!touchDragActive) {
+    hotbarPendingSlot = null;
+    hotbarPendingIndex = -1;
+    touchStartTime = 0;
+  }
+});
+
+inventoryUI.addEventListener("touchend", () => {
+  if (!touchDragActive) {
+    if (inventoryPendingSlot) {
+      inventoryPendingSlot.style.opacity = "1";
+    }
+    inventoryPendingSlot = null;
+    inventoryPendingIndex = -1;
+    inventoryPendingStartTime = 0;
+  }
+});
+
+// Shared touchend for drop handling
+document.addEventListener("touchend", (e: TouchEvent) => {
+  if (!touchDragActive) return;
+
+  const touch = (e as any).changedTouches?.[0] || { clientX: touchStartX, clientY: touchStartY };
+  const target = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement;
+  const hotbarSlot = target?.closest("#hotbar .slot") as HTMLDivElement;
+
+  if (touchDragSource === "spellbook") {
+    if (hotbarSlot && touchDragSpellName) {
+      hotbarSlot.dataset.spellName = touchDragSpellName;
+      hotbarSlot.innerHTML = "";
+      hotbarSlot.classList.remove("empty");
+      if (touchDragImageSrc) {
+        const iconImage = new Image();
+        iconImage.src = touchDragImageSrc;
+        iconImage.draggable = false;
+        hotbarSlot.appendChild(iconImage);
+      } else {
+        hotbarSlot.innerText = touchDragSpellName;
+      }
+      saveHotbarConfiguration();
+    }
+  } else if (touchDragSource === "hotbar") {
+    if (hotbarSlot && touchDragSpellName) {
+      const targetIndex = Array.from(hotbarSlots).indexOf(hotbarSlot);
+      const targetSpellName = hotbarSlot.dataset.spellName || null;
+      const targetImg = hotbarSlot.querySelector("img") as HTMLImageElement;
+      const targetImageSrc = targetImg ? targetImg.src : null;
+
+      hotbarSlot.dataset.spellName = touchDragSpellName;
+      hotbarSlot.innerHTML = "";
+      hotbarSlot.classList.remove("empty");
+      if (touchDragImageSrc) {
+        const iconImage = new Image();
+        iconImage.src = touchDragImageSrc;
+        iconImage.draggable = false;
+        hotbarSlot.appendChild(iconImage);
+      } else {
+        hotbarSlot.innerText = touchDragSpellName;
+      }
+
+      if (touchDragSourceIndex !== targetIndex && touchDragSourceIndex >= 0) {
+        const sourceSlot = hotbarSlots[touchDragSourceIndex];
+        if (targetSpellName && targetSpellName !== touchDragSpellName) {
+          sourceSlot.dataset.spellName = targetSpellName;
+          sourceSlot.innerHTML = "";
+          sourceSlot.classList.remove("empty");
+          if (targetImageSrc) {
+            const iconImage = new Image();
+            iconImage.src = targetImageSrc;
+            iconImage.draggable = false;
+            sourceSlot.appendChild(iconImage);
+          } else {
+            sourceSlot.innerText = targetSpellName;
+          }
+        } else {
+          sourceSlot.innerHTML = "";
+          sourceSlot.classList.add("empty");
+          delete sourceSlot.dataset.spellName;
+        }
+      }
+
+      saveHotbarConfiguration();
+    } else if (touchDragSourceIndex >= 0) {
+      const sourceSlot = hotbarSlots[touchDragSourceIndex];
+      sourceSlot.innerHTML = "";
+      sourceSlot.classList.add("empty");
+      delete sourceSlot.dataset.spellName;
+      saveHotbarConfiguration();
+    }
+  } else if (touchDragSource === "inventory") {
+    if (inventoryPendingSlot) {
+      inventoryPendingSlot.style.opacity = "1";
+    }
+    const invTarget = target?.closest("#inventory .slot") as HTMLDivElement;
+    const invSlots = inventoryGrid.querySelectorAll(".slot");
+    const targetIndex = invTarget ? Array.from(invSlots).indexOf(invTarget) : -1;
+
+    if (invTarget && targetIndex >= 0 && targetIndex !== touchDragSourceIndex && touchDragSpellName) {
+      const sourceSlot = invSlots[touchDragSourceIndex] as HTMLDivElement;
+
+      const targetItemName = invTarget.dataset.itemName || null;
+      const targetItemType = invTarget.dataset.itemType || null;
+      const targetEquipmentSlot = invTarget.dataset.equipmentSlot || null;
+      const targetImg = invTarget.querySelector("img") as HTMLImageElement;
+      const targetImgSrc = targetImg ? targetImg.src : null;
+      const targetQuantityLabel = invTarget.querySelector(".quantity-label");
+      const targetHTML = invTarget.innerHTML;
+      const targetClasses = Array.from(invTarget.classList).filter(c => c !== "slot" && c !== "ui" && c !== "empty");
+
+      invTarget.innerHTML = "";
+      invTarget.className = "slot ui";
+      if (targetQuantityLabel) {
+        invTarget.classList.add("has-quantity");
+      }
+
+      const sourceImg = sourceSlot.querySelector("img") as HTMLImageElement;
+      if (sourceImg) {
+        const newImg = new Image();
+        newImg.src = sourceImg.src;
+        newImg.draggable = false;
+        newImg.width = 32;
+        newImg.height = 32;
+        newImg.style.pointerEvents = "none";
+        invTarget.appendChild(newImg);
+      }
+
+      const sourceQtyLabel = sourceSlot.querySelector(".quantity-label");
+      if (sourceQtyLabel) {
+        const newQtyLabel = sourceQtyLabel.cloneNode(true) as HTMLElement;
+        newQtyLabel.style.pointerEvents = "none";
+        invTarget.appendChild(newQtyLabel);
+        invTarget.classList.add("has-quantity");
+      }
+
+      if (sourceSlot.dataset.itemName) invTarget.dataset.itemName = sourceSlot.dataset.itemName;
+      if (sourceSlot.dataset.itemType) invTarget.dataset.itemType = sourceSlot.dataset.itemType;
+      if (sourceSlot.dataset.equipmentSlot) invTarget.dataset.equipmentSlot = sourceSlot.dataset.equipmentSlot;
+      Array.from(sourceSlot.classList).forEach(cls => {
+        if (cls !== "slot" && cls !== "ui" && cls !== "empty") invTarget.classList.add(cls);
+      });
+      invTarget.classList.remove("empty");
+      invTarget.draggable = true;
+
+      removeItemTooltip(invTarget);
+      setupItemTooltip(invTarget, () => {
+        const itemName = invTarget.dataset.itemName;
+        const cache = Cache.getInstance();
+        if (!itemName || !cache.inventory) return null;
+        return cache.inventory.find((invItem: any) => invItem.name === itemName);
+      });
+
+      sourceSlot.innerHTML = "";
+      sourceSlot.className = "slot ui";
+
+      if (targetItemName) {
+        if (targetImgSrc) {
+          const newImg = new Image();
+          newImg.src = targetImgSrc;
+          newImg.draggable = false;
+          newImg.width = 32;
+          newImg.height = 32;
+          newImg.style.pointerEvents = "none";
+          sourceSlot.appendChild(newImg);
+        }
+
+        const origQty = targetHTML.match(/<div class="quantity-label">([^<]+)<\/div>/);
+        if (origQty) {
+          const qtyDiv = document.createElement("div");
+          qtyDiv.classList.add("quantity-label");
+          qtyDiv.innerText = origQty[1];
+          qtyDiv.style.pointerEvents = "none";
+          sourceSlot.appendChild(qtyDiv);
+          sourceSlot.classList.add("has-quantity");
+        }
+
+        sourceSlot.dataset.itemName = targetItemName;
+        if (targetItemType) sourceSlot.dataset.itemType = targetItemType;
+        if (targetEquipmentSlot) sourceSlot.dataset.equipmentSlot = targetEquipmentSlot;
+        targetClasses.forEach(cls => sourceSlot.classList.add(cls));
+        sourceSlot.classList.remove("empty");
+        sourceSlot.draggable = true;
+
+        removeItemTooltip(sourceSlot);
+        setupItemTooltip(sourceSlot, () => {
+          const itemName = sourceSlot.dataset.itemName;
+          const cache = Cache.getInstance();
+          if (!itemName || !cache.inventory) return null;
+          return cache.inventory.find((invItem: any) => invItem.name === itemName);
+        });
+      } else {
+        delete sourceSlot.dataset.itemName;
+        delete sourceSlot.dataset.itemType;
+        delete sourceSlot.dataset.equipmentSlot;
+        sourceSlot.classList.add("empty");
+        sourceSlot.draggable = false;
+        removeItemTooltip(sourceSlot);
+      }
+
+      saveInventoryConfiguration();
+    } else if (touchDragSourceIndex >= 0) {
+      const sourceSlot = invSlots[touchDragSourceIndex] as HTMLDivElement;
+      sourceSlot.style.opacity = "1";
+    }
+  }
+
+  clearTouchDrag();
+  touchDragJustEnded = true;
+  setTimeout(() => { touchDragJustEnded = false; }, 100);
+});
+
+document.addEventListener("touchcancel", () => {
+  clearTouchDrag();
+});
 
 function createPartyUI(partyMembers: string[], players?: any[]) {
   const partyContainer = document.getElementById("party-container");
@@ -503,16 +938,24 @@ function castSpell(id: string, spell: string, time: number) {
 
   if (spell == 'interrupted' || spell == 'failed') {
 
+    const cache = Cache.getInstance();
+    const localPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
+    if (localPlayer) {
+      if (!localPlayer.castingInterrupted) {
+        const elapsed = performance.now() - localPlayer.castingStartTime;
+        localPlayer.castingInterruptedProgress = Math.min(elapsed / localPlayer.castingDuration, 1);
+      }
+      localPlayer.castingSpell = spell.charAt(0).toUpperCase() + spell.slice(1);
+      localPlayer.castingInterrupted = true;
+      localPlayer.castingStartTime = performance.now();
+      localPlayer.castingDuration = 1500;
+    }
+
     const interruptClone = castbar.cloneNode(true) as HTMLDivElement;
     interruptClone.id = "castbar-active-clone";
 
     interruptClone.style.display = "block";
     interruptClone.style.position = "fixed";
-    interruptClone.style.bottom = "200px";
-    interruptClone.style.left = "50%";
-    interruptClone.style.transform = "translateX(-50%)";
-    interruptClone.style.width = "300px";
-    interruptClone.style.height = "25px";
     interruptClone.style.zIndex = "100";
 
     const children = interruptClone.children;
@@ -560,11 +1003,6 @@ function castSpell(id: string, spell: string, time: number) {
 
     castClone.style.display = "block";
     castClone.style.position = "fixed";
-    castClone.style.bottom = "200px";
-    castClone.style.left = "50%";
-    castClone.style.transform = "translateX(-50%)";
-    castClone.style.width = "300px";
-    castClone.style.height = "25px";
     castClone.style.zIndex = "100";
 
     clonedProgress.style.transform = 'scaleX(0)';
@@ -980,14 +1418,29 @@ function setupInventorySlotHandlers() {
 
     slot.addEventListener("dblclick", () => {
       if (slot.dataset.itemType === "equipment" && slot.dataset.itemName) {
-
         hideItemTooltip();
-
         sendRequest({
           type: "EQUIP_ITEM",
           data: { item: slot.dataset.itemName, slotIndex: index },
         });
       }
+    });
+
+    // Touch double-tap for mobile (dblclick unreliable on touch devices)
+    let lastTapTime = 0;
+    slot.addEventListener("touchend", (e) => {
+      const now = Date.now();
+      if (now - lastTapTime < 300) {
+        e.preventDefault();
+        if (slot.dataset.itemType === "equipment" && slot.dataset.itemName) {
+          hideItemTooltip();
+          sendRequest({
+            type: "EQUIP_ITEM",
+            data: { item: slot.dataset.itemName, slotIndex: index },
+          });
+        }
+      }
+      lastTapTime = now;
     });
 
     slot.addEventListener("dragstart", (event: DragEvent) => {

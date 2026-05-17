@@ -156,12 +156,15 @@ function createContextMenu(event: MouseEvent, id: string) {
   if (!getIsLoaded()) return;
   document.getElementById("context-menu")?.remove();
 
+  const vw = window.visualViewport?.width || window.innerWidth;
+  const vh = window.visualViewport?.height || window.innerHeight;
+
   const contextMenu = document.createElement("div");
   contextMenu.id = 'context-menu';
   contextMenu.style.left = `${event.clientX}px`;
   contextMenu.style.top = `${event.clientY}px`;
 
-  if (event.clientX + 200 > window.innerWidth) {
+  if (event.clientX + 200 > vw) {
     contextMenu.style.left = `${event.clientX - 200}px`;
   }
 
@@ -169,7 +172,7 @@ function createContextMenu(event: MouseEvent, id: string) {
     contextMenu.style.left = `${event.clientX + 50}px`;
   }
 
-  if (event.clientY + 150 > window.innerHeight) {
+  if (event.clientY + 150 > vh) {
     contextMenu.style.top = `${event.clientY - 150}px`;
   }
 

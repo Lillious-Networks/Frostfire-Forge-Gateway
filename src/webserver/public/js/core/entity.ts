@@ -405,9 +405,10 @@ function createEntity(data: any) {
       const particleOpacity = particle.opacity;
       const particleColor = particle.color || "white";
       const glowIntensity = particle.glow_intensity || 0;
+      const isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
       // Set blend mode once for all particles
-      context.globalCompositeOperation = 'lighter';
+      context.globalCompositeOperation = isMobile ? 'source-over' : 'lighter';
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
@@ -466,17 +467,14 @@ function createEntity(data: any) {
         gradient.addColorStop(1, particleColor + "00");
 
         if (glowIntensity > 0) {
-          // Add glow effect with multiple layers
           context.shadowColor = particleColor;
           context.shadowOffsetX = 0;
           context.shadowOffsetY = 0;
 
-          // Draw multiple glow layers for stronger effect
           const baseBlur = Math.max(4, radius * 0.8);
           const glowLayers = Math.ceil(glowIntensity);
           const glowOpacity = (glowIntensity - Math.floor(glowIntensity));
 
-          // Draw main glow layers
           for (let g = 0; g < glowLayers; g++) {
             context.shadowBlur = baseBlur + (g * 8 * glowIntensity);
             context.globalAlpha = alpha * Math.max(0.3, 1 - (g * 0.2));
@@ -486,7 +484,6 @@ function createEntity(data: any) {
             context.fill();
           }
 
-          // Draw partial glow layer if fractional intensity
           if (glowOpacity > 0) {
             context.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * glowIntensity);
             context.globalAlpha = alpha * glowOpacity * 0.5;
@@ -496,12 +493,10 @@ function createEntity(data: any) {
             context.fill();
           }
 
-          // Restore alpha and reset shadow
           context.globalAlpha = alpha;
           context.shadowColor = "transparent";
           context.shadowBlur = 0;
         } else {
-          // No glow when intensity is 0
           context.beginPath();
           context.arc(cx, cy, radius, 0, Math.PI * 2);
           context.fillStyle = gradient;

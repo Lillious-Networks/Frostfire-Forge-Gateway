@@ -21,7 +21,7 @@ const state: JoystickState = {
 };
 
 const CONFIG = {
-    maxDistance: 60,
+    maxDistance: 35,
     deadzone: 0.05,
     updateRate: 16
 };

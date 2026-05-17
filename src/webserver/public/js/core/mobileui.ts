@@ -1,31 +1,29 @@
-import { inventoryUI, spellBookUI, friendsListUI, guildContainer, collectablesUI } from "./ui.js";
-
 // State management
 let isMenuOpen = false;
 
 // DOM elements
-const radialMenuBtn = document.getElementById('radial-menu-btn');
-const radialMenu = document.getElementById('radial-menu');
-const radialOverlay = document.getElementById('radial-menu-overlay');
-const radialItems = document.querySelectorAll('.radial-item');
-
-// Detect touch device
-const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+const radialMenuBtn = document.getElementById('radial-menu-btn') as HTMLElement | null;
+const radialMenu = document.getElementById('radial-menu') as HTMLElement | null;
+const radialOverlay = document.getElementById('radial-menu-overlay') as HTMLElement | null;
+const radialItems = document.querySelectorAll('.radial-item') as NodeListOf<HTMLElement>;
 
 /**
  * Calculate circular positions for radial items
  * 8 items at 45° intervals, starting from top (12 o'clock)
  */
 function calculateRadialPositions() {
-  const itemCount = radialItems.length;
-  const radius = 110; // Distance from center
+  const visibleItems = Array.from(radialItems).filter(item => {
+    if (item.classList.contains("admin-only") && !item.classList.contains("visible")) return false;
+    return true;
+  });
+  const itemCount = visibleItems.length;
+  const radius = 110;
 
-  radialItems.forEach((item, index) => {
-    const angle = (index / itemCount) * Math.PI * 2 - Math.PI / 2; // Start from top
+  visibleItems.forEach((item, index) => {
+    const angle = (index / itemCount) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
 
-    // Position relative to 140x140 center (50% of 280x280 container)
     item.style.left = `calc(50% + ${x}px - 25px)`;
     item.style.top = `calc(50% + ${y}px - 25px)`;
   });
@@ -35,6 +33,7 @@ function calculateRadialPositions() {
  * Open the radial menu
  */
 function openRadialMenu() {
+  if (!radialMenu || !radialOverlay || !radialMenuBtn) return;
   isMenuOpen = true;
   radialMenu.classList.remove('hidden', 'closing');
   radialMenu.classList.add('active');
@@ -46,7 +45,7 @@ function openRadialMenu() {
  * Close the radial menu
  */
 function closeRadialMenu() {
-  if (!isMenuOpen) return;
+  if (!isMenuOpen || !radialMenu || !radialOverlay || !radialMenuBtn) return;
 
   isMenuOpen = false;
   radialMenu.classList.add('closing');
@@ -56,7 +55,7 @@ function closeRadialMenu() {
 
   // Remove hidden class after animation completes
   setTimeout(() => {
-    if (!isMenuOpen) {
+    if (!isMenuOpen && radialMenu) {
       radialMenu.classList.add('hidden');
     }
   }, 300);
@@ -119,4 +118,4 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('resize', calculateRadialPositions);
 
 // Export closeRadialMenu for use in other modules
-export { closeRadialMenu, openRadialMenu, toggleRadialMenu };
+export { closeRadialMenu, openRadialMenu, toggleRadialMenu, calculateRadialPositions };

@@ -14,7 +14,7 @@ import { animationManager } from "./animationStateManager.js";
 import { updateLayeredAnimation } from "./layeredAnimation.js";
 const times = [] as number[];
 let lastDirection = "";
-let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0;
+let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0, nextFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
 let cameraInitialized: boolean = false;
 
@@ -773,16 +773,23 @@ function animationLoop() {
   let deltaTime = (now - lastFrameTime) / 1000;
 
   // Clamp deltaTime to prevent huge jumps when tab is hidden/visible
-  // Use a max of 2 frames worth of time at target FPS to handle tab visibility changes
-  const maxDeltaTime = (frameDuration * 2) / 1000; // 2 frames at target FPS
+  // Use a larger cap on mobile to allow particles to catch up after iOS RAF throttling
+  const maxDeltaTime = (frameDuration * 30) / 1000;
   if (deltaTime > maxDeltaTime) {
     deltaTime = maxDeltaTime;
   }
 
-  if (now - lastFrameTime < frameDuration) {
+  if (now - nextFrameTime < frameDuration) {
     requestAnimationFrame(animationLoop);
     return;
   }
+
+  // Step nextFrameTime forward by frameDuration; snap if we fell far behind
+  if (now - nextFrameTime > frameDuration * 3) {
+    nextFrameTime = now;
+  }
+  nextFrameTime += frameDuration;
+
   lastFrameTime = now;
 
   const playersArray = Array.from(cache.players instanceof Map ? cache.players.values() : cache.players);
@@ -883,7 +890,7 @@ function animationLoop() {
   const viewportTop = cameraY - window.innerHeight / 2;
   const viewportRight = cameraX + window.innerWidth / 2;
   const viewportBottom = cameraY + window.innerHeight / 2;
-  const padding = 64;
+  const padding = 256;
 
   const isInView = (x: number, y: number) =>
     x >= viewportLeft - padding &&
@@ -1550,6 +1557,12 @@ function animationLoop() {
 
   if (times.length > 60) times.shift();
   times.push(now);
+
+  if (times.length >= 2) {
+    const fps = Math.round((times.length - 1) / ((times[times.length - 1] - times[0]) / 1000));
+    const fpsEl = document.getElementById("fps-counter");
+    if (fpsEl) fpsEl.textContent = `${fps} FPS`;
+  }
   requestAnimationFrame(animationLoop);
 }
 

@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="./css/game.css" />
   </head>
   <body oncontextmenu="return false;">
+    <div id="fps-counter" class="ui">0 FPS</div>
     <div id="ambience-overlay" class="ui"></div>
     <div id="loading-screen" class="ui">
       <button type="button" id="start-game-button" class="ui">Start Game</button>
@@ -24,36 +25,50 @@
       <div id="game-notification-message" class="ui"></div>
     </div>
     <div id="tile-editor-notification-container" class="ui"></div>
+    <div id="pause-menu-container" class="ui">
+      <div id="pause-menu" class="ui">
+        <div id="pause-menu-header" class="pause-header">
+          <h1>Menu</h1>
+          <button type="button" class="menu-close-button" id="pause-menu-close">✕</button>
+        </div>
+        <div id="pause-menu-content" class="pause-content">
+          <div class="pause-section">
+            <div class="pause-button-grid">
+              <button type="button" id="pause-menu-action-options" class="pause-button">Settings</button>
+            </div>
+          </div>
+          <div class="pause-section">
+            <button type="button" id="pause-menu-action-exit" class="pause-button pause-button-danger pause-button-full">Logout</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="options-menu-container" class="ui">
+      <div id="options-menu" class="ui">
+        <button type="button" class="menu-close-button" id="options-menu-close">✕</button>
+        <div id="options-menu-selections-container" class="ui">
+          <div class="settings-row">
+            <label id="limit-fps-label" class="ui">FPS:</label>
+            <input type="range" min="30" max="240" value="50" step="1" class="slider" id="fps-slider" class="ui">
+          </div>
+          <div class="settings-row">
+            <label id="music-volume-label" class="ui">Music:</label>
+            <input type="range" min="0" max="100" value="50" step="1" class="slider" id="music-slider" class="ui">
+          </div>
+          <div class="settings-row">
+            <label id="effects-volume-label" class="ui">Effects:</label>
+            <input type="range" min="0" max="100" value="50" step="1" class="slider" id="effects-slider" class="ui">
+          </div>
+          <div class="settings-row">
+            <label id="muted-label" class="ui">Muted:</label>
+            <input type="checkbox" id="muted-checkbox" class="ui">
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="overlay" class="ui">
       <!-- Mobile UI Backdrop -->
       <div id="mobile-ui-backdrop"></div>
-      <div id="pause-menu-container" class="ui">
-        <div id="pause-menu" class="ui">
-          <div id="pause-menu-button-container" class="ui">
-            <button type="button" id="pause-menu-action-back" class="ui"></button>
-            <button type="button" id="pause-menu-action-options" class="ui"></button>
-            <button type="button" id="pause-menu-action-exit" class="ui"></button>
-          </div>
-        </div>
-      </div>
-      <div id="options-menu-container" class="ui">
-        <div id="options-menu" class="ui">
-          <div id="options-menu-selections-container" class="ui">
-            <div id="options-menu-left-container" class="ui">
-              <label id="limit-fps-label" class="ui">FPS:</label>
-              <label id="music-volume-label" class="ui">Music:</label>
-              <label id="effects-volume-label" class="ui">Effects:</label>
-              <label id="muted-label" class="ui">Muted:</label>
-            </div>
-            <div id="options-menu-right-container" class="ui">
-              <input type="range" min="30" max="240" value="50" step="1" class="slider" id="fps-slider" class="ui">
-              <input type="range" min="0" max="100" value="50" step="1" class="slider" id="music-slider" class="ui">
-              <input type="range" min="0" max="100" value="50" step="1" class="slider" id="effects-slider" class="ui">
-              <input type="checkbox" id="muted-checkbox" class="ui">
-            </div>
-          </div>
-        </div>
-      </div>
       <div id="server-time-container" class="ui"><p id="server-time-value">7:40:46 PM</p></div>
       <div id="debug-container" class="ui">
         <div id="onlinecount" class="ui"></div>
@@ -116,6 +131,7 @@
         </div>
       </div>
       <div id="stat-screen" class="ui">
+        <button id="stat-screen-close" class="ui">✕</button>
         <div id="stats-screen-username-container" class="ui">
           <label id="stats-screen-username-label" class="ui">Username</label>
         </div>
@@ -820,12 +836,15 @@
         <div id="virtual-joystick-base"></div>
         <div id="virtual-joystick-stick"></div>
       </div>
-      <button id="virtual-mount-button" type="button">
-        <span>🐴</span>
-      </button>
     </div>
+    <button id="virtual-mount-button" type="button">
+      <span>🐴</span>
+    </button>
     <!-- Radial Menu Overlay -->
     <div id="radial-menu-overlay" class="radial-menu-overlay"></div>
+
+    <!-- Panel Backdrop (tap outside to close) -->
+    <div id="panel-backdrop" class="panel-backdrop"></div>
 
     <!-- Radial Menu Container -->
     <div id="radial-menu" class="radial-menu hidden">
@@ -837,12 +856,23 @@
         <button class="radial-item" data-action="guild" data-hotkey="KeyG" title="Guild (G)">🛡️</button>
         <button class="radial-item" data-action="collectables" data-hotkey="KeyK" title="Collectables (K)">💎</button>
         <button class="radial-item" data-action="mount" data-hotkey="KeyQ" title="Mount (Q)">🐴</button>
-        <button class="radial-item" data-action="settings" data-hotkey="null" title="Settings">⚙️</button>
+        <button class="radial-item admin-only" data-action="admin" data-hotkey="Insert" title="Admin Panel">🛠️</button>
+        <button class="radial-item" data-action="settings" data-hotkey="Escape" title="Settings">⚙️</button>
       </div>
     </div>
 
     <!-- Floating Radial Menu Button -->
     <button id="radial-menu-btn" class="radial-menu-btn" type="button" title="Menu">☰</button>
+
+    <!-- Rotate-to-landscape prompt for portrait mobile -->
+    <div id="rotate-prompt" class="ui">
+      <div class="rotate-card">
+        <div class="rotate-icon">📱</div>
+        <div class="rotate-text">Rotate Your Device</div>
+        <div class="rotate-subtext">This game is played in landscape mode</div>
+      </div>
+    </div>
+
     <canvas id="game"></canvas>
     <canvas id="weather"></canvas>
   </body>
