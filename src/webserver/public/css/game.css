@@ -6148,7 +6148,7 @@ body.ipad-device #game-notification-container {
 .radial-item:nth-child(7) { animation-delay: 0.35s; }
 .radial-item:nth-child(8) { animation-delay: 0.4s; }
 
-/* Floating menu button */
+/* Floating menu button - mobile only */
 .radial-menu-btn {
   position: absolute;
   bottom: 16px;
@@ -6168,6 +6168,21 @@ body.ipad-device #game-notification-container {
   z-index: 999993;
   padding: 0;
   margin: 0;
+}
+
+/* Hide on desktop (pointer: fine = mouse, not touch) */
+@media (pointer: fine) {
+  .radial-menu-btn {
+    display: none !important;
+  }
+
+  .radial-menu-overlay {
+    display: none !important;
+  }
+
+  .radial-menu {
+    display: none !important;
+  }
 }
 
 .radial-menu-btn:hover {
