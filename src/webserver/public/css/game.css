@@ -6070,7 +6070,7 @@ body.ipad-device #game-notification-container {
   opacity: 0;
   pointer-events: none;
   transition: all 0.3s ease;
-  z-index: 20;
+  z-index: 999990;
 }
 
 .radial-menu-overlay.active {
@@ -6087,7 +6087,7 @@ body.ipad-device #game-notification-container {
   right: 46px;
   width: 280px;
   height: 280px;
-  z-index: 21;
+  z-index: 999991;
 }
 
 .radial-menu.hidden {
@@ -6118,7 +6118,7 @@ body.ipad-device #game-notification-container {
   transition: all 0.2s ease;
   opacity: 0;
   transform: scale(0.6);
-  z-index: 22;
+  z-index: 999992;
   padding: 0;
   margin: 0;
 }
@@ -6165,7 +6165,7 @@ body.ipad-device #game-notification-container {
   justify-content: center;
   color: rgba(255, 255, 255, 0.8);
   transition: all 0.2s ease;
-  z-index: 25;
+  z-index: 999993;
   padding: 0;
   margin: 0;
 }
