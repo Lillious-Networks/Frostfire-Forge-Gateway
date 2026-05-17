@@ -17,6 +17,7 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     setIsMoving} from "./input.js";
 import { friendsListSearch } from "./friends.js";
 import { createContextMenu, createPartyContextMenu } from "./actions.js";
+import { closeRadialMenu } from "./mobileui.js";
 let typingTimer: number | null = null;
 
 const getActualViewportHeight = () => {
@@ -187,6 +188,7 @@ window.addEventListener("keydown", async (e) => {
 
   try {
     await handler();
+    closeRadialMenu();
   } catch (err) {
     console.error(`Error handling key ${e.code}:`, err);
   }
