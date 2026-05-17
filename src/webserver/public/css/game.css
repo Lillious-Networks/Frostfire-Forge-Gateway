@@ -5388,10 +5388,10 @@ body.ipad-device #game-notification-container {
   #stat-screen {
     transform: scale(0.5);
     transform-origin: top left;
-    top: 10px !important;
+    top: max(10px, env(safe-area-inset-top)) !important;
     right: auto !important;
     bottom: auto !important;
-    left: 10px !important;
+    left: max(10px, env(safe-area-inset-left)) !important;
   }
 }
 
