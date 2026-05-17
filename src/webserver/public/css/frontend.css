@@ -425,11 +425,262 @@ input[type="password"]::placeholder {
         left: 1rem;
     }
 
-    .login-card {
+    input[type="password"],
+    input[type="text"],
+    input[type="email"] {
+        font-size: 16px;
+    }
+
+    .login-card,
+    .register-container,
+    .form-container {
         padding: 1.5rem;
     }
 
-    .login-title {
+    .login-title,
+    .register-title,
+    .form-header h1 {
         font-size: 1.5rem;
+    }
+}
+
+/* Mobile landscape optimization */
+@media (max-height: 500px) and (orientation: landscape) {
+    html, body {
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .container {
+        min-height: auto;
+        height: auto;
+        padding: 0.5rem;
+        align-items: flex-start;
+        justify-content: center;
+    }
+
+    .login-wrapper {
+        grid-template-columns: 1fr;
+        gap: 0;
+        max-width: 440px;
+        width: 100%;
+    }
+
+    .login-card,
+    .register-container,
+    .form-container {
+        padding: 0.75rem 1rem;
+        max-width: 420px;
+        margin: 0 auto;
+    }
+
+    .login-section {
+        display: flex;
+        justify-content: center;
+    }
+
+    .login-header,
+    .register-header,
+    .form-header {
+        margin-bottom: 0.5rem;
+    }
+
+    .login-title,
+    .register-title,
+    .form-header h1 {
+        font-size: 1.1rem;
+        margin-bottom: 0.15rem;
+    }
+
+    .login-subtitle,
+    .register-subtitle,
+    .form-header p {
+        font-size: 0.7rem;
+        line-height: 1.3;
+    }
+
+    .form-group {
+        margin-bottom: 0.5rem;
+        gap: 0.15rem;
+    }
+
+    label {
+        font-size: 0.65rem;
+        letter-spacing: 0.03em;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    input[type="email"] {
+        padding: 0.45rem 0.65rem;
+        font-size: 16px;
+    }
+
+    .login-button,
+    .register-button,
+    .submit-button,
+    .guest-link {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.75rem;
+        margin-bottom: 0.35rem;
+    }
+
+    .login-link,
+    .back-link {
+        font-size: 0.7rem;
+    }
+
+    .error-message {
+        padding: 0.4rem 0.65rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.7rem;
+    }
+
+    .home-button {
+        top: 8px;
+        left: 8px;
+        width: 28px;
+        height: 28px;
+        font-size: 0.9rem;
+    }
+
+    .hero-section {
+        display: none;
+    }
+}
+
+/* Ultra-short landscape (iPhone SE etc.) */
+@media (max-height: 380px) and (orientation: landscape) {
+    .login-card,
+    .register-container,
+    .form-container {
+        padding: 0.5rem 0.75rem;
+        max-width: 380px;
+        margin: 0 auto;
+    }
+
+    .login-section {
+        display: flex;
+        justify-content: center;
+    }
+
+    .login-header,
+    .register-header,
+    .form-header {
+        margin-bottom: 0.35rem;
+    }
+
+    .login-title,
+    .register-title,
+    .form-header h1 {
+        font-size: 1rem;
+    }
+
+    .form-group {
+        margin-bottom: 0.35rem;
+    }
+
+    label {
+        font-size: 0.6rem;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    input[type="email"] {
+        padding: 0.35rem 0.5rem;
+        font-size: 16px;
+    }
+
+    .login-button,
+    .register-button,
+    .submit-button,
+    .guest-link {
+        padding: 0.4rem 0.65rem;
+        font-size: 0.7rem;
+    }
+
+    .home-button {
+        display: none;
+    }
+}
+
+/* Mobile portrait optimization */
+@media (max-width: 480px) and (orientation: portrait) {
+    html, body {
+        overflow: auto;
+    }
+
+    .container {
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: 1rem;
+    }
+
+    .login-card,
+    .register-container,
+    .form-container {
+        padding: 1.25rem;
+        max-width: 100%;
+    }
+
+    .login-title,
+    .register-title,
+    .form-header h1 {
+        font-size: 1.35rem;
+    }
+
+    .login-subtitle,
+    .register-subtitle,
+    .form-header p {
+        font-size: 0.8rem;
+    }
+
+    .form-group {
+        margin-bottom: 1rem;
+    }
+
+    label {
+        font-size: 0.8rem;
+    }
+
+    input[type="password"],
+    input[type="text"],
+    input[type="email"] {
+        padding: 0.75rem 0.875rem;
+        font-size: 16px;
+    }
+
+    .login-button,
+    .register-button,
+    .submit-button,
+    .guest-link {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+    }
+
+    .login-link,
+    .back-link {
+        font-size: 0.8rem;
+    }
+
+    .error-message {
+        padding: 0.75rem;
+        font-size: 0.8rem;
+    }
+
+    .home-button {
+        top: 12px;
+        left: 12px;
+        width: 36px;
+        height: 36px;
+    }
+
+    .hero-section {
+        display: none;
+    }
+
+    .login-wrapper {
+        grid-template-columns: 1fr;
+        gap: 0;
     }
 }

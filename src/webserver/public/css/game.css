@@ -5655,6 +5655,12 @@ body.ipad-device #game-notification-container {
 
 /* Responsive sizing for smaller screens */
 @media (max-height: 600px) and (orientation: landscape) {
+  #progress-bar-container {
+    left: 75px !important;
+    right: 75px !important;
+    width: auto !important;
+  }
+
   .mobile-ui-btn {
     width: 40px;
     height: 40px;
@@ -5667,6 +5673,12 @@ body.ipad-device #game-notification-container {
 }
 
 @media (max-height: 450px) and (orientation: landscape) {
+  #progress-bar-container {
+    left: 75px !important;
+    right: 75px !important;
+    width: auto !important;
+  }
+
   .mobile-ui-btn {
     width: 35px;
     height: 35px;
