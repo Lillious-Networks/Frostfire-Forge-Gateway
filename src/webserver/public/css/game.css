@@ -5395,29 +5395,7 @@ body.ipad-device #game-notification-container {
     background-size: contain;
   }
 
-  /* Adjust equipment slots for mobile scale */
-  #equipment-left-column {
-    top: 74px !important;
-    left: 19px !important;
-  }
-
-  #equipment-right-column {
-    top: 74px !important;
-    right: 121px !important;
-  }
-
-  #equipment-bottom-center {
-    bottom: 22.5px !important;
-    left: 80px !important;
-  }
-
-  #equipment-left-column .slot,
-  #equipment-right-column .slot,
-  #equipment-bottom-center .slot {
-    width: 18px !important;
-    height: 18px !important;
-    margin-bottom: 2px !important;
-  }
+  /* Equipment slots scale with parent due to transform, positions are already correct */
 }
 
 /* Loading screen animations */
