@@ -5394,20 +5394,17 @@ body.ipad-device #game-notification-container {
     left: max(10px, env(safe-area-inset-left)) !important;
   }
 
-  /* Halve slot positions to account for 0.5 scale - desktop: left 38px, right 242px, bottom 45px, top 148px */
+  /* Use transform to offset instead of position (parent uses transform: scale) */
   #equipment-left-column {
-    top: 74px !important;
-    left: 19px !important;
+    transform: translate(-74px, -74px) !important;
   }
 
   #equipment-right-column {
-    top: 74px !important;
-    right: 121px !important;
+    transform: translate(121px, -74px) !important;
   }
 
   #equipment-bottom-center {
-    bottom: 22.5px !important;
-    left: 80px !important;
+    transform: translate(-80px, 22.5px) !important;
   }
 }
 
