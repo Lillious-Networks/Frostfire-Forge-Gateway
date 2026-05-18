@@ -3,7 +3,7 @@ const cache = Cache.getInstance();
 import { cachedPlayerId, setSelfPlayerSpriteLoaded } from "./socket.js";
 import { updateFriendOnlineStatus, updateFriendsList } from "./friends.js";
 import { getCameraX, getCameraY, setCameraX, setCameraY } from "./renderer.js";
-import { createPartyUI, positionText } from "./ui.js";
+import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, positionText } from "./ui.js";
 import { updateXp } from "./xp.js";
 import  { typingImage } from "./images.js";
 import { getLines } from "./chat.js";
@@ -17,6 +17,8 @@ async function createPlayer(data: any) {
   }
 
   updateFriendOnlineStatus(data.username, true);
+  cache.onlinePlayers.add(data.username.toLowerCase());
+  updateGuildMemberOnlineStatus(data.username, true);
 
   let layeredAnimationPromise = null;
 
@@ -91,11 +93,13 @@ async function createPlayer(data: any) {
     typingTimeout: null as NodeJS.Timeout | null,
     typingImage: typingImage,
     party: data.party || null,
+    guild: data.guild || null,
+    guild_name: data.guild_name || null,
     mounted: data.mounted || false,
     moving: data.location.moving || false,
     canmove: true,  // Can be set to false when being dragged by an admin
     currency: data.currency || { copper: 0, silver: 0, gold: 0 },
-    chatType: "global" as "global" | "party" | "whisper",
+    chatType: "global" as "global" | "party" | "guild" | "whisper",
     damageNumbers: [] as Array<{
       value: number;
       x: number;
@@ -535,10 +539,29 @@ async function createPlayer(data: any) {
         this.renderPosition.y + 40 + uiOffset
       );
 
+      const guildOffset = this.guild_name ? 16 : 0;
+
+      if (this.guild_name) {
+        context.font = "12px 'Comic Relief'";
+        context.fillStyle = "#c9a655";
+        context.shadowBlur = 1;
+        context.strokeText(
+          `<${this.guild_name}>`,
+          this.renderPosition.x,
+          this.renderPosition.y + 56 + uiOffset
+        );
+        context.fillText(
+          `<${this.guild_name}>`,
+          this.renderPosition.x,
+          this.renderPosition.y + 56 + uiOffset
+        );
+        context.shadowBlur = 2;
+      }
+
       if (!this.isStealth) {
         if (data.id === cachedPlayerId || this.targeted) {
           context.fillStyle = "rgba(0, 0, 0, 0.8)";
-          context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 46 + uiOffset, 100, 3);
+          context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 46 + guildOffset + uiOffset, 100, 3);
 
           context.shadowBlur = 2;
 
@@ -556,7 +579,7 @@ async function createPlayer(data: any) {
 
           context.fillRect(
             this.renderPosition.x - 50,
-            this.renderPosition.y + 46 + uiOffset,
+            this.renderPosition.y + 46 + guildOffset + uiOffset,
             healthPercent * 100,
             3
           );
@@ -564,12 +587,12 @@ async function createPlayer(data: any) {
 
         if (data.id === cachedPlayerId || this.targeted) {
         context.fillStyle = "rgba(0, 0, 0, 0.8)";
-        context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 51 + uiOffset, 100, 3);
+        context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 51 + guildOffset + uiOffset, 100, 3);
         context.fillStyle = "#469CD9";
         const maxStamina = this.stats.total_max_stamina || this.stats.max_stamina;
         context.fillRect(
           this.renderPosition.x - 50,
-            this.renderPosition.y + 51 + uiOffset,
+            this.renderPosition.y + 51 + guildOffset + uiOffset,
             (this.stats.stamina / maxStamina) * 100,
             3
           );
@@ -584,7 +607,7 @@ async function createPlayer(data: any) {
           context.shadowColor = "black";
           context.shadowBlur = 2;
             const offsetX = this.renderPosition.x - 60 - (this.stats.level.toString().length * 5);
-          context.fillText(`${this.stats.level}`, offsetX, this.renderPosition.y + 55 + uiOffset);
+          context.fillText(`${this.stats.level}`, offsetX, this.renderPosition.y + 55 + guildOffset + uiOffset);
         }
       }
 
@@ -645,6 +668,7 @@ async function createPlayer(data: any) {
     window.scrollTo(getCameraX(), getCameraY());
     updateFriendsList({friends: data.friends || []});
     createPartyUI(data.party || [], Array.from(cache.players));
+    createGuildUI(data.guild || [], data.guild_name || null);
     updateXp(data.stats.xp, data.stats.level, data.stats.max_xp);
   }
 }

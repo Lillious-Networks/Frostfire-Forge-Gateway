@@ -17,7 +17,7 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     setIsMoving,
     closeAllPanels} from "./input.js";
 import { friendsListSearch } from "./friends.js";
-import { createContextMenu, createPartyContextMenu } from "./actions.js";
+import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu } from "./actions.js";
 import { closeRadialMenu } from "./mobileui.js";
 let typingTimer: number | null = null;
 
@@ -410,6 +410,34 @@ document.addEventListener("contextmenu", (event) => {
       event.preventDefault();
       return;
     }
+
+    const guildMember = (event.target as HTMLElement).closest(".guild-member") as HTMLElement;
+    if (guildMember) {
+      const username = guildMember.dataset.username;
+      if (username) {
+        const currentPlayer = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+        const isSelf = currentPlayer?.username?.toLowerCase() === username.toLowerCase();
+        const isLeader = currentPlayer?.guild?.length > 0
+          && currentPlayer?.guild?.[0]?.toLowerCase() === currentPlayer?.username?.toLowerCase();
+        if (!isSelf && !isLeader) {
+          event.preventDefault();
+          return;
+        }
+        createGuildContextMenu(event, username);
+      }
+      event.preventDefault();
+      return;
+    }
+
+    const friendItem = (event.target as HTMLElement).closest(".friend-item") as HTMLElement;
+    if (friendItem) {
+      const nameEl = friendItem.querySelector(".friend-name");
+      if (nameEl?.textContent) {
+        createFriendContextMenu(event, nameEl.textContent);
+      }
+      event.preventDefault();
+      return;
+    }
     return;
   }
 
@@ -712,11 +740,36 @@ document.addEventListener("click", (e) => {
   if (!isTouchDevice) return;
 
   const partyMember = (e.target as HTMLElement).closest(".party-member") as HTMLElement;
-  if (!partyMember) return;
+  if (partyMember) {
+    const username = partyMember.dataset.username;
+    if (username) {
+      createPartyContextMenu(e as MouseEvent, username);
+    }
+    return;
+  }
 
-  const username = partyMember.dataset.username;
-  if (username) {
-    createPartyContextMenu(e as MouseEvent, username);
+  const guildMember = (e.target as HTMLElement).closest(".guild-member") as HTMLElement;
+  if (guildMember) {
+    const username = guildMember.dataset.username;
+    if (username) {
+      const currentPlayer = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+      const isSelf = currentPlayer?.username?.toLowerCase() === username.toLowerCase();
+      const isLeader = currentPlayer?.guild?.length > 0
+        && currentPlayer?.guild?.[0]?.toLowerCase() === currentPlayer?.username?.toLowerCase();
+      if (isSelf || isLeader) {
+        createGuildContextMenu(e as MouseEvent, username);
+      }
+    }
+    return;
+  }
+
+  const friendItem = (e.target as HTMLElement).closest(".friend-item") as HTMLElement;
+  if (friendItem) {
+    const nameEl = friendItem.querySelector(".friend-name");
+    if (nameEl?.textContent) {
+      createFriendContextMenu(e as MouseEvent, nameEl.textContent);
+    }
+    return;
   }
 });
 

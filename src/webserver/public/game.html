@@ -258,12 +258,18 @@
           <div id="guild-member-count" class="ui"></div>
           <div id="guild-name" class="ui"></div>
           <div id="guild-rank" class="ui"></div>
-          <div id="guild-members" class="ui"></div>
+          <div id="guild-header-separator" class="ui"></div>
+          <div id="guild-members-list" class="ui"></div>
+          <div id="guild-create-section" class="ui" style="display:none;">
+            <label id="guild-create-label" class="guild-label ui">Create Guild</label>
+            <input type="text" id="guild-create-input" class="guild-input ui" placeholder="Guild Name" autocomplete="off" spellcheck="false">
+            <button type="button" id="guild-create-button" class="guild-button ui">Create</button>
+          </div>
         </div>
           <div id="guild-leave-button" class="ui">Leave Guild</div>
           <div id="guild-invite-input-container" class="ui">
-            <input type="text" id="guild-invite-input" placeholder="Player Name" class="ui" autocomplete="off" spellcheck="false">
-            <button type="button" id="guild-invite-submit-button" class="ui">Invite</button>
+            <input type="text" id="guild-invite-input" class="guild-input ui" placeholder="Player Name" autocomplete="off" spellcheck="false">
+            <button type="button" id="guild-invite-button" class="guild-button ui">Invite</button>
           </div>
       </div>
       <div id="party-container" class="ui"></div>

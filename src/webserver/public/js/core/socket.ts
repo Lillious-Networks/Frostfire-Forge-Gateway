@@ -79,6 +79,8 @@ import { updateFriendOnlineStatus } from "./friends.js";
 import loadMap from "./map.ts";
 import {
   createPartyUI,
+  createGuildUI,
+  updateGuildMemberOnlineStatus,
   updatePartyMemberStats,
   positionText,
   fpsSlider,
@@ -493,6 +495,8 @@ async function handleLoadPlayersPacket(data: any) {
       if (!existingByUsername && !existingInPending) {
         await createPlayer(player);
       } else if (existingByUsername) {
+        cache.onlinePlayers.add(player.username.toLowerCase());
+        updateGuildMemberOnlineStatus(player.username, true);
         // Update stealth state for existing players (fixes admin unstealth visibility issue)
         existingByUsername.isStealth = player.isStealth;
       }
@@ -1142,6 +1146,17 @@ socket.onmessage = async (event) => {
       }
       break;
     }
+    case "UPDATE_GUILD": {
+      const currentPlayer = cache.players.size
+        ? Array.from(cache.players).find((p) => p.id === cachedPlayerId)
+        : null;
+      if (currentPlayer) {
+        currentPlayer.guild = data.members || [];
+        currentPlayer.guild_name = data.guild_name || null;
+        createGuildUI(currentPlayer.guild, currentPlayer.guild_name);
+      }
+      break;
+    }
     case "ANIMATION": {
       try {
         if (!data?.name || !data?.data) return;
@@ -1527,6 +1542,8 @@ socket.onmessage = async (event) => {
           import("./mobileui.js").then(m => m.calculateRadialPositions());
         }
       } else if (existingByUsername) {
+        cache.onlinePlayers.add(data.username.toLowerCase());
+        updateGuildMemberOnlineStatus(data.username, true);
         // Update existing player instead of recreating to avoid duplicates
         Object.assign(existingByUsername, data);
         // Update sprite data if provided
@@ -1638,6 +1655,8 @@ socket.onmessage = async (event) => {
     case "DISCONNECT_PLAYER": {
       if (!data || !data.id || !data.username) return;
 
+      cache.onlinePlayers.delete(data.username.toLowerCase());
+      updateGuildMemberOnlineStatus(data.username, false);
       updateFriendOnlineStatus(data.username, false);
 
       const player = Array.from(cache.players).find(
@@ -1658,10 +1677,14 @@ socket.onmessage = async (event) => {
         (player) => player.id === data.id
       );
       if (player) {
+        cache.onlinePlayers.delete(player.username.toLowerCase());
+        updateGuildMemberOnlineStatus(player.username, false);
+        updateFriendOnlineStatus(player.username, false);
         cache.players.delete(player);
+      }
 
   sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
-      }
+
       break;
     }
     case "BATCH_DISCONNECT_PLAYER": {
@@ -1675,6 +1698,9 @@ socket.onmessage = async (event) => {
           (p) => p.id === despawnData.id
         );
         if (player) {
+          cache.onlinePlayers.delete(player.username.toLowerCase());
+          updateGuildMemberOnlineStatus(player.username, false);
+          updateFriendOnlineStatus(player.username, false);
           cache.players.delete(player);
         }
       });
@@ -3452,6 +3478,44 @@ socket.onmessage = async (event) => {
         const username =
           data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
         message.innerHTML = `<span>${timestamp} <span class="party-username">${username}:</span> <span class="party-message">${escapedMessage}</span></span>`;
+        chatMessages.appendChild(message);
+
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+      break;
+    }
+    case "GUILD_CHAT": {
+      const data = JSON.parse(packet.decode(event.data))["data"];
+
+      const escapedMessage = data.message
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const timestamp = new Date().toLocaleTimeString();
+
+      cache.players.forEach((player) => {
+        if (player.id === data.id) {
+          player.chat = data.message;
+          player.chatType = "guild";
+
+          setTimeout(() => {
+            const currentPlayer = Array.from(cache.players).find(p => p.id === data.id);
+            if (currentPlayer?.chat === data.message && currentPlayer?.chatType === "guild") {
+              currentPlayer.chat = "";
+              currentPlayer.chatType = "global";
+            }
+          }, 7000 + data.message.length * 35);
+        }
+      });
+
+      if (data.message?.trim() !== "" && data.username) {
+        const message = document.createElement("div");
+        message.classList.add("message");
+        message.classList.add("ui");
+        message.style.userSelect = "text";
+
+        const username =
+          data?.username?.charAt(0)?.toUpperCase() + data?.username?.slice(1);
+        message.innerHTML = `<span>${timestamp} <span class="guild-username">${username}:</span> <span class="guild-message">${escapedMessage}</span></span>`;
         chatMessages.appendChild(message);
 
         chatMessages.scrollTop = chatMessages.scrollHeight;

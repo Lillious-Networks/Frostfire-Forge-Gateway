@@ -1,7 +1,7 @@
 import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
-import { toggleUI, toggleDebugContainer, handleStatsUI, collectablesUI, hotbarSlots, adminPanelContainer } from "./ui.js";
+import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
 import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
 import { chatInput } from "./chat.js";
@@ -84,6 +84,11 @@ export const keyHandlers = {
   KeyG: () => {
     closeOtherPanels("guild");
     toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
+    if (toggleGuild) {
+      const cache = Cache.getInstance();
+      const currentPlayer = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+      createGuildUI(currentPlayer?.guild || [], currentPlayer?.guild_name || null);
+    }
   },
   KeyQ: () => {
     mount();
@@ -305,6 +310,19 @@ addEventListener("keypress", (event: KeyboardEvent) => {
           chatInput.placeholder = "[Party] Type here...";
 
           chatInput.style.setProperty('--chat-placeholder-color', '#86b3ff');
+        }
+        break;
+      case inputValue === "/guild" || inputValue === "/g":
+
+        if (event.key === " ") {
+          event.preventDefault();
+          chatInput.value = "";
+          chatInput.dataset.mode = "guild";
+          chatInput.style.color = "#a855f7";
+
+          chatInput.placeholder = "[Guild] Type here...";
+
+          chatInput.style.setProperty('--chat-placeholder-color', '#a855f7');
         }
         break;
       case inputValue === "/say" || inputValue === "/s":

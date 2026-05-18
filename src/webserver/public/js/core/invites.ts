@@ -48,6 +48,17 @@ export function createInvitationPopup(invitationData: any) {
       }
     }
     break;
+    case "INVITE_GUILD": {
+      data = {
+        type: "INVITATION_RESPONSE",
+        data: {
+          authorization: invitationData.authorization,
+          originator: invitationData.originator,
+          action: "INVITE_GUILD",
+        },
+      }
+    }
+    break;
   }
 
   if (!data) return;

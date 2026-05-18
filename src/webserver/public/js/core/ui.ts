@@ -55,6 +55,9 @@ const guildMembersList = document.getElementById("guild-members-list") as HTMLDi
 const guildMemberCount = document.getElementById("guild-member-count") as HTMLDivElement;
 const guildMemberInviteInput = document.getElementById("guild-invite-input") as HTMLInputElement;
 const guildMemberInviteButton = document.getElementById("guild-invite-button") as HTMLButtonElement;
+const guildCreateInput = document.getElementById("guild-create-input") as HTMLInputElement;
+const guildCreateButton = document.getElementById("guild-create-button") as HTMLButtonElement;
+const guildCreateSection = document.getElementById("guild-create-section") as HTMLDivElement;
 const collisionDebugCheckbox = document.getElementById("collision-debug-checkbox") as HTMLInputElement;
 const equipmentLeftColumn = document.getElementById("equipment-left-column") as HTMLDivElement;
 const equipmentRightColumn = document.getElementById("equipment-right-column") as HTMLDivElement;
@@ -784,6 +787,140 @@ function createPartyUI(partyMembers: string[], players?: any[]) {
   }
 }
 
+function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
+  const guildNameEl = document.getElementById("guild-name");
+  if (!guildMembersList) return;
+
+  if (!guildNameValue) {
+    if (guildNameEl) guildNameEl.style.display = "none";
+    if (guildRank) guildRank.style.display = "none";
+    if (guildMemberCount) guildMemberCount.style.display = "none";
+    if (guildMembersList) guildMembersList.style.display = "none";
+    if (guildMemberInviteInput) guildMemberInviteInput.style.display = "none";
+    if (guildMemberInviteButton) guildMemberInviteButton.style.display = "none";
+    if (guildCreateSection) guildCreateSection.style.display = "block";
+
+    const separator = document.getElementById("guild-header-separator");
+    if (separator) separator.style.display = "none";
+
+    const leaveButton = document.getElementById("guild-leave-button");
+    if (leaveButton) leaveButton.style.display = "none";
+
+    const existingMembers = guildMembersList.querySelectorAll(".guild-member");
+    existingMembers.forEach(member => guildMembersList.removeChild(member));
+    return;
+  }
+
+  if (guildCreateSection) guildCreateSection.style.display = "none";
+  if (guildMembersList) guildMembersList.style.display = "block";
+
+  const separator = document.getElementById("guild-header-separator");
+  if (separator) separator.style.display = "block";
+
+  if (guildNameEl) {
+    guildNameEl.textContent = guildNameValue;
+    guildNameEl.style.display = "block";
+  }
+
+  const currentPlayer = Array.from(Cache.getInstance().players)
+    .find((p: any) => p.id === cachedPlayerId);
+
+  const isLeader = guildMembers.length > 0
+    && guildMembers[0].toLowerCase() === currentPlayer?.username?.toLowerCase();
+
+  if (guildRank) {
+    guildRank.textContent = isLeader ? "Guild Master" : "Member";
+    guildRank.style.display = "block";
+  }
+
+  if (guildMemberCount) {
+    guildMemberCount.textContent = `Members: ${guildMembers.length}`;
+    guildMemberCount.style.display = "block";
+  }
+
+  if (guildMemberInviteInput && guildMemberInviteButton) {
+    if (isLeader) {
+      guildMemberInviteInput.style.display = "block";
+      guildMemberInviteButton.style.display = "block";
+    } else {
+      guildMemberInviteInput.style.display = "none";
+      guildMemberInviteButton.style.display = "none";
+    }
+  }
+
+  const leaveButton = document.getElementById("guild-leave-button");
+  if (leaveButton) {
+    if (isLeader) {
+      leaveButton.textContent = "Disband Guild";
+      leaveButton.style.display = "block";
+    } else {
+      leaveButton.textContent = "Leave Guild";
+      leaveButton.style.display = "block";
+    }
+  }
+
+  const existingElements = Array.from(
+    guildMembersList.querySelectorAll(".guild-member-username")
+  );
+
+  const existingNames = new Map<string, HTMLElement>();
+  existingElements.forEach(el => {
+    const name = el.textContent?.toLowerCase();
+    if (name) {
+      const container = el.closest(".guild-member") as HTMLElement;
+      if (container) {
+        existingNames.set(name, container);
+      }
+    }
+  });
+
+  const desiredNames = new Set(guildMembers.map(name => name.toLowerCase()));
+
+  for (const [name, el] of existingNames.entries()) {
+    if (!desiredNames.has(name)) {
+      guildMembersList.removeChild(el);
+    }
+  }
+
+  guildMembers.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+  for (const member of guildMembers) {
+    const lowerName = member.toLowerCase();
+    if (!existingNames.has(lowerName)) {
+      const memberElement = document.createElement("div");
+      memberElement.className = "guild-member ui";
+      memberElement.dataset.username = lowerName;
+
+      const usernameElement = document.createElement("div");
+      usernameElement.className = "guild-member-username ui";
+      usernameElement.innerText = member.charAt(0).toUpperCase() + member.slice(1);
+
+      const statusElement = document.createElement("span");
+      statusElement.className = "guild-member-status ui";
+
+      const cache = Cache.getInstance();
+      const isOnline = cache.onlinePlayers.has(lowerName);
+      statusElement.classList.add(isOnline ? "guild-online" : "guild-offline");
+
+      memberElement.appendChild(usernameElement);
+      memberElement.appendChild(statusElement);
+      guildMembersList.appendChild(memberElement);
+    }
+  }
+}
+
+function updateGuildMemberOnlineStatus(username: string, isOnline: boolean) {
+  if (!guildMembersList) return;
+  const memberElement = guildMembersList.querySelector(
+    `.guild-member[data-username="${username.toLowerCase()}"]`
+  ) as HTMLElement;
+  if (!memberElement) return;
+  const statusElement = memberElement.querySelector(".guild-member-status") as HTMLElement;
+  if (!statusElement) return;
+  statusElement.classList.toggle("guild-online", isOnline);
+  statusElement.classList.toggle("guild-offline", !isOnline);
+}
+
 function updatePartyMemberStats(username: string, health: number, maxHealth: number, stamina: number, maxStamina: number) {
   const partyContainer = document.getElementById("party-container");
   if (!partyContainer) return;
@@ -1377,8 +1514,75 @@ if (adminBroadcastAdminsButton) {
   });
 }
 
+if (guildMemberInviteButton) {
+  guildMemberInviteButton.addEventListener("click", () => {
+    const username = guildMemberInviteInput?.value.trim();
+    if (!username) return;
+    const cache = Cache.getInstance();
+    const targetPlayer = Array.from(cache.players).find(
+      (p: any) => p.username?.toLowerCase() === username.toLowerCase()
+    );
+    if (!targetPlayer) return;
+    sendRequest({
+      type: "INVITE_GUILD",
+      data: { id: targetPlayer.id },
+    });
+    guildMemberInviteInput.value = "";
+  });
+}
+
+const guildLeaveButton = document.getElementById("guild-leave-button");
+if (guildLeaveButton) {
+  guildLeaveButton.addEventListener("click", () => {
+    const currentPlayer = Array.from(Cache.getInstance().players).find((p: any) => p.id === cachedPlayerId);
+    const isLeader = currentPlayer?.guild?.length > 0
+      && currentPlayer?.guild?.[0]?.toLowerCase() === currentPlayer?.username?.toLowerCase();
+
+    if (isLeader) {
+      const existing = document.getElementById("guild-confirm-popup");
+      if (existing) existing.remove();
+
+      const popup = document.createElement("div");
+      popup.id = "guild-confirm-popup";
+      popup.className = "popup";
+      popup.innerHTML = `
+        <h2>Disband Guild</h2>
+        <p>Are you sure you want to disband "${currentPlayer.guild_name}"? This cannot be undone.</p>
+        <div class="button-container">
+          <button id="confirm-disband">Disband</button>
+          <button id="cancel-disband">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(popup);
+
+      document.getElementById("confirm-disband")?.addEventListener("click", () => {
+        sendRequest({ type: "DISBAND_GUILD", data: null });
+        popup.remove();
+      });
+
+      document.getElementById("cancel-disband")?.addEventListener("click", () => {
+        popup.remove();
+      });
+    } else {
+      sendRequest({ type: "LEAVE_GUILD", data: null });
+    }
+  });
+}
+
+if (guildCreateButton) {
+  guildCreateButton.addEventListener("click", () => {
+    const name = guildCreateInput?.value.trim();
+    if (!name) return;
+    sendRequest({
+      type: "CREATE_GUILD",
+      data: { name },
+    });
+    guildCreateInput.value = "";
+  });
+}
+
 export {
-    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, updatePartyMemberStats, updateHealthBar, updateStaminaBar, castSpell, positionText,
+    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, levelContainer, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,

@@ -28,6 +28,31 @@ const partyContextActions: Record<string, { only_self: boolean, allowed_self: bo
   },
 }
 
+const guildContextActions: Record<string, { only_self: boolean, allowed_self: boolean, label: string, handler: (username: string) => void }> = {
+  'kick-guild-member': {
+    label: 'Kick',
+    allowed_self: false,
+    only_self: false,
+    handler: (username) => {
+      sendRequest({
+        type: "KICK_GUILD_MEMBER",
+        data: { username: username },
+      });
+    }
+  },
+  'leave-guild': {
+    label: 'Leave Guild',
+    allowed_self: true,
+    only_self: true,
+    handler: (username) => {
+      sendRequest({
+        type: "LEAVE_GUILD",
+        data: null,
+      });
+    }
+  },
+}
+
 const contextActions: Record<string, { allowed_self: boolean, label: string, handler: (id: string) => void }> = {
   'inspect-player': {
     label: 'Inspect',
@@ -85,6 +110,10 @@ const contextActions: Record<string, { allowed_self: boolean, label: string, han
     label: 'Invite to Guild',
     allowed_self: false,
     handler: (id) => {
+      sendRequest({
+        type: "INVITE_GUILD",
+        data: { id: id },
+      });
     }
   },
   'block-player': {
@@ -152,6 +181,65 @@ function createPartyContextMenu(event: MouseEvent, username: string) {
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 
+function createGuildContextMenu(event: MouseEvent, username: string) {
+  if (!getIsLoaded()) return;
+  document.getElementById("context-menu")?.remove();
+
+  const contextMenu = document.createElement("div");
+  contextMenu.id = 'context-menu';
+  contextMenu.style.left = `${event.clientX}px`;
+  contextMenu.style.top = `${event.clientY}px`;
+
+  if (event.clientX + 200 > window.innerWidth) {
+    contextMenu.style.left = `${event.clientX - 200}px`;
+  }
+
+  if (event.clientX - 200 < 0) {
+    contextMenu.style.left = `${event.clientX + 50}px`;
+  }
+
+  if (event.clientY + 150 > window.innerHeight) {
+    contextMenu.style.top = `${event.clientY - 150}px`;
+  }
+
+  if (event.clientY - 150 < 0) {
+    contextMenu.style.top = `${event.clientY + 50}px`;
+  }
+
+  contextMenu.dataset.username = username.toLowerCase();
+  const ul = document.createElement("ul");
+  const currentPlayer = Array.from(cache.players).find(player => player.id === cachedPlayerId);
+  const isSelf = currentPlayer?.username.toLowerCase() === username.toLowerCase();
+
+  const isLeader = currentPlayer?.guild?.length > 0
+    && currentPlayer?.guild?.[0]?.toLowerCase() === currentPlayer?.username?.toLowerCase();
+
+  if (isLeader && isSelf) return;
+
+  Object.entries(guildContextActions).forEach(([action, { label, handler, only_self, allowed_self }]) => {
+    if (only_self && !isSelf) return;
+    if (!allowed_self && isSelf) return;
+
+    if (action === 'kick-guild-member' && !isLeader) return;
+
+    const li = document.createElement("li");
+    li.id = `context-${action}`;
+    li.innerText = label;
+
+    li.onclick = (e) => {
+      e.stopPropagation();
+      handler(username);
+      contextMenu.remove();
+    };
+
+    ul.appendChild(li);
+  });
+
+  contextMenu.appendChild(ul);
+  overlay.appendChild(contextMenu);
+  document.addEventListener("click", () => contextMenu.remove(), { once: true });
+}
+
 function createContextMenu(event: MouseEvent, id: string) {
   if (!getIsLoaded()) return;
   document.getElementById("context-menu")?.remove();
@@ -188,11 +276,14 @@ function createContextMenu(event: MouseEvent, id: string) {
   const targetedPlayer = Array.from(cache.players).find(player => player.id === id);
   const isFriend = currentPlayer?.friends?.includes(targetedPlayer?.username?.toString()) || false;
   const isInParty = currentPlayer?.party?.includes(targetedPlayer?.username?.toString()) || false;
+  const isInGuild = currentPlayer?.guild?.includes(targetedPlayer?.username?.toString()) || false;
 
   Object.entries(contextActions).forEach(([action, { label, handler, allowed_self }]) => {
     if (!allowed_self && isSelf) return;
 
     if (action === 'invite-to-party' && isInParty) return;
+
+    if (action === 'invite-to-guild' && isInGuild) return;
 
     if (action === 'add-friend' && isFriend) return;
 
@@ -217,4 +308,49 @@ function createContextMenu(event: MouseEvent, id: string) {
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 
-export { partyContextActions, contextActions, createPartyContextMenu, createContextMenu };
+function createFriendContextMenu(event: MouseEvent, username: string) {
+  if (!getIsLoaded()) return;
+  document.getElementById("context-menu")?.remove();
+
+  const contextMenu = document.createElement("div");
+  contextMenu.id = 'context-menu';
+  contextMenu.style.left = `${event.clientX}px`;
+  contextMenu.style.top = `${event.clientY}px`;
+
+  if (event.clientX + 200 > window.innerWidth) {
+    contextMenu.style.left = `${event.clientX - 200}px`;
+  }
+
+  if (event.clientX - 200 < 0) {
+    contextMenu.style.left = `${event.clientX + 50}px`;
+  }
+
+  if (event.clientY + 80 > window.innerHeight) {
+    contextMenu.style.top = `${event.clientY - 80}px`;
+  }
+
+  if (event.clientY - 80 < 0) {
+    contextMenu.style.top = `${event.clientY + 50}px`;
+  }
+
+  contextMenu.dataset.username = username.toLowerCase();
+  const ul = document.createElement("ul");
+
+  const li = document.createElement("li");
+  li.innerText = "Remove Friend";
+  li.onclick = (e) => {
+    e.stopPropagation();
+    sendRequest({
+      type: "REMOVE_FRIEND",
+      data: { username },
+    });
+    contextMenu.remove();
+  };
+  ul.appendChild(li);
+
+  contextMenu.appendChild(ul);
+  overlay.appendChild(contextMenu);
+  document.addEventListener("click", () => contextMenu.remove(), { once: true });
+}
+
+export { partyContextActions, guildContextActions, contextActions, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createContextMenu };

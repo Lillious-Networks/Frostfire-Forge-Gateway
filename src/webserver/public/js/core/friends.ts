@@ -1,6 +1,6 @@
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
-import {cachedPlayerId, sendRequest} from "./socket.js";
+import {cachedPlayerId} from "./socket.js";
 import { friendsList, friendsListSearch } from "./ui.js";
 
 function updateFriendsList(data: any) {
@@ -31,25 +31,11 @@ function updateFriendsList(data: any) {
             friendElement.appendChild(friendName);
 
             const friendStatus = document.createElement("div");
-            const isOnline = Array.from(cache.players).some(player => player.username && player.username.toLowerCase() === friend.toLowerCase() && player.id !== cachedPlayerId);
+            const isOnline = cache.onlinePlayers.has(friend.toLowerCase()) && friend.toLowerCase() !== Array.from(cache.players).find((p: any) => p.id === cachedPlayerId)?.username?.toLowerCase();
             friendStatus.classList.add("friend-status", isOnline ? "online" : "offline");
             friendStatus.classList.add("ui");
-            friendStatus.innerText = isOnline ? "Online" : "Offline";
             friendElement.appendChild(friendStatus);
 
-            const removeButton = document.createElement("button");
-            removeButton.innerText = "X";
-            removeButton.classList.add("remove-friend-button");
-            removeButton.classList.add("ui");
-
-            removeButton.onclick = () => {
-                sendRequest({
-                    type: "REMOVE_FRIEND",
-                    data: { username: friend },
-                });
-            };
-
-            friendElement.appendChild(removeButton);
             friendsList.appendChild(friendElement);
         }
     });
@@ -68,7 +54,6 @@ function updateFriendOnlineStatus(friendName: string, isOnline: boolean) {
         if (statusElement) {
           statusElement.classList.toggle("online", isOnline);
           statusElement.classList.toggle("offline", !isOnline);
-          statusElement.innerText = isOnline ? "Online" : "Offline";
         }
       }
     });
