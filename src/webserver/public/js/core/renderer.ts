@@ -883,7 +883,12 @@ function animationLoop() {
     chunkLoadThrottle = 0;
   }
 
-  ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
   ctx.imageSmoothingEnabled = false;
 
   const viewportLeft = cameraX - window.innerWidth / 2;
@@ -1563,6 +1568,11 @@ function animationLoop() {
     const fpsEl = document.getElementById("fps-counter");
     if (fpsEl) fpsEl.textContent = `${fps} FPS`;
   }
+
+  if (!(window as any).__firstFrameRendered && window.mapData) {
+    (window as any).__firstFrameRendered = true;
+  }
+
   requestAnimationFrame(animationLoop);
 }
 

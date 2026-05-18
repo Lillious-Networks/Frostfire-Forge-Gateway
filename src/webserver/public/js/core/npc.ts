@@ -334,9 +334,12 @@ function createNPC(data: any) {
         }
 
         // Update physics - apply forces and velocity (match preview logic exactly)
+        // Use capped delta on mobile to prevent physics explosions
+        const physDelta = isMobile ? Math.min(deltaTime, 0.1) : deltaTime;
+
         // Apply gravity
-        p.velocity.y += gravY * deltaTime;
-        p.velocity.x += gravX * deltaTime;
+        p.velocity.y += gravY * physDelta;
+        p.velocity.x += gravX * physDelta;
 
         // Apply wind velocity clamping
         const newVelocity = applyWindVelocity(
@@ -351,8 +354,8 @@ function createNPC(data: any) {
         p.velocity.y = newVelocity.vy;
 
         // Always apply velocity to position
-        p.localposition.x += p.velocity.x * deltaTime;
-        p.localposition.y += p.velocity.y * deltaTime;
+        p.localposition.x += p.velocity.x * physDelta;
+        p.localposition.y += p.velocity.y * physDelta;
 
         // Calculate alpha
         const lifeElapsed = p.lifetime - p.currentLife;

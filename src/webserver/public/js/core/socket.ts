@@ -2189,11 +2189,13 @@ socket.onmessage = async (event) => {
           resetCameraInitialized();
 
           (window as any).__suppressLoadingScreen = useBlackFade;
+          (window as any).__firstFrameRendered = false;
         }
 
         loaded = await loadMap(data);
 
         if (loaded) {
+          requestWakeLock();
           const { progressBar } = await import('./ui.js');
           if (progressBar) progressBar.style.width = '100%';
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -3672,6 +3674,22 @@ export function setSelfPlayerSpriteLoaded(value: boolean) {
 let _hideScreenTimer: ReturnType<typeof setTimeout> | null = null;
 
 async function hideLoadingScreen() {
+  const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
+
+  const isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  if (isMobile) {
+    if (!(window as any).__firstFrameRendered) {
+      await new Promise<void>(resolve => {
+        const check = () => {
+          if ((window as any).__firstFrameRendered) resolve();
+          else setTimeout(check, 100);
+        };
+        check();
+      });
+    }
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+
   const transitionOverlay = document.getElementById('map-transition-overlay');
   if (transitionOverlay) {
     transitionOverlay.style.transition = 'opacity 0.4s';
@@ -3679,10 +3697,7 @@ async function hideLoadingScreen() {
     setTimeout(() => transitionOverlay.remove(), 400);
   }
 
-  const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
-
   if (loadingScreen) {
-    // Wait 500ms before starting the fade out
     await new Promise(resolve => setTimeout(resolve, 500));
 
     loadingScreen.style.transition = "1s";
@@ -3769,6 +3784,22 @@ async function saveAnimationToDB(name: string, data: Uint8Array) {
 }
 
 setupEquipmentSlotHandlers();
+
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      await (navigator as any).wakeLock.request('screen');
+    }
+  } catch (e: any) {
+    console.warn("Wake Lock request failed:", e.message);
+  }
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && loaded) {
+    await requestWakeLock();
+  }
+});
 
 (window as any).__socketModule = {
   sendRequest,
