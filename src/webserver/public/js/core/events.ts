@@ -266,12 +266,16 @@ function updateViewportDimensions() {
   const rawDpr = window.devicePixelRatio || 1;
   const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
-  const canvasHeight = window.innerHeight;
-  canvas.width = window.innerWidth * dpr;
-  canvas.height = canvasHeight * dpr;
 
-  canvas.style.width = window.innerWidth + "px";
-  canvas.style.height = canvasHeight + "px";
+  const bodyStyle = getComputedStyle(document.body);
+  const displayWidth = parseFloat(bodyStyle.width) || window.innerWidth;
+  const displayHeight = parseFloat(bodyStyle.height) || window.innerHeight;
+
+  canvas.width = displayWidth * dpr;
+  canvas.height = displayHeight * dpr;
+
+  canvas.style.width = displayWidth + "px";
+  canvas.style.height = displayHeight + "px";
 
   if (ctx) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -283,8 +287,8 @@ function updateViewportDimensions() {
       const mobileZoom = 0.85;
       ctx.scale(dpr * mobileZoom, dpr * mobileZoom);
 
-      ctx.translate((window.innerWidth * (1 - mobileZoom)) / (2 * mobileZoom),
-                    (canvasHeight * (1 - mobileZoom)) / (2 * mobileZoom));
+      ctx.translate((displayWidth * (1 - mobileZoom)) / (2 * mobileZoom),
+                    (displayHeight * (1 - mobileZoom)) / (2 * mobileZoom));
     } else {
       ctx.scale(dpr, dpr);
     }

@@ -161,8 +161,6 @@ function smoothPlayerRenderPositions(players: any[], currentPlayer: any, deltaTi
   }
 }
 
-canvas.style.position = 'fixed';
-
 declare global {
   interface Window {
     mapData?: any;

@@ -238,7 +238,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
         };
       }
       const canonical = (window as any).__preloadedMaps[mapName].loadedChunks;
-      for (const [key, value] of window.mapData.loadedChunks.entries()) {
+      for (const [key, value] of window.mapData.loadedChunks.entries()) { 
         canonical.set(key, value);
       }
     }
@@ -254,11 +254,12 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     canvas.width = window.innerWidth * dpr;
     canvas.height = fullHeight * dpr;
 
-    document.documentElement.style.setProperty('--viewport-height', `${actualHeight}px`);
 
     canvas.style.position = "fixed";
     canvas.style.top = "0";
     canvas.style.left = "0";
+    canvas.style.right = "0";
+    canvas.style.bottom = "0";
     canvas.style.backgroundColor = "#000000";
 
     canvas.style.width = window.innerWidth + "px";
