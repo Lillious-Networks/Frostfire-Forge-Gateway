@@ -2266,7 +2266,7 @@ socket.onmessage = async (event) => {
 
         const sessionToken = getCookie("token");
         if (!sessionToken) {
-          window.location.href = "/game";
+          window.location.href = "/";
           return;
         }
 
