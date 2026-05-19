@@ -7372,18 +7372,18 @@ body.ipad-device #game-notification-container {
     padding-left: 0 !important;
     padding-right: 0 !important;
     justify-content: center !important;
-    gap: 10px !important;
+    gap: 8px !important;
   }
 
   /* Glasslike slot squares */
   #hotbar #grid .slot {
-    width: 80px !important;
-    height: 80px !important;
-    min-width: 80px !important;
-    max-width: 80px !important;
-    min-height: 80px !important;
-    max-height: 80px !important;
-    flex-basis: 80px !important;
+    width: 72px !important;
+    height: 72px !important;
+    min-width: 72px !important;
+    max-width: 72px !important;
+    min-height: 72px !important;
+    max-height: 72px !important;
+    flex-basis: 72px !important;
     background: rgba(255, 255, 255, 0.1) !important;
     border: 1px solid rgba(255, 255, 255, 0.35) !important;
     border-radius: 4px !important;
