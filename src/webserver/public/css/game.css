@@ -2824,14 +2824,17 @@ input[type=range]:disabled {
 }
 
 #server-time-container {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: fixed;
   z-index: 101;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 3px;
-  min-width: 100px;
-  min-height: 30px;
+  width: 108px;
+  height: 34px;
+  padding: 2px 0;
   top: 25px;
   right: 25px;
 }
@@ -2844,11 +2847,6 @@ input[type=range]:disabled {
   font-weight: lighter;
   user-select: none;
   font-size: 0.8em;
-  text-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
   font-family: 'Comic Relief';
 }
 
@@ -5755,8 +5753,8 @@ body.tiny-landscape .notification {
   bottom: 16px;
   right: 90px;
   left: auto;
-  width: 60px;
-  height: 60px;
+  width: 70px !important;
+  height: 70px !important;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -5765,7 +5763,7 @@ body.tiny-landscape .notification {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 28px;
   color: rgba(255, 255, 255, 0.8);
   transition: all 0.2s ease;
   user-select: none;
@@ -5792,9 +5790,29 @@ body.tiny-landscape .notification {
   #virtual-mount-button {
     right: 90px;
     left: auto;
-    width: 52px;
-    height: 52px;
+    width: 60px !important;
+    height: 60px !important;
+    font-size: 24px;
+  }
+}
+
+@media (max-height: 450px) and (orientation: landscape) {
+  #virtual-mount-button {
+    right: 90px;
+    left: auto;
+    width: 52px !important;
+    height: 52px !important;
     font-size: 20px;
+  }
+}
+
+@media (max-height: 380px) and (orientation: landscape) {
+  #virtual-mount-button {
+    right: 90px;
+    left: auto;
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 18px;
   }
 }
 
@@ -7354,25 +7372,25 @@ body.ipad-device #game-notification-container {
     padding-left: 0 !important;
     padding-right: 0 !important;
     justify-content: center !important;
-    gap: 6px !important;
+    gap: 10px !important;
   }
 
-  /* Glasslike slot squares - double size */
+  /* Glasslike slot squares */
   #hotbar #grid .slot {
-    width: 72px !important;
-    height: 72px !important;
-    min-width: 72px !important;
-    max-width: 72px !important;
-    min-height: 72px !important;
-    max-height: 72px !important;
-    flex-basis: 72px !important;
-    background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.05)) !important;
-    border: 2px solid rgba(255, 255, 255, 0.3) !important;
-    border-radius: 10px !important;
-    -webkit-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(0, 0, 0, 0.25);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.25), inset 0 -2px 4px rgba(0, 0, 0, 0.25);
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
+    width: 80px !important;
+    height: 80px !important;
+    min-width: 80px !important;
+    max-width: 80px !important;
+    min-height: 80px !important;
+    max-height: 80px !important;
+    flex-basis: 80px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.35) !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   #hotbar #grid .slot img {
