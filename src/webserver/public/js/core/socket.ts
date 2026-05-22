@@ -76,7 +76,7 @@ import { createPlayer } from "./player.ts";
 import { updateFriendsList } from "./friends.ts";
 import { createInvitationPopup } from "./invites.ts";
 import { updateFriendOnlineStatus } from "./friends.js";
-import loadMap from "./map.ts";
+import loadMap, { isChunkCached } from "./map.ts";
 import {
   createPartyUI,
   createGuildUI,
@@ -683,6 +683,10 @@ socket.onmessage = async (event) => {
     type = decoded["type"];
   }
 
+  if (type !== "BATCH_MOVEXY" && type !== "MOVEXY" && type !== "MOVE_ENTITY_BINARY" && type !== "TIME_SYNC" && type !== "SERVER_TIME" && type !== "PONG" && type !== "PING" && type !== "CONNECTION_COUNT" && type !== "PROJECTILE" && type !== "UPDATE_XP" && type !== "CAST_SPELL" && type !== "UPDATESTATS" && type !== "ANIMATION" && type !== "ENTITY_DAMAGE" && type !== "ENTITY_DIED") {
+    console.log("[CLIENT RECV]", type, data ? (typeof data === 'object' ? Object.keys(data || {}).join(',') : typeof data) : 'null');
+  }
+
   switch (type) {
     case "SERVER_TIME": {
       sendRequest({ type: "TIME_SYNC" });
@@ -1069,18 +1073,15 @@ socket.onmessage = async (event) => {
       if (window.mapData && window.mapData.loadedChunks && data) {
         const chunksToUpdate = data as Array<{chunkX: number, chunkY: number}>;
 
-        import("./map.js").then(({ clearChunkFromCache }) => {
-          chunksToUpdate.forEach((chunkCoord: {chunkX: number, chunkY: number}) => {
+        import("./map.js").then(async ({ clearChunkFromCache }) => {
+          for (const chunkCoord of chunksToUpdate) {
             const chunkKey = `${chunkCoord.chunkX}-${chunkCoord.chunkY}`;
-
-            clearChunkFromCache(window.mapData.name, chunkCoord.chunkX, chunkCoord.chunkY);
-
+            await clearChunkFromCache(window.mapData.name, chunkCoord.chunkX, chunkCoord.chunkY);
             if (window.mapData.loadedChunks.has(chunkKey)) {
               window.mapData.loadedChunks.delete(chunkKey);
-
               window.mapData.requestChunk(chunkCoord.chunkX, chunkCoord.chunkY);
             }
-          });
+          }
         });
       }
       break;
@@ -2167,6 +2168,7 @@ socket.onmessage = async (event) => {
           let needed = 0;
           let cached = 0;
           const preloadedChunks = (window as any).__preloadedMaps?.[mapName]?.loadedChunks;
+          const cacheCheckPromises: Promise<boolean>[] = [];
           for (let dy = -needCY; dy <= needCY; dy++) {
             for (let dx = -needCX; dx <= needCX; dx++) {
               const cx = scx + dx;
@@ -2174,12 +2176,16 @@ socket.onmessage = async (event) => {
               if (cx >= 0 && cy >= 0 && cx < totalCX && cy < totalCY) {
                 needed++;
                 const ck = `${cx}-${cy}`;
-                if (preloadedChunks?.has(ck) || localStorage.getItem(`chunk_${mapName}_${ck}`)) {
+                if (preloadedChunks?.has(ck)) {
                   cached++;
+                } else {
+                  cacheCheckPromises.push(isChunkCached(mapName, cx, cy));
                 }
               }
             }
           }
+          const cacheResults = await Promise.all(cacheCheckPromises);
+          cached += cacheResults.filter(Boolean).length;
           const mostChunksCached = cached > 0;
           const hasWorld = data?.hasWeather === true;
           const useBlackFade = !hasWorld && mostChunksCached;

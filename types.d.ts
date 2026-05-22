@@ -212,3 +212,20 @@ declare interface SpriteSheetCache {
     };
   };
 }
+
+export interface PluginManifest {
+    name: string;
+    version: string;
+    description?: string;
+    entry: string;
+    requires?: {
+        engine?: string;
+    };
+    provides: string[];
+}
+
+export interface LoadedPlugin {
+    manifest: PluginManifest;
+    module: DungeonPlugin;
+    dirPath: string;
+}

@@ -102,7 +102,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     const assetServerUrl = metadata?.assetServerUrl || "";
     (window as any).__assetServerUrl = assetServerUrl;
 
-    clearMapCache(mapName);
+    await clearMapCache(mapName);
     progressBar.style.width = "10%";
 
     const images = await loadTilesets(tilesets);
@@ -327,7 +327,7 @@ export async function preloadChunks(data: any): Promise<void> {
           if (chunkData) {
             preloadMapData.loadedChunks.set(chunkKey, chunkData);
             try {
-              saveChunkToCache(mapName, chunk.x, chunk.y, chunkData);
+              await saveChunkToCache(mapName, chunk.x, chunk.y, chunkData);
             } catch (err) {
               // Cache save error is non-fatal
             }
@@ -407,72 +407,148 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
 }
 
 const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000;
+const CACHE_DB_NAME = 'map-chunk-cache';
+const CACHE_DB_VERSION = 1;
 
 function getCacheKey(mapName: string, chunkX: number, chunkY: number): string {
   return `chunk_${mapName}_${chunkX}_${chunkY}`;
 }
 
-function saveChunkToCache(mapName: string, chunkX: number, chunkY: number, chunkData: ChunkData): void {
-  try {
-    const cacheKey = getCacheKey(mapName, chunkX, chunkY);
-    const cacheData = {
-      timestamp: Date.now(),
-      data: chunkData,
+let cacheDbPromise: Promise<IDBDatabase> | null = null;
+
+function getCacheDB(): Promise<IDBDatabase> {
+  if (cacheDbPromise) return cacheDbPromise;
+
+  cacheDbPromise = new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      cacheDbPromise = null;
+      reject(new Error('IndexedDB not available'));
+      return;
+    }
+
+    const request = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
+
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains('chunks')) {
+        const store = db.createObjectStore('chunks', { keyPath: 'id' });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
     };
-    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => {
+      cacheDbPromise = null;
+      reject(request.error);
+    };
+  });
+
+  return cacheDbPromise;
+}
+
+async function saveChunkToCache(mapName: string, chunkX: number, chunkY: number, chunkData: ChunkData): Promise<void> {
+  try {
+    const db = await getCacheDB();
+    const cacheKey = getCacheKey(mapName, chunkX, chunkY);
+    const cacheEntry = { id: cacheKey, timestamp: Date.now(), data: chunkData };
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('chunks', 'readwrite');
+      const store = tx.objectStore('chunks');
+      const request = store.put(cacheEntry);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
     console.error("Error saving chunk to cache:", error);
   }
 }
 
-function clearChunkFromCache(mapName: string, chunkX: number, chunkY: number): void {
+async function clearChunkFromCache(mapName: string, chunkX: number, chunkY: number): Promise<void> {
   try {
+    const db = await getCacheDB();
     const cacheKey = getCacheKey(mapName, chunkX, chunkY);
-    localStorage.removeItem(cacheKey);
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('chunks', 'readwrite');
+      const store = tx.objectStore('chunks');
+      const request = store.delete(cacheKey);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
     console.error("Error clearing chunk from cache:", error);
   }
 }
 
-function loadChunkFromCache(mapName: string, chunkX: number, chunkY: number): ChunkData | null {
+async function loadChunkFromCache(mapName: string, chunkX: number, chunkY: number): Promise<ChunkData | null> {
   try {
+    const db = await getCacheDB();
     const cacheKey = getCacheKey(mapName, chunkX, chunkY);
-    const cached = localStorage.getItem(cacheKey);
 
-    if (!cached) return null;
+    const cacheEntry = await new Promise<any>((resolve, reject) => {
+      const tx = db.transaction('chunks', 'readonly');
+      const store = tx.objectStore('chunks');
+      const request = store.get(cacheKey);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
 
-    const cacheData = JSON.parse(cached);
-    const age = Date.now() - cacheData.timestamp;
+    if (!cacheEntry) return null;
 
+    const age = Date.now() - cacheEntry.timestamp;
     if (age > CACHE_EXPIRY_MS) {
-      localStorage.removeItem(cacheKey);
+      clearChunkFromCache(mapName, chunkX, chunkY);
       return null;
     }
 
-    return cacheData.data;
+    return cacheEntry.data;
   } catch (error) {
     return null;
   }
 }
 
-function clearMapCache(mapName?: string): void {
+async function clearMapCache(mapName?: string): Promise<void> {
   try {
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (mapName) {
+    const db = await getCacheDB();
+    const prefix = mapName ? `chunk_${mapName}_` : 'chunk_';
+    const range = IDBKeyRange.bound(prefix, prefix + '\uffff', false, false);
 
-        if (key.startsWith(`chunk_${mapName}_`)) {
-          localStorage.removeItem(key);
-        }
-      } else {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('chunks', 'readwrite');
+      const store = tx.objectStore('chunks');
+      const request = store.openCursor(range);
 
-        if (key.startsWith('chunk_')) {
-          localStorage.removeItem(key);
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        } else {
+          resolve();
         }
-      }
-    }
+      };
+      request.onerror = () => reject(request.error);
+    });
   } catch (error) {
     console.error("Error clearing map cache:", error);
+  }
+}
+
+async function isChunkCached(mapName: string, chunkX: number, chunkY: number): Promise<boolean> {
+  try {
+    const db = await getCacheDB();
+    const cacheKey = getCacheKey(mapName, chunkX, chunkY);
+
+    return await new Promise<boolean>((resolve, reject) => {
+      const tx = db.transaction('chunks', 'readonly');
+      const store = tx.objectStore('chunks');
+      const request = store.getKey(cacheKey);
+      request.onsuccess = () => resolve(!!request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch {
+    return false;
   }
 }
 
@@ -492,7 +568,7 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
 
   try {
 
-    const cachedChunkData = loadChunkFromCache(window.mapData.name, chunkX, chunkY);
+    const cachedChunkData = await loadChunkFromCache(window.mapData.name, chunkX, chunkY);
     let chunkData: ChunkData | null;
 
     if (cachedChunkData) {
@@ -506,7 +582,7 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
           return null;
         }
 
-        saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);
+        await saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);
       } catch (error) {
         return null;
       }
@@ -689,4 +765,4 @@ function getChunkUpperCanvas(chunkX: number, chunkY: number): HTMLCanvasElement 
   return chunk?.upperCanvas || null;
 }
 
-export { clearMapCache, renderChunkToCanvas, clearChunkFromCache };
+export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached };

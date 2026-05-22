@@ -3122,9 +3122,9 @@ class TileEditor {
 
     sendRequest(savePayload);
 
-    chunks.forEach(chunk => {
-      clearChunkFromCache(window.mapData.name, chunk.chunkX, chunk.chunkY);
-    });
+    Promise.all(chunks.map(chunk =>
+      clearChunkFromCache(window.mapData.name, chunk.chunkX, chunk.chunkY)
+    )).catch(() => {});
 
     this.undoStack = [];
     this.redoStack = [];
