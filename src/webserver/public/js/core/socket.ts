@@ -1,4 +1,3 @@
-import.meta.hot.accept;
 import { config } from "../web/global.js";
 const version = config?.VERSION;
 import "./events.ts";
