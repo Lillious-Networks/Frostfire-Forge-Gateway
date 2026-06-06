@@ -360,7 +360,6 @@ const serverConfig: any = {
         activeConnections: s.activeConnections,
         maxConnections: s.maxConnections,
         lastHeartbeat: s.lastHeartbeat,
-        whitelisted: s.whitelisted || false,
         cpuUsage: s.cpuUsage || 0,
         ramUsage: s.ramUsage || 0,
         latency: s.latency || 0,
