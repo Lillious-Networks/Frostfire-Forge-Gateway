@@ -605,7 +605,9 @@ if (useSSL) {
             useSSL: s.useSSL,
             activeConnections: s.activeConnections,
             maxConnections: s.maxConnections,
-            status: !isHealthy ? 'unhealthy' : isFull ? 'full' : 'available'
+            latency: s.latency || 0,
+            whitelisted: s.whitelisted || false,
+            status: !isHealthy ? 'offline' : (isFull ? 'full' : 'online')
           };
         });
 
