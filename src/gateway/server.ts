@@ -134,6 +134,7 @@ setInterval(cleanupExpiredSessions, 60000);
 const serverConfig: any = {
   port: config.port,
   hostname: "0.0.0.0",
+  development: false,
   async fetch(req: any) {
     const url = new URL(req.url);
 
@@ -587,6 +588,7 @@ if (useSSL) {
   Bun.serve({
     hostname: "0.0.0.0",
     port: httpPort,
+    development: false,
     fetch(req: Request) {
       const url = new URL(req.url);
 

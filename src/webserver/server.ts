@@ -145,6 +145,7 @@ const serverPort = _https ? (parseInt(process.env.WEBSRV_PORTSSL || "") || 443) 
 Bun.serve({
     hostname: "0.0.0.0",
     port: serverPort,
+    development: false,
     reusePort: false,
     routes: {
       "/status": routes["/status"],
@@ -221,6 +222,7 @@ if (_https) {
   Bun.serve({
     hostname: "0.0.0.0",
     port: process.env.WEBSRV_PORT || 80,
+    development: false,
     fetch(req: Request) {
       const url = tryParseURL(req.url);
       if (!url) {
