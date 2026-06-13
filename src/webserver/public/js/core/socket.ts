@@ -682,10 +682,6 @@ socket.onmessage = async (event) => {
     type = decoded["type"];
   }
 
-  if (type !== "BATCH_MOVEXY" && type !== "MOVEXY" && type !== "MOVE_ENTITY_BINARY" && type !== "TIME_SYNC" && type !== "SERVER_TIME" && type !== "PONG" && type !== "PING" && type !== "CONNECTION_COUNT" && type !== "PROJECTILE" && type !== "UPDATE_XP" && type !== "CAST_SPELL" && type !== "UPDATESTATS" && type !== "ANIMATION" && type !== "ENTITY_DAMAGE" && type !== "ENTITY_DIED") {
-    console.log("[CLIENT RECV]", type, data ? (typeof data === 'object' ? Object.keys(data || {}).join(',') : typeof data) : 'null');
-  }
-
   switch (type) {
     case "SERVER_TIME": {
       sendRequest({ type: "TIME_SYNC" });
