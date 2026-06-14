@@ -1,4 +1,4 @@
-import { xpBar, levelContainer } from "./ui.js";
+import { xpBar } from "./ui.js";
 
 function updateXp(xp: number, level: number, max_xp: number) {
   const xscale = Math.max(0, Math.min(1, xp / max_xp)) || 0;
@@ -8,7 +8,6 @@ function updateXp(xp: number, level: number, max_xp: number) {
     duration: 0,
     fill: 'forwards'
   });
-  levelContainer.textContent = level.toString();
 }
 
 export { updateXp }

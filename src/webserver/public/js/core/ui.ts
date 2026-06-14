@@ -18,7 +18,6 @@ const fpsSlider = document.getElementById("fps-slider") as HTMLInputElement;
 const healthBar = document.getElementById("health-progress-bar") as HTMLDivElement;
 const staminaBar = document.getElementById("stamina-progress-bar") as HTMLDivElement;
 const xpBar = document.getElementById("xp-bar") as HTMLDivElement;
-const levelContainer = document.getElementById("level-container") as HTMLDivElement;
 const musicSlider = document.getElementById("music-slider") as HTMLInputElement;
 const effectsSlider = document.getElementById("effects-slider") as HTMLInputElement;
 const mutedCheckbox = document.getElementById("muted-checkbox") as HTMLInputElement;
@@ -257,11 +256,13 @@ interface PanelDragTarget {
 }
 
 const GRID_SIZE = 16;
+const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 let ctrlHeld = false;
 const registeredDragPanels: PanelDragTarget[] = [];
 
 function updateDragCursors() {
+  if (isMobileDevice) return;
   for (const panel of registeredDragPanels) {
     if (!panelDragActive || activeDragPanel !== panel) {
       panel.element.style.cursor = ctrlHeld ? "grab" : "default";
@@ -287,29 +288,32 @@ gridOverlay.style.cssText =
   `background-size:${GRID_SIZE}px ${GRID_SIZE}px;`;
 document.body.appendChild(gridOverlay);
 
-document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "Control" && !e.repeat) {
-    ctrlHeld = true;
-    gridOverlay.style.display = "block";
-    updateDragCursors();
-  }
-});
+if (!isMobileDevice) {
+  document.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Control" && !e.repeat) {
+      ctrlHeld = true;
+      gridOverlay.style.display = "block";
+      updateDragCursors();
+    }
+  });
 
-document.addEventListener("keyup", (e: KeyboardEvent) => {
-  if (e.key === "Control") {
+  document.addEventListener("keyup", (e: KeyboardEvent) => {
+    if (e.key === "Control") {
+      ctrlHeld = false;
+      gridOverlay.style.display = "none";
+      updateDragCursors();
+    }
+  });
+
+  window.addEventListener("blur", () => {
     ctrlHeld = false;
     gridOverlay.style.display = "none";
     updateDragCursors();
-  }
-});
-
-window.addEventListener("blur", () => {
-  ctrlHeld = false;
-  gridOverlay.style.display = "none";
-  updateDragCursors();
-});
+  });
+}
 
 function loadPanelPosition(element: HTMLElement, storageKey: string) {
+  if (isMobileDevice) return;
   try {
     const saved = localStorage.getItem(storageKey);
     if (saved) {
@@ -323,6 +327,7 @@ function loadPanelPosition(element: HTMLElement, storageKey: string) {
 }
 
 function savePanelPosition(storageKey: string, left: string, top: string) {
+  if (isMobileDevice) return;
   try {
     localStorage.setItem(storageKey, JSON.stringify({ x: left, y: top }));
   } catch (e) { /* ignore */ }
@@ -336,6 +341,7 @@ function shouldSkipDrag(target: HTMLElement): boolean {
 }
 
 function registerPanelDrag(panel: PanelDragTarget) {
+  if (isMobileDevice) return;
   const { element, handle, storageKey } = panel;
 
   loadPanelPosition(element, storageKey);
@@ -389,38 +395,40 @@ function registerPanelDrag(panel: PanelDragTarget) {
   }, { passive: true });
 }
 
-document.addEventListener("mousemove", (e: MouseEvent) => {
-  if (!panelDragActive || !activeDragPanel) return;
-  const deltaX = e.clientX - panelDragStartX;
-  const deltaY = e.clientY - panelDragStartY;
-  let newX = panelDragOffsetX + deltaX;
-  let newY = panelDragOffsetY + deltaY;
-  const rect = activeDragPanel.element.getBoundingClientRect();
-  const maxX = window.innerWidth - rect.width;
-  const maxY = window.innerHeight - rect.height;
-  newX = Math.max(0, Math.min(newX, maxX));
-  newY = Math.max(0, Math.min(newY, maxY));
-  newX = Math.round(newX / GRID_SIZE) * GRID_SIZE;
-  newY = Math.round(newY / GRID_SIZE) * GRID_SIZE;
-  activeDragPanel.element.style.left = `${newX}px`;
-  activeDragPanel.element.style.top = `${newY}px`;
-});
+if (!isMobileDevice) {
+  document.addEventListener("mousemove", (e: MouseEvent) => {
+    if (!panelDragActive || !activeDragPanel) return;
+    const deltaX = e.clientX - panelDragStartX;
+    const deltaY = e.clientY - panelDragStartY;
+    let newX = panelDragOffsetX + deltaX;
+    let newY = panelDragOffsetY + deltaY;
+    const rect = activeDragPanel.element.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width;
+    const maxY = window.innerHeight - rect.height;
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    newX = Math.round(newX / GRID_SIZE) * GRID_SIZE;
+    newY = Math.round(newY / GRID_SIZE) * GRID_SIZE;
+    activeDragPanel.element.style.left = `${newX}px`;
+    activeDragPanel.element.style.top = `${newY}px`;
+  });
 
-document.addEventListener("touchmove", (e: TouchEvent) => {
-  if (!panelDragActive || !activeDragPanel) return;
-  const touch = e.touches[0];
-  const deltaX = touch.clientX - panelDragStartX;
-  const deltaY = touch.clientY - panelDragStartY;
-  let newX = panelDragOffsetX + deltaX;
-  let newY = panelDragOffsetY + deltaY;
-  const rect = activeDragPanel.element.getBoundingClientRect();
-  const maxX = window.innerWidth - rect.width;
-  const maxY = window.innerHeight - rect.height;
-  newX = Math.max(0, Math.min(newX, maxX));
-  newY = Math.max(0, Math.min(newY, maxY));
-  activeDragPanel.element.style.left = `${newX}px`;
-  activeDragPanel.element.style.top = `${newY}px`;
-}, { passive: true });
+  document.addEventListener("touchmove", (e: TouchEvent) => {
+    if (!panelDragActive || !activeDragPanel) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - panelDragStartX;
+    const deltaY = touch.clientY - panelDragStartY;
+    let newX = panelDragOffsetX + deltaX;
+    let newY = panelDragOffsetY + deltaY;
+    const rect = activeDragPanel.element.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width;
+    const maxY = window.innerHeight - rect.height;
+    newX = Math.max(0, Math.min(newX, maxX));
+    newY = Math.max(0, Math.min(newY, maxY));
+    activeDragPanel.element.style.left = `${newX}px`;
+    activeDragPanel.element.style.top = `${newY}px`;
+  }, { passive: true });
+}
 
 function endDrag() {
   if (!activeDragPanel) return;
@@ -433,15 +441,17 @@ function endDrag() {
   activeDragPanel = null;
 }
 
-document.addEventListener("mouseup", () => {
-  if (!panelDragActive) return;
-  endDrag();
-});
+if (!isMobileDevice) {
+  document.addEventListener("mouseup", () => {
+    if (!panelDragActive) return;
+    endDrag();
+  });
 
-document.addEventListener("touchend", () => {
-  if (!panelDragActive) return;
-  endDrag();
-});
+  document.addEventListener("touchend", () => {
+    if (!panelDragActive) return;
+    endDrag();
+  });
+}
 
 function toggleUI(element: HTMLElement, _toggleFlag?: boolean, _hidePosition?: number) {
   const isOpen = element.style.display === "block";
@@ -1809,7 +1819,7 @@ if (guildCreateButton) {
 export {
     toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
-    staminaBar, xpBar, levelContainer, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
+    staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
     serverTime, ambience, weatherCanvas, weatherCtx, guildContainer, guildName, guildRank, guildMembersList,
