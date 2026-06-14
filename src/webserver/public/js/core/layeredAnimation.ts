@@ -281,9 +281,10 @@ export async function initializeLayeredAnimation(
       armor_chest: armorChestLayer as AnimationLayer,
       armor_feet: armorFeetLayer as AnimationLayer,
       armor_legs: armorLegsLayer as AnimationLayer,
-      armor_weapon: armorWeaponLayer as AnimationLayer
+      armor_weapon: armorWeaponLayer as AnimationLayer,
     },
-    currentAnimationName: initialAnimation
+    currentAnimationName: initialAnimation,
+    syncFrames: true
   };
 }
 
