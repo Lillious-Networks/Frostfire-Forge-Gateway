@@ -5,3 +5,4 @@ import '../core/packets';
 import '../core/gamepad';
 import '../core/virtualcontroller';
 import '../core/mobileui';
+import '../core/minimap';

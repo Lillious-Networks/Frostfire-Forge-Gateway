@@ -13,6 +13,7 @@ import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
 import { updateLayeredAnimation } from "./layeredAnimation.js";
 const times = [] as number[];
+let lastFpsUpdate = 0;
 let lastDirection = "";
 let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0, nextFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
@@ -1561,7 +1562,8 @@ function animationLoop() {
   if (times.length > 60) times.shift();
   times.push(now);
 
-  if (times.length >= 2) {
+  if (now - lastFpsUpdate >= 1000 && times.length >= 2) {
+    lastFpsUpdate = now;
     const fps = Math.round((times.length - 1) / ((times[times.length - 1] - times[0]) / 1000));
     const fpsEl = document.getElementById("fps-counter");
     if (fpsEl) fpsEl.textContent = `${fps} FPS`;

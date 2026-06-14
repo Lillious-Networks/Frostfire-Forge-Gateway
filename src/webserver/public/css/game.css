@@ -1513,6 +1513,32 @@ input::placeholder(:not(#chat-container input)) {
   user-select: none;
 }
 
+#minimap-container {
+  position: fixed;
+  top: 25px;
+  right: 25px;
+  z-index: 101;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: auto;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.6), inset 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+#minimap-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  #minimap-container {
+    display: none;
+  }
+}
+
 /* Make look like glass */
 #debug-container {
   display: none;
@@ -1524,7 +1550,7 @@ input::placeholder(:not(#chat-container input)) {
   min-width: 200px;
   max-width: 500px;
   padding: 10px;
-  top: 100px;
+  top: 280px;
   right: 25px;
   -webkit-box-shadow: 0 0 10px #00000080;
   box-shadow: 0 0 10px #00000080;
@@ -2818,19 +2844,17 @@ input[type=range]:disabled {
 }
 
 #server-time-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: none;
   position: fixed;
-  z-index: 101;
+  z-index: 102;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 3px;
   width: 108px;
   height: 34px;
   padding: 2px 0;
-  top: 25px;
-  right: 25px;
+  top: 225px;
+  right: 80px;
 }
 
 #server-time-container #server-time-value {
@@ -5075,7 +5099,7 @@ body.mobile-landscape {
 
   /* Server time container */
   #server-time-container {
-    top: 25px;
+    top: 140px;
     right: 25px;
     min-width: 80px;
     min-height: 24px;
@@ -5093,11 +5117,21 @@ body.mobile-landscape {
     transform-origin: top right;
   }
 
+  /* Minimap */
+  #minimap-container {
+    width: 154px;
+    height: 154px;
+    top: 25px;
+    right: 25px;
+    transform: scale(0.7);
+    transform-origin: top right;
+  }
+
   /* Stat screen */
   #stat-screen {
     width: 542px;
     height: 466px;
-    top: 100px;
+  top: 295px;
     left: 10px;
     transform-origin: top left;
   }

@@ -18,9 +18,31 @@ interface DraggablePanel {
 class DraggableUI {
   private panels: Map<string, DraggablePanel> = new Map();
   private storageKey = 'ui-panel-positions';
+  private ctrlHeld = false;
 
   constructor() {
     this.loadPositions();
+    document.addEventListener('keydown', (e) => this.onKeyChange(e, true));
+    document.addEventListener('keyup', (e) => this.onKeyChange(e, false));
+    window.addEventListener('blur', () => {
+      this.ctrlHeld = false;
+      this.updateAllCursors();
+    });
+  }
+
+  private onKeyChange(e: KeyboardEvent, down: boolean) {
+    if (e.key === 'Control') {
+      this.ctrlHeld = down;
+      this.updateAllCursors();
+    }
+  }
+
+  private updateAllCursors() {
+    for (const panel of this.panels.values()) {
+      if (!panel.isDragging) {
+        panel.handle.style.cursor = this.ctrlHeld ? 'grab' : 'default';
+      }
+    }
   }
 
   public registerPanel(id: string, element: HTMLElement, handle: HTMLElement) {
@@ -44,7 +66,7 @@ class DraggableUI {
 
     this.panels.set(id, panel);
 
-    handle.style.cursor = 'grab';
+    handle.style.cursor = this.ctrlHeld ? 'grab' : 'default';
     handle.addEventListener('mousedown', (e) => this.onDragStart(id, e));
     document.addEventListener('mousemove', (e) => this.onDrag(id, e));
     document.addEventListener('mouseup', () => this.onDragEnd(id));
@@ -95,7 +117,7 @@ class DraggableUI {
     if (!panel || !panel.isDragging) return;
 
     panel.isDragging = false;
-    panel.handle.style.cursor = 'grab';
+    panel.handle.style.cursor = this.ctrlHeld ? 'grab' : 'default';
     panel.element.style.zIndex = '100';
 
     this.savePosition(id, panel.position);

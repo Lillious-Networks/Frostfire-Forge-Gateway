@@ -258,6 +258,18 @@ interface PanelDragTarget {
 
 const GRID_SIZE = 16;
 
+let ctrlHeld = false;
+const registeredDragPanels: PanelDragTarget[] = [];
+
+function updateDragCursors() {
+  for (const panel of registeredDragPanels) {
+    if (!panelDragActive || activeDragPanel !== panel) {
+      panel.element.style.cursor = ctrlHeld ? "grab" : "default";
+      panel.handle.style.cursor = ctrlHeld ? "grab" : "default";
+    }
+  }
+}
+
 let panelDragActive = false;
 let panelDragStartX = 0;
 let panelDragStartY = 0;
@@ -277,14 +289,24 @@ document.body.appendChild(gridOverlay);
 
 document.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Control" && !e.repeat) {
+    ctrlHeld = true;
     gridOverlay.style.display = "block";
+    updateDragCursors();
   }
 });
 
 document.addEventListener("keyup", (e: KeyboardEvent) => {
   if (e.key === "Control") {
+    ctrlHeld = false;
     gridOverlay.style.display = "none";
+    updateDragCursors();
   }
+});
+
+window.addEventListener("blur", () => {
+  ctrlHeld = false;
+  gridOverlay.style.display = "none";
+  updateDragCursors();
 });
 
 function loadPanelPosition(element: HTMLElement, storageKey: string) {
@@ -318,8 +340,10 @@ function registerPanelDrag(panel: PanelDragTarget) {
 
   loadPanelPosition(element, storageKey);
 
-  element.style.cursor = "grab";
-  handle.style.cursor = "grab";
+  element.style.cursor = "default";
+  handle.style.cursor = "default";
+
+  registeredDragPanels.push(panel);
 
   handle.addEventListener("mousedown", (e: MouseEvent) => {
     if (!e.ctrlKey) return;
@@ -401,8 +425,8 @@ document.addEventListener("touchmove", (e: TouchEvent) => {
 function endDrag() {
   if (!activeDragPanel) return;
   panelDragActive = false;
-  activeDragPanel.element.style.cursor = "grab";
-  activeDragPanel.handle.style.cursor = "grab";
+  activeDragPanel.element.style.cursor = ctrlHeld ? "grab" : "default";
+  activeDragPanel.handle.style.cursor = ctrlHeld ? "grab" : "default";
   document.body.style.cursor = "";
   activeDragPanel.element.style.zIndex = "";
   savePanelPosition(activeDragPanel.storageKey, activeDragPanel.element.style.left, activeDragPanel.element.style.top);
