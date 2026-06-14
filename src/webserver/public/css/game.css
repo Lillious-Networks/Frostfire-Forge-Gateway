@@ -5132,7 +5132,7 @@ body.mobile-landscape {
     width: 542px;
     height: 466px;
     top: 295px;
-    left: max(110px, calc(100px + env(safe-area-inset-left, 0px)));
+    left: max(85px, calc(75px + env(safe-area-inset-left, 0px)));
     transform-origin: top left;
   }
 
@@ -6397,7 +6397,7 @@ body.ipad-device #game-notification-container {
     transform: scale(0.55);
     transform-origin: top left;
     top: max(10px, env(safe-area-inset-top)) !important;
-    left: max(110px, calc(100px + env(safe-area-inset-left, 0px)));
+    left: max(85px, calc(75px + env(safe-area-inset-left, 0px)));
   }
 }
 
