@@ -2450,7 +2450,7 @@ socket.onmessage = async (event) => {
 
       cache.equipment = data;
 
-      const statSheetOpen = statUI.style.left === "10px";
+      const statSheetOpen = statUI.style.display !== "none";
       const showingCurrentPlayer = statUI.getAttribute("data-id") === String(cachedPlayerId);
 
       if (statSheetOpen && !showingCurrentPlayer) {
@@ -2884,7 +2884,7 @@ socket.onmessage = async (event) => {
       player.max_health = data.total_max_health;
       player.max_stamina = data.total_max_stamina;
 
-      if (statUI.style.left === "10px" && statUI.getAttribute("data-id") === String(data.id)) {
+      if (statUI.style.display !== "none" && statUI.getAttribute("data-id") === String(data.id)) {
         levelLabel!.innerText = `Level: ${data.level}`;
         healthLabel!.innerText = `Health: ${data.health} / ${data.total_max_health}`;
         manaLabel!.innerText = `Mana: ${data.stamina} / ${data.total_max_stamina}`;
@@ -3102,7 +3102,7 @@ socket.onmessage = async (event) => {
           t.max_stamina = stats.total_max_stamina;
         }
 
-        if (statUI.style.left === "10px" && statUI.getAttribute("data-id") === String(target)) {
+        if (statUI.style.display !== "none" && statUI.getAttribute("data-id") === String(target)) {
           // Use existing player stats for fields not included in damage packet
           const displayLevel = stats.level !== undefined ? stats.level : t.stats.level;
           const displayStamina = stats.stamina !== undefined ? stats.stamina : t.stats.stamina;
@@ -3415,8 +3415,7 @@ socket.onmessage = async (event) => {
 
       statUI.setAttribute("data-id", data.id);
 
-      statUI.style.transition = "1s";
-      statUI.style.left = "10px";
+      statUI.style.display = "block";
       break;
     }
     case "NOTIFY": {

@@ -250,38 +250,239 @@ hotbarSlots.forEach((slot, index) => {
 
 let activeCastbarClone: HTMLDivElement | null = null;
 
-function toggleUI(element: HTMLElement, toggleFlag: boolean, hidePosition: number) {
-  element.style.transition = "1s";
-  element.style.right = toggleFlag ? hidePosition.toString() : "10";
-  element.classList.toggle("open", !toggleFlag);
-  return !toggleFlag;
+interface PanelDragTarget {
+  element: HTMLElement;
+  handle: HTMLElement;
+  storageKey: string;
+}
+
+const GRID_SIZE = 16;
+
+let panelDragActive = false;
+let panelDragStartX = 0;
+let panelDragStartY = 0;
+let panelDragOffsetX = 0;
+let panelDragOffsetY = 0;
+let activeDragPanel: PanelDragTarget | null = null;
+
+// Grid overlay for UI edit mode
+const gridOverlay = document.createElement("div");
+gridOverlay.id = "ui-edit-grid";
+gridOverlay.style.cssText =
+  "position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;" +
+  "pointer-events:none;display:none;" +
+  `background-image:linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px);` +
+  `background-size:${GRID_SIZE}px ${GRID_SIZE}px;`;
+document.body.appendChild(gridOverlay);
+
+document.addEventListener("keydown", (e: KeyboardEvent) => {
+  if (e.key === "Control" && !e.repeat) {
+    gridOverlay.style.display = "block";
+  }
+});
+
+document.addEventListener("keyup", (e: KeyboardEvent) => {
+  if (e.key === "Control") {
+    gridOverlay.style.display = "none";
+  }
+});
+
+function loadPanelPosition(element: HTMLElement, storageKey: string) {
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      const pos = JSON.parse(saved);
+      element.style.left = pos.x;
+      element.style.top = pos.y;
+      element.style.bottom = "auto";
+      element.style.right = "auto";
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function savePanelPosition(storageKey: string, left: string, top: string) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({ x: left, y: top }));
+  } catch (e) { /* ignore */ }
+}
+
+function shouldSkipDrag(target: HTMLElement): boolean {
+  const tag = target.tagName;
+  if (tag === "BUTTON" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || tag === "A") return true;
+  if (target.closest(".slot, button, input, select, textarea, a")) return true;
+  return false;
+}
+
+function registerPanelDrag(panel: PanelDragTarget) {
+  const { element, handle, storageKey } = panel;
+
+  loadPanelPosition(element, storageKey);
+
+  element.style.cursor = "grab";
+  handle.style.cursor = "grab";
+
+  handle.addEventListener("mousedown", (e: MouseEvent) => {
+    if (!e.ctrlKey) return;
+    if (shouldSkipDrag(e.target as HTMLElement)) return;
+    panelDragActive = true;
+    activeDragPanel = panel;
+    panelDragStartX = e.clientX;
+    panelDragStartY = e.clientY;
+    const rect = element.getBoundingClientRect();
+    panelDragOffsetX = rect.left;
+    panelDragOffsetY = rect.top;
+    element.style.cursor = "grabbing";
+    document.body.style.cursor = "grabbing";
+    element.style.zIndex = "1000";
+    element.style.margin = "0";
+    element.style.bottom = "auto";
+    element.style.right = "auto";
+    element.style.transform = "none";
+    element.style.left = `${panelDragOffsetX}px`;
+    element.style.top = `${panelDragOffsetY}px`;
+    e.preventDefault();
+  });
+
+  handle.addEventListener("touchstart", (e: TouchEvent) => {
+    if (shouldSkipDrag(e.target as HTMLElement)) return;
+    const touch = e.touches[0];
+    panelDragActive = true;
+    activeDragPanel = panel;
+    panelDragStartX = touch.clientX;
+    panelDragStartY = touch.clientY;
+    const rect = element.getBoundingClientRect();
+    panelDragOffsetX = rect.left;
+    panelDragOffsetY = rect.top;
+    element.style.cursor = "grabbing";
+    document.body.style.cursor = "grabbing";
+    element.style.zIndex = "1000";
+    element.style.margin = "0";
+    element.style.bottom = "auto";
+    element.style.right = "auto";
+    element.style.transform = "none";
+    element.style.left = `${panelDragOffsetX}px`;
+    element.style.top = `${panelDragOffsetY}px`;
+  }, { passive: true });
+}
+
+document.addEventListener("mousemove", (e: MouseEvent) => {
+  if (!panelDragActive || !activeDragPanel) return;
+  const deltaX = e.clientX - panelDragStartX;
+  const deltaY = e.clientY - panelDragStartY;
+  let newX = panelDragOffsetX + deltaX;
+  let newY = panelDragOffsetY + deltaY;
+  const rect = activeDragPanel.element.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width;
+  const maxY = window.innerHeight - rect.height;
+  newX = Math.max(0, Math.min(newX, maxX));
+  newY = Math.max(0, Math.min(newY, maxY));
+  newX = Math.round(newX / GRID_SIZE) * GRID_SIZE;
+  newY = Math.round(newY / GRID_SIZE) * GRID_SIZE;
+  activeDragPanel.element.style.left = `${newX}px`;
+  activeDragPanel.element.style.top = `${newY}px`;
+});
+
+document.addEventListener("touchmove", (e: TouchEvent) => {
+  if (!panelDragActive || !activeDragPanel) return;
+  const touch = e.touches[0];
+  const deltaX = touch.clientX - panelDragStartX;
+  const deltaY = touch.clientY - panelDragStartY;
+  let newX = panelDragOffsetX + deltaX;
+  let newY = panelDragOffsetY + deltaY;
+  const rect = activeDragPanel.element.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width;
+  const maxY = window.innerHeight - rect.height;
+  newX = Math.max(0, Math.min(newX, maxX));
+  newY = Math.max(0, Math.min(newY, maxY));
+  activeDragPanel.element.style.left = `${newX}px`;
+  activeDragPanel.element.style.top = `${newY}px`;
+}, { passive: true });
+
+function endDrag() {
+  if (!activeDragPanel) return;
+  panelDragActive = false;
+  activeDragPanel.element.style.cursor = "grab";
+  activeDragPanel.handle.style.cursor = "grab";
+  document.body.style.cursor = "";
+  activeDragPanel.element.style.zIndex = "";
+  savePanelPosition(activeDragPanel.storageKey, activeDragPanel.element.style.left, activeDragPanel.element.style.top);
+  activeDragPanel = null;
+}
+
+document.addEventListener("mouseup", () => {
+  if (!panelDragActive) return;
+  endDrag();
+});
+
+document.addEventListener("touchend", () => {
+  if (!panelDragActive) return;
+  endDrag();
+});
+
+function toggleUI(element: HTMLElement, _toggleFlag?: boolean, _hidePosition?: number) {
+  const isOpen = element.style.display === "block";
+  element.style.display = isOpen ? "none" : "block";
+  element.classList.toggle("open", !isOpen);
+  return !isOpen;
 }
 
 function toggleDebugContainer() {
   debugContainer.style.display = debugContainer.style.display === "block" ? "none" : "block";
 }
 
-function handleStatsUI() {
-
-  if (statUI.style.left === "10px") {
-
-    statUI.style.transition = "1s";
-    statUI.style.left = "-600px";
-  } else {
-
-    sendRequest({ type: "INSPECTPLAYER", data: null });
-  }
-}
-
 const statScreenClose = document.getElementById("stat-screen-close") as HTMLButtonElement;
 if (statScreenClose) {
   statScreenClose.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (statUI.style.left === "10px") {
-      statUI.style.transition = "1s";
-      statUI.style.left = "-600px";
-    }
+    statUI.style.display = "none";
   });
+}
+
+function handleStatsUI() {
+  if (statUI.style.display === "block") {
+    statUI.style.display = "none";
+  } else {
+    sendRequest({ type: "INSPECTPLAYER", data: null });
+  }
+}
+
+// Register draggable panels
+if (statUI) {
+  registerPanelDrag({ element: statUI, handle: statUI, storageKey: "panel-pos-stat-screen" });
+}
+
+const chatContainer = document.getElementById("chat-container") as HTMLDivElement;
+if (chatContainer) {
+  registerPanelDrag({ element: chatContainer, handle: chatContainer, storageKey: "panel-pos-chat" });
+}
+
+if (inventoryUI) {
+  registerPanelDrag({ element: inventoryUI, handle: inventoryUI, storageKey: "panel-pos-inventory" });
+}
+
+if (spellBookUI) {
+  registerPanelDrag({ element: spellBookUI, handle: spellBookUI, storageKey: "panel-pos-spellbook" });
+}
+
+if (collectablesUI) {
+  registerPanelDrag({ element: collectablesUI, handle: collectablesUI, storageKey: "panel-pos-collectables" });
+}
+
+if (friendsListUI) {
+  registerPanelDrag({ element: friendsListUI, handle: friendsListUI, storageKey: "panel-pos-friends" });
+}
+
+if (guildContainer) {
+  registerPanelDrag({ element: guildContainer, handle: guildContainer, storageKey: "panel-pos-guild" });
+}
+
+const partyContainer = document.getElementById("party-container") as HTMLDivElement;
+if (partyContainer) {
+  registerPanelDrag({ element: partyContainer, handle: partyContainer, storageKey: "panel-pos-party" });
+}
+
+if (adminPanelContainer) {
+  registerPanelDrag({ element: adminPanelContainer, handle: adminPanelContainer, storageKey: "panel-pos-admin" });
 }
 
 // Touch-based drag from spellbook to hotbar, and hotbar rearrange/remove (mobile)

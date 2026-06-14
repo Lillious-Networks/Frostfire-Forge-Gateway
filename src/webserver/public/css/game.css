@@ -162,13 +162,12 @@ body {
 #inventory {
   position: fixed;
   bottom: 25px;
-  right: -350px;
+  right: 10px;
   z-index: 1002;
+  display: none;
   background: url("../img/ui/ui-book.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  transition: right ease-in-out 1s;
-  will-change: right;
   width: 335px;
   height: 285px;
 }
@@ -258,15 +257,14 @@ body {
 #guild-container {
   position: fixed;
   top: 100px;
-  right: -425;
+  right: 10px;
   z-index: 1002;
+  display: none;
   background: url("../img/ui/ui-book.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
   width: 404px;
   height: 388px;
-  will-change: right;
-  transition: right 1s ease-in-out;
 }
 
 /* ========================================
@@ -276,15 +274,14 @@ body {
 #admin-panel-container {
   position: fixed;
   top: 50px;
-  right: -480;
+  right: 10px;
   z-index: 1002;
+  display: none;
   width: 450px;
   height: 630px;
   background: url("../img/ui/ui-book.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  will-change: right;
-  transition: right 1s ease-in-out;
 }
 
 #admin-panel-content {
@@ -778,14 +775,14 @@ body {
 #friends-list-container {
   position: fixed;
   top: 100px;
-  right: -425;
+  right: 10px;
   z-index: 1002;
+  display: none;
   background: url("../img/ui/ui-book.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
   width: 404px;
   height: 388px;
-  will-change: right;
 }
 
 #friends-list {
@@ -882,14 +879,14 @@ body {
 #spell-book-container, #collectables-container {
   position: fixed;
   top: 100px;
-  right: -425;
+  right: 10px;
   z-index: 1002;
+  display: none;
   background: url("../img/ui/ui-book.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
   width: 404px;
   height: 388px;
-  will-change: right;
 }
 
 #spell-book-container #grid, #collectables-container #grid {
@@ -1151,8 +1148,6 @@ body {
   z-index: 100;
   width: 400px;
   height: 300px;
-  margin: 60px;
-  scale: 1.2;
 }
 
 #chat {
@@ -1971,12 +1966,11 @@ input::placeholder(:not(#chat-container input)) {
   width: 600px;
   height: 513px;
   top: 50px;
-  left: -600;
+  left: 10px;
   z-index: 100;
-  transition: bottom ease-in-out 1s;
+  display: none;
   background: url("../img/ui/ui-stats-sheet.png") center center;
   background-repeat: no-repeat;
-  will-change: left;
 }
 
 #stat-screen-close {
@@ -5104,7 +5098,7 @@ body.mobile-landscape {
     width: 542px;
     height: 466px;
     top: 100px;
-    left: -542px;
+    left: 10px;
     transform-origin: top left;
   }
 
@@ -6369,10 +6363,7 @@ body.ipad-device #game-notification-container {
     transform: scale(0.55);
     transform-origin: top left;
     top: max(10px, env(safe-area-inset-top)) !important;
-  }
-
-  #stat-screen[style*="left: 10px"] {
-    left: calc(90px + env(safe-area-inset-left)) !important;
+    left: 10px;
   }
 }
 
