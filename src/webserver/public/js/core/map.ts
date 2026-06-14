@@ -249,10 +249,12 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
     const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
 
-    const actualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    const fullHeight = actualHeight;
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = fullHeight * dpr;
+    const bodyStyle = getComputedStyle(document.body);
+    const displayWidth = parseFloat(bodyStyle.width) || window.innerWidth;
+    const displayHeight = parseFloat(bodyStyle.height) || window.innerHeight;
+
+    canvas.width = displayWidth * dpr;
+    canvas.height = displayHeight * dpr;
 
 
     canvas.style.position = "fixed";
@@ -262,8 +264,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     canvas.style.bottom = "0";
     canvas.style.backgroundColor = "#000000";
 
-    canvas.style.width = window.innerWidth + "px";
-    canvas.style.height = fullHeight + "px";
+    canvas.style.width = displayWidth + "px";
+    canvas.style.height = displayHeight + "px";
 
     canvas.style.display = "block";
 
@@ -273,8 +275,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
         const mobileZoom = 0.85;
         ctx.scale(dpr * mobileZoom, dpr * mobileZoom);
 
-        ctx.translate((window.innerWidth * (1 - mobileZoom)) / (2 * mobileZoom),
-                      (fullHeight * (1 - mobileZoom)) / (2 * mobileZoom));
+        ctx.translate((displayWidth * (1 - mobileZoom)) / (2 * mobileZoom),
+                      (displayHeight * (1 - mobileZoom)) / (2 * mobileZoom));
       } else {
         ctx.scale(dpr, dpr);
       }

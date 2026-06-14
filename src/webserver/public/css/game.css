@@ -5131,8 +5131,8 @@ body.mobile-landscape {
   #stat-screen {
     width: 542px;
     height: 466px;
-  top: 295px;
-    left: 10px;
+    top: 295px;
+    left: max(10px, env(safe-area-inset-left, 10px));
     transform-origin: top left;
   }
 
@@ -6397,7 +6397,7 @@ body.ipad-device #game-notification-container {
     transform: scale(0.55);
     transform-origin: top left;
     top: max(10px, env(safe-area-inset-top)) !important;
-    left: 10px;
+    left: max(10px, env(safe-area-inset-left, 10px));
   }
 }
 
