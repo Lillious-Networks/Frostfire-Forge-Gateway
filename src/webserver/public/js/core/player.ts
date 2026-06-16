@@ -245,6 +245,10 @@ async function createPlayer(data: any) {
     },
     showCastbar: function (context: CanvasRenderingContext2D) {
       if (!this.castingSpell) return;
+      if (this.castingDuration === 0 && !this.castingInterrupted) {
+        this.castingSpell = null;
+        return;
+      }
 
       const now = performance.now();
       const elapsed = now - this.castingStartTime;

@@ -1253,6 +1253,12 @@ function castSpell(id: string, spell: string, time: number) {
     const player = Array.from(cache.players).find(p => p.id === id);
 
     if (player) {
+      if (time === 0) {
+        player.castingSpell = null;
+        player.castingDuration = 0;
+        player.castingInterrupted = false;
+        return;
+      }
       if (spell === 'interrupted' || spell === 'failed') {
 
         if (player.castingSpell && !player.castingInterrupted) {
@@ -1278,6 +1284,21 @@ function castSpell(id: string, spell: string, time: number) {
         player.castingInterrupted = false;
         player.castingInterruptedProgress = undefined;
       }
+    }
+    return;
+  }
+
+  if (time === 0) {
+    if (activeCastbarClone) {
+      activeCastbarClone.remove();
+      activeCastbarClone = null;
+    }
+    const cache = Cache.getInstance();
+    const localPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
+    if (localPlayer) {
+      localPlayer.castingSpell = null;
+      localPlayer.castingDuration = 0;
+      localPlayer.castingInterrupted = false;
     }
     return;
   }

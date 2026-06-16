@@ -261,7 +261,7 @@ function handleEscapeKey() {
   // Check if currently casting a spell and cancel it instead of opening pause menu
   const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
 
-  if (currentPlayer && currentPlayer.castingSpell && !currentPlayer.castingInterrupted) {
+  if (currentPlayer && currentPlayer.castingSpell && !currentPlayer.castingInterrupted && currentPlayer.castingDuration > 0) {
     // Cancel the spell cast
     currentPlayer.castingSpell = null;
     currentPlayer.castingInterrupted = true;
