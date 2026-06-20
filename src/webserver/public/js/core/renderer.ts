@@ -1124,14 +1124,6 @@ function animationLoop() {
             iconSize,
             iconSize
           );
-        } else {
-
-          ctx.fillStyle = 'white';
-          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-          ctx.shadowBlur = 10;
-          ctx.beginPath();
-          ctx.arc(projectile.currentX, projectile.currentY, 5, 0, Math.PI * 2);
-          ctx.fill();
         }
 
         ctx.restore();
