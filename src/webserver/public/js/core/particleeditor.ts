@@ -310,6 +310,48 @@ class ParticleEditor {
         });
       }
     }
+
+    window.addEventListener("resize", () => this.repositionPanelsToViewport());
+  }
+
+  private pePrevViewportWidth = window.innerWidth;
+  private pePrevViewportHeight = window.innerHeight;
+
+  private repositionPanelsToViewport() {
+    const panels = [
+      { panel: this.propertiesPanel, storageKey: "pe-properties-pos" },
+      { panel: this.particleListPanel, storageKey: "pe-list-pos" },
+      { panel: this.previewPanel, storageKey: "pe-preview-pos" },
+    ];
+
+    const newW = window.innerWidth;
+    const newH = window.innerHeight;
+    const oldW = this.pePrevViewportWidth;
+    const oldH = this.pePrevViewportHeight;
+    this.pePrevViewportWidth = newW;
+    this.pePrevViewportHeight = newH;
+    if (newW === oldW && newH === oldH) return;
+
+    for (const { panel, storageKey } of panels) {
+      if (!panel) continue;
+      const rect = panel.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+
+      const availOldX = oldW - rect.width;
+      const availOldY = oldH - rect.height;
+      const availNewX = newW - rect.width;
+      const availNewY = newH - rect.height;
+
+      const fracX = availOldX > 0 ? Math.min(Math.max(rect.left / availOldX, 0), 1) : 0;
+      const fracY = availOldY > 0 ? Math.min(Math.max(rect.top / availOldY, 0), 1) : 0;
+
+      const newX = availNewX > 0 ? Math.round(fracX * availNewX) : 0;
+      const newY = availNewY > 0 ? Math.round(fracY * availNewY) : 0;
+
+      panel.style.left = newX + "px";
+      panel.style.top = newY + "px";
+      localStorage.setItem(storageKey, JSON.stringify({ x: newX, y: newY }));
+    }
   }
 
   private loadStoredPanelStates() {

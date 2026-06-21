@@ -19,6 +19,8 @@ class DraggableUI {
   private panels: Map<string, DraggablePanel> = new Map();
   private storageKey = 'ui-panel-positions';
   private ctrlHeld = false;
+  private prevViewportWidth = window.innerWidth;
+  private prevViewportHeight = window.innerHeight;
 
   constructor() {
     this.loadPositions();
@@ -28,6 +30,43 @@ class DraggableUI {
       this.ctrlHeld = false;
       this.updateAllCursors();
     });
+    window.addEventListener('resize', () => this.repositionPanelsToViewport());
+  }
+
+  private repositionPanelsToViewport() {
+    const newW = window.innerWidth;
+    const newH = window.innerHeight;
+    const oldW = this.prevViewportWidth;
+    const oldH = this.prevViewportHeight;
+    this.prevViewportWidth = newW;
+    this.prevViewportHeight = newH;
+    if (newW === oldW && newH === oldH) return;
+
+    for (const [id, panel] of this.panels.entries()) {
+      if (panel.isDragging) continue;
+      if (!panel.element.style.left && !panel.element.style.top) continue;
+
+      const rect = panel.element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+
+      const availOldX = oldW - rect.width;
+      const availOldY = oldH - rect.height;
+      const availNewX = newW - rect.width;
+      const availNewY = newH - rect.height;
+
+      const fracX = availOldX > 0 ? Math.min(Math.max(rect.left / availOldX, 0), 1) : 0;
+      const fracY = availOldY > 0 ? Math.min(Math.max(rect.top / availOldY, 0), 1) : 0;
+
+      const newX = availNewX > 0 ? Math.round(fracX * availNewX) : 0;
+      const newY = availNewY > 0 ? Math.round(fracY * availNewY) : 0;
+
+      panel.element.style.left = `${newX}px`;
+      panel.element.style.top = `${newY}px`;
+      panel.position.x = newX;
+      panel.position.y = newY;
+
+      this.savePosition(id, panel.position);
+    }
   }
 
   private onKeyChange(e: KeyboardEvent, down: boolean) {

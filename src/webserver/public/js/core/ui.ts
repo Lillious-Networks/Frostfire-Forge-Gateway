@@ -433,6 +433,52 @@ if (!isMobileDevice) {
   }, { passive: true });
 }
 
+let prevViewportWidth = window.innerWidth;
+let prevViewportHeight = window.innerHeight;
+
+function repositionPanelsToViewport() {
+  if (isMobileDevice) return;
+
+  const newW = window.innerWidth;
+  const newH = window.innerHeight;
+  const oldW = prevViewportWidth;
+  const oldH = prevViewportHeight;
+  prevViewportWidth = newW;
+  prevViewportHeight = newH;
+  if (newW === oldW && newH === oldH) return;
+
+  for (const panel of registeredDragPanels) {
+    const el = panel.element;
+    if (panelDragActive && activeDragPanel === panel) continue;
+    if (!el.style.left && !el.style.top) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) continue;
+
+    const availOldX = oldW - rect.width;
+    const availOldY = oldH - rect.height;
+    const availNewX = newW - rect.width;
+    const availNewY = newH - rect.height;
+
+    const fracX = availOldX > 0 ? Math.min(Math.max(rect.left / availOldX, 0), 1) : 0;
+    const fracY = availOldY > 0 ? Math.min(Math.max(rect.top / availOldY, 0), 1) : 0;
+
+    const newX = availNewX > 0 ? Math.round(fracX * availNewX) : 0;
+    const newY = availNewY > 0 ? Math.round(fracY * availNewY) : 0;
+
+    el.style.margin = "0";
+    el.style.bottom = "auto";
+    el.style.right = "auto";
+    el.style.transform = "none";
+    el.style.left = `${newX}px`;
+    el.style.top = `${newY}px`;
+    savePanelPosition(panel.storageKey, el.style.left, el.style.top);
+  }
+}
+
+if (!isMobileDevice) {
+  window.addEventListener("resize", repositionPanelsToViewport);
+}
+
 function endDrag() {
   if (!activeDragPanel) return;
   panelDragActive = false;

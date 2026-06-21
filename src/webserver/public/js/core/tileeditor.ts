@@ -361,6 +361,8 @@ class TileEditor {
     document.addEventListener('mousemove', (e) => this.onPanelDrag(e));
     document.addEventListener('mouseup', () => this.onPanelDragEnd());
 
+    window.addEventListener('resize', () => this.repositionPanelsToViewport());
+
     this.tilesetCanvas.addEventListener('mousedown', (e) => this.onTilesetMouseDown(e));
     this.tilesetCanvas.addEventListener('mousemove', (e) => this.onTilesetMouseMove(e));
     this.tilesetCanvas.addEventListener('mouseup', (e) => this.onTilesetMouseUp(e));
@@ -1952,6 +1954,48 @@ class TileEditor {
       panelState.panel.style.zIndex = '1000';
 
       this.savePanelPosition(id, panelState.panel);
+    });
+  }
+
+  private tePrevViewportWidth = window.innerWidth;
+  private tePrevViewportHeight = window.innerHeight;
+
+  private repositionPanelsToViewport() {
+    const newW = window.innerWidth;
+    const newH = window.innerHeight;
+    const oldW = this.tePrevViewportWidth;
+    const oldH = this.tePrevViewportHeight;
+    this.tePrevViewportWidth = newW;
+    this.tePrevViewportHeight = newH;
+    if (newW === oldW && newH === oldH) return;
+
+    this.panels.forEach((panelState, id) => {
+      if (panelState.isDragging) return;
+
+      const panel = panelState.panel;
+      if (!panel.style.left && !panel.style.top) return;
+
+      const rect = panel.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return;
+
+      const availOldX = oldW - rect.width;
+      const availOldY = oldH - rect.height;
+      const availNewX = newW - rect.width;
+      const availNewY = newH - rect.height;
+
+      const fracX = availOldX > 0 ? Math.min(Math.max(rect.left / availOldX, 0), 1) : 0;
+      const fracY = availOldY > 0 ? Math.min(Math.max(rect.top / availOldY, 0), 1) : 0;
+
+      const newX = availNewX > 0 ? Math.round(fracX * availNewX) : 0;
+      const newY = availNewY > 0 ? Math.round(fracY * availNewY) : 0;
+
+      panel.style.transform = 'none';
+      panel.style.left = `${newX}px`;
+      panel.style.top = `${newY}px`;
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+
+      this.savePanelPosition(id, panel);
     });
   }
 
