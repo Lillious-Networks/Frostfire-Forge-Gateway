@@ -82,6 +82,20 @@ function renderMinimap() {
   bufferCtx.imageSmoothingEnabled = true;
   bufferCtx.imageSmoothingQuality = "high";
 
+  const mapPixelWidth = window.mapData.width * window.mapData.tilewidth;
+  const mapPixelHeight = window.mapData.height * window.mapData.tileheight;
+  const scale = BUFFER_SIZE / worldViewWidth;
+
+  const mapBufX = (0 - worldLeft) * scale;
+  const mapBufY = (0 - worldTop) * scale;
+  const mapBufW = mapPixelWidth * scale;
+  const mapBufH = mapPixelHeight * scale;
+
+  bufferCtx.save();
+  bufferCtx.beginPath();
+  bufferCtx.rect(mapBufX, mapBufY, mapBufW, mapBufH);
+  bufferCtx.clip();
+
   window.mapData.loadedChunks.forEach((chunkData: any, _chunkKey: string) => {
     const cx = chunkData.chunkX;
     const cy = chunkData.chunkY;
@@ -97,11 +111,12 @@ function renderMinimap() {
       return;
     }
 
-    const scale = BUFFER_SIZE / worldViewWidth;
     const bufX = (chunkWorldX - worldLeft) * scale;
     const bufY = (chunkWorldY - worldTop) * scale;
-    const bufW = chunkPixelSize * scale;
-    const bufH = chunkPixelSize * scale;
+    const actualW = chunkData.width * window.mapData.tilewidth;
+    const actualH = chunkData.height * window.mapData.tileheight;
+    const bufW = actualW * scale;
+    const bufH = actualH * scale;
 
     const lowerCanvas = chunkData.lowerCanvas;
     if (lowerCanvas) {
@@ -121,6 +136,8 @@ function renderMinimap() {
       );
     }
   });
+
+  bufferCtx.restore();
 
   // Draw the composited buffer onto the minimap
   const ctx = minimapCtx;
