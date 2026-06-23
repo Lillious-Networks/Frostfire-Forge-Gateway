@@ -1,4 +1,4 @@
-import { getIsLoaded, cachedPlayerId, sendRequest } from "./socket.js";
+import { getIsLoaded, getMovementAllowed, cachedPlayerId, sendRequest } from "./socket.js";
 import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
 import { config } from "../web/global.js";
@@ -39,6 +39,8 @@ const PLAYER_SMOOTHING_FACTOR = 0.2; // Higher = faster movement
 
 function updateLocalPlayerPrediction(currentPlayer: any, now: number) {
   if (!currentPlayer) return;
+  // Movement stays locked until the loading screen begins to fade.
+  if (!getMovementAllowed()) return;
   
   const isMoving = getIsMoving() && getIsKeyPressed();
   
@@ -857,7 +859,7 @@ function animationLoop() {
   (window as any).cameraX = cameraX;
   (window as any).cameraY = cameraY;
 
-  if (getIsMoving() && getIsKeyPressed()) {
+  if (getMovementAllowed() && getIsMoving() && getIsKeyPressed()) {
     if (document.activeElement === chatInput || document.activeElement === friendsListSearch) {
       setIsMoving(false);
       lastDirection = "";

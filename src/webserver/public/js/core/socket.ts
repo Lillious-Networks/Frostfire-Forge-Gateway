@@ -2132,6 +2132,7 @@ socket.onmessage = async (event) => {
         const isTransition = loaded;
 
         loaded = false;
+        movementAllowed = false;
         selfPlayerSpriteLoaded = false;
         snapshotApplied = false;
 
@@ -2219,9 +2220,9 @@ socket.onmessage = async (event) => {
           (window as any).__firstFrameRendered = false;
         }
 
-        const mapLoaded = await loadMap(data);
+        loaded = await loadMap(data);
 
-        if (mapLoaded) {
+        if (loaded) {
           requestWakeLock();
           const { progressBar } = await import('./ui.js');
           if (progressBar) progressBar.style.width = '100%';
@@ -2229,7 +2230,7 @@ socket.onmessage = async (event) => {
           hideLoadingScreen();
         }
 
-        if (mapLoaded) {
+        if (loaded) {
           updateAdminMapInput();
         }
       }
@@ -3729,6 +3730,9 @@ function showNotification(
 }
 
 let loaded: boolean = false;
+// Gates player movement only: flips true when the loading screen starts fading,
+// independent of `loaded` (which gates rendering/camera and must be ready first).
+let movementAllowed: boolean = false;
 export let selfPlayerSpriteLoaded: boolean = false;
 
 export function setSelfPlayerSpriteLoaded(value: boolean) {
@@ -3765,7 +3769,7 @@ async function hideLoadingScreen() {
     await new Promise(resolve => setTimeout(resolve, 500));
 
     // Unlock player movement exactly as the loading screen begins to fade out.
-    loaded = true;
+    movementAllowed = true;
 
     loadingScreen.style.transition = "1s";
     loadingScreen.style.opacity = "0";
@@ -3780,12 +3784,16 @@ async function hideLoadingScreen() {
     }, 1000);
   } else {
     // No loading screen element; unlock immediately so the game stays playable.
-    loaded = true;
+    movementAllowed = true;
   }
 }
 
 function getIsLoaded() {
   return loaded;
+}
+
+function getMovementAllowed() {
+  return movementAllowed;
 }
 
 async function isLoaded() {
@@ -3876,4 +3884,4 @@ document.addEventListener('visibilitychange', async () => {
   pendingMapChunkRequests
 };
 
-export { sendRequest, cachedPlayerId, getIsLoaded };
+export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed };

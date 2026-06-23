@@ -1,4 +1,4 @@
-import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
+import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getCameraX, getCameraY } from "./renderer.js";
@@ -50,7 +50,7 @@ window.addEventListener("gamepaddisconnected", () => {
 });
 
 window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
-  if (!getIsLoaded()) return;
+  if (!getIsLoaded() || !getMovementAllowed()) return;
   if (pauseMenu.style.display == "block") return;
 
   const x = e.detail.x;
