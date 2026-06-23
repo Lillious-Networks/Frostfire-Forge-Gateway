@@ -2219,9 +2219,9 @@ socket.onmessage = async (event) => {
           (window as any).__firstFrameRendered = false;
         }
 
-        loaded = await loadMap(data);
+        const mapLoaded = await loadMap(data);
 
-        if (loaded) {
+        if (mapLoaded) {
           requestWakeLock();
           const { progressBar } = await import('./ui.js');
           if (progressBar) progressBar.style.width = '100%';
@@ -2229,7 +2229,7 @@ socket.onmessage = async (event) => {
           hideLoadingScreen();
         }
 
-        if (loaded) {
+        if (mapLoaded) {
           updateAdminMapInput();
         }
       }
@@ -2914,7 +2914,7 @@ socket.onmessage = async (event) => {
       fpsSlider.value = data.fps;
       document.getElementById(
         "limit-fps-label"
-      )!.innerText = `FPS: (${fpsSlider.value})`;
+      )!.innerText = `FPS: (${Number(fpsSlider.value) >= 240 ? "240+" : fpsSlider.value})`;
       musicSlider.value = data.music_volume || 0;
       document.getElementById(
         "music-volume-label"
@@ -3764,6 +3764,9 @@ async function hideLoadingScreen() {
   if (loadingScreen) {
     await new Promise(resolve => setTimeout(resolve, 500));
 
+    // Unlock player movement exactly as the loading screen begins to fade out.
+    loaded = true;
+
     loadingScreen.style.transition = "1s";
     loadingScreen.style.opacity = "0";
     if (_hideScreenTimer) clearTimeout(_hideScreenTimer);
@@ -3775,6 +3778,9 @@ async function hideLoadingScreen() {
         if (progressBarContainer) progressBarContainer.style.display = "block";
       }
     }, 1000);
+  } else {
+    // No loading screen element; unlock immediately so the game stays playable.
+    loaded = true;
   }
 }
 

@@ -2,7 +2,7 @@ import { npcImage, createCachedImage } from "./images.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
-import { particlePool } from "./npc.js";
+import { particlePool, getParticleSprite } from "./npc.js";
 import {
   windBurst,
   calculateWindSpeed,
@@ -326,18 +326,28 @@ function createEntity(data: any) {
         entity.lastEmitTime = {};
       }
 
-      const currentTime = performance.now();
       const emitInterval = (particle.interval || 1) / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
 
-      if (!entity.lastEmitTime[particle.name || '']) {
-        entity.lastEmitTime[particle.name || ''] = currentTime;
+      // Match the particle editor preview: cap the per-frame delta at one 60 FPS
+      // frame and drive emission from that same clock. iOS throttles
+      // requestAnimationFrame, so the renderer lets deltaTime spike up to ~500ms.
+      // If emission ran on wall-clock time while aging used the capped delta,
+      // particles would spawn faster than they die and pile up (brighter overlap,
+      // worse FPS). Sharing one clamped clock keeps spawn/death balanced.
+      const clampedDelta = Math.min(deltaTime, 0.01667);
+
+      if (entity.lastEmitTime[particle.name || ''] === undefined) {
+        entity.lastEmitTime[particle.name || ''] = 0;
       }
 
       if (!entity.particleArrays[particle.name || '']) {
         entity.particleArrays[particle.name || ''] = [];
       }
 
-      if (currentTime - entity.lastEmitTime[particle.name || ''] >= emitInterval) {
+      const particleArray = entity.particleArrays[particle.name || ''];
+      entity.lastEmitTime[particle.name || ''] += clampedDelta * 1000;
+
+      while (entity.lastEmitTime[particle.name || ''] >= emitInterval && particleArray.length < (particle.amount || 1)) {
         const randomLifetimeExtension = Math.random() * (particle.staggertime || 0);
         const baseLifetime = particle.lifetime || 1000;
         const windDirection = typeof particle.weather === 'object' ? particle.weather.wind_direction : null;
@@ -361,14 +371,8 @@ function createEntity(data: any) {
         newParticle.velocity.x = Number(particle.velocity?.x || 0) + windBias.x;
         newParticle.velocity.y = Number(particle.velocity?.y || 0) + windBias.y;
 
-        const particleArray = entity.particleArrays[particle.name || ''];
-        if (particleArray.length >= (particle.amount || 1)) {
-          const removed = particleArray.shift();
-          particlePool.release(removed);
-        }
-
         particleArray.push(newParticle);
-        entity.lastEmitTime[particle.name || ''] = currentTime;
+        entity.lastEmitTime[particle.name || ''] -= emitInterval;
       }
 
       const particles = entity.particleArrays[particle.name || ''];
@@ -378,7 +382,7 @@ function createEntity(data: any) {
       }
 
       // Update wind burst cycle - creates pulsating wind effect
-      const deltaTimeMs = deltaTime * 1000; // Convert deltaTime back to ms
+      const deltaTimeMs = clampedDelta * 1000; // Convert deltaTime back to ms
       windBurst.update(deltaTimeMs);
 
       const entityPosX = entity.position.x;
@@ -400,19 +404,25 @@ function createEntity(data: any) {
       // Velocity caps based on base particle velocity, wind can push beyond this
       const maxVelX = Math.abs(particle.velocity?.x || 0) || 1;
       const maxVelY = Math.abs(particle.velocity?.y || 0) || 1;
-      const fadeInDur = particle.lifetime * 0.4;
-      const fadeOutDur = particle.lifetime * 0.4;
       const particleOpacity = particle.opacity;
       const particleColor = particle.color || "white";
       const glowIntensity = particle.glow_intensity || 0;
-      const isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-      // Set blend mode once for all particles
-      context.globalCompositeOperation = isMobile ? 'source-over' : 'lighter';
+      // Set blend mode once for all particles. Use additive 'lighter' on every
+      // platform so iOS matches desktop/editor brightness instead of rendering
+      // ~2x dimmer with plain alpha compositing.
+      context.globalCompositeOperation = 'lighter';
+      // Clear any stray shadow state from earlier draws so it can't re-blur the sprite.
+      context.shadowColor = 'transparent';
+      context.shadowBlur = 0;
+
+      // The gradient + glow are identical for every particle of this config, so
+      // look the sprite up once per frame instead of per particle.
+      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity);
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.currentLife -= deltaTime * 1000;
+        p.currentLife -= clampedDelta * 1000;
 
         if (p.currentLife <= 0) {
           particles.splice(i, 1);
@@ -421,7 +431,7 @@ function createEntity(data: any) {
         }
 
         // Update physics - apply forces and velocity
-        const physDelta = isMobile ? Math.min(deltaTime, 0.1) : deltaTime;
+        const physDelta = clampedDelta;
 
         // Apply gravity
         p.velocity.y += gravY * physDelta;
@@ -443,7 +453,10 @@ function createEntity(data: any) {
         p.localposition.x += p.velocity.x * physDelta;
         p.localposition.y += p.velocity.y * physDelta;
 
-        // Calculate alpha
+        // Calculate alpha (fade durations based on this particle's own lifetime
+        // so staggertime extensions match the editor preview)
+        const fadeInDur = p.lifetime * 0.4;
+        const fadeOutDur = p.lifetime * 0.4;
         const lifeElapsed = p.lifetime - p.currentLife;
         let alpha;
         if (lifeElapsed < fadeInDur) {
@@ -456,54 +469,18 @@ function createEntity(data: any) {
 
         context.globalAlpha = alpha;
 
-        // Draw particle with gradient
-        const renderX = entityPosX - (p.size / 2) + p.localposition.x;
-        const renderY = entityPosY - (p.size / 2) + p.localposition.y;
-        const radius = p.size / 2;
-        const cx = renderX + radius;
-        const cy = renderY + radius;
-
-        const gradient = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
-
-        gradient.addColorStop(0, particleColor);
-        gradient.addColorStop(1, particleColor + "00");
-
-        if (glowIntensity > 0) {
-          context.shadowColor = particleColor;
-          context.shadowOffsetX = 0;
-          context.shadowOffsetY = 0;
-
-          const baseBlur = Math.max(4, radius * 0.8);
-          const glowLayers = Math.ceil(glowIntensity);
-          const glowOpacity = (glowIntensity - Math.floor(glowIntensity));
-
-          for (let g = 0; g < glowLayers; g++) {
-            context.shadowBlur = baseBlur + (g * 8 * glowIntensity);
-            context.globalAlpha = alpha * Math.max(0.3, 1 - (g * 0.2));
-            context.beginPath();
-            context.arc(cx, cy, radius, 0, Math.PI * 2);
-            context.fillStyle = gradient;
-            context.fill();
-          }
-
-          if (glowOpacity > 0) {
-            context.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * glowIntensity);
-            context.globalAlpha = alpha * glowOpacity * 0.5;
-            context.beginPath();
-            context.arc(cx, cy, radius, 0, Math.PI * 2);
-            context.fillStyle = gradient;
-            context.fill();
-          }
-
-          context.globalAlpha = alpha;
-          context.shadowColor = "transparent";
-          context.shadowBlur = 0;
-        } else {
-          context.beginPath();
-          context.arc(cx, cy, radius, 0, Math.PI * 2);
-          context.fillStyle = gradient;
-          context.fill();
-        }
+        // Draw the pre-rendered sprite (gradient + glow baked once). globalAlpha
+        // above applies the fade; additive 'lighter' blending is unchanged, so the
+        // composited result matches the previous per-frame draw.
+        const cx = entityPosX + p.localposition.x;
+        const cy = entityPosY + p.localposition.y;
+        context.drawImage(
+          particleSprite.canvas,
+          cx - particleSprite.half,
+          cy - particleSprite.half,
+          particleSprite.half * 2,
+          particleSprite.half * 2
+        );
       }
 
       // Reset blend mode

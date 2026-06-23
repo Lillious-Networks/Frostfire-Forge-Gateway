@@ -65,6 +65,87 @@ class ParticlePool {
 
 const particlePool = new ParticlePool();
 
+// Cache of pre-rendered particle sprites keyed by color|size|glow. Baking the
+// radial gradient (and any glow) once and reusing it via drawImage avoids the
+// costly per-frame createRadialGradient / shadowBlur work that tanks FPS on iOS.
+const particleSpriteCache = new Map<string, { canvas: HTMLCanvasElement; half: number }>();
+
+function getParticleSprite(color: string, radius: number, glowIntensity: number): { canvas: HTMLCanvasElement; half: number } {
+  const key = `${color}|${radius}|${glowIntensity}`;
+  const cached = particleSpriteCache.get(key);
+  if (cached) return cached;
+
+  // Bake at a fixed 1x scale on every device. shadowBlur and additive clamping
+  // are resolution-dependent, so baking at the device dpr made iOS (2x) glow at a
+  // different brightness than PC (1x). A constant scale keeps the rasterization —
+  // and thus brightness — identical everywhere (matching the 1x PC/editor look).
+  const scale = 1;
+
+  let baseBlur = 0;
+  let glowLayers = 0;
+  let glowOpacity = 0;
+  let pad = 0;
+  if (glowIntensity > 0) {
+    baseBlur = Math.max(4, radius * 0.8);
+    glowLayers = Math.ceil(glowIntensity);
+    glowOpacity = glowIntensity - Math.floor(glowIntensity);
+    const maxBlur = baseBlur + (glowLayers - 1) * 8 * glowIntensity;
+    // Canvas shadowBlur is a Gaussian (std-dev ~ blur/2) whose alpha is below
+    // 1/255 (imperceptible) past ~1.66x the blur. Pad to 2x for a safety margin
+    // while keeping the additive fill area as small as possible for FPS.
+    pad = Math.ceil(maxBlur * 2) + 4;
+  }
+
+  const sizeCss = Math.ceil(2 * (radius + pad));
+  const half = sizeCss / 2;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(sizeCss * scale));
+  canvas.height = Math.max(1, Math.ceil(sizeCss * scale));
+  const sctx = canvas.getContext("2d")!;
+  sctx.scale(scale, scale);
+
+  const gradient = sctx.createRadialGradient(half, half, 0, half, half, radius);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(1, color + "00");
+
+  // Accumulate exactly like the live draw so drawing the sprite with globalAlpha
+  // reproduces the same additive result.
+  sctx.globalCompositeOperation = "lighter";
+  sctx.fillStyle = gradient;
+
+  if (glowIntensity > 0) {
+    sctx.shadowColor = color;
+    sctx.shadowOffsetX = 0;
+    sctx.shadowOffsetY = 0;
+
+    for (let g = 0; g < glowLayers; g++) {
+      sctx.shadowBlur = baseBlur + (g * 8 * glowIntensity);
+      sctx.globalAlpha = Math.max(0.3, 1 - (g * 0.2));
+      sctx.beginPath();
+      sctx.arc(half, half, radius, 0, Math.PI * 2);
+      sctx.fill();
+    }
+
+    if (glowOpacity > 0) {
+      sctx.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * glowIntensity);
+      sctx.globalAlpha = glowOpacity * 0.5;
+      sctx.beginPath();
+      sctx.arc(half, half, radius, 0, Math.PI * 2);
+      sctx.fill();
+    }
+  } else {
+    sctx.globalAlpha = 1;
+    sctx.beginPath();
+    sctx.arc(half, half, radius, 0, Math.PI * 2);
+    sctx.fill();
+  }
+
+  const sprite = { canvas, half };
+  particleSpriteCache.set(key, sprite);
+  return sprite;
+}
+
 async function reinitNpcSprite(npc: any) {
   npc.layeredAnimation = null;
   npc.staticImage = null;
@@ -214,18 +295,28 @@ function createNPC(data: any) {
         return;
       }
 
-      const currentTime = performance.now();
       const emitInterval = (particle.interval || 1) / 60 * 1000; // Frame-rate independent: convert 60 FPS frame interval to milliseconds
 
-      if (!npc.lastEmitTime[particle.name || '']) {
-        npc.lastEmitTime[particle.name || ''] = currentTime;
+      // Match the particle editor preview: cap the per-frame delta at one 60 FPS
+      // frame and drive emission from that same clock. iOS throttles
+      // requestAnimationFrame, so the renderer lets deltaTime spike up to ~500ms.
+      // If emission ran on wall-clock time while aging used the capped delta,
+      // particles would spawn faster than they die and pile up (brighter overlap,
+      // worse FPS). Sharing one clamped clock keeps spawn/death balanced.
+      const clampedDelta = Math.min(deltaTime, 0.01667);
+
+      if (npc.lastEmitTime[particle.name || ''] === undefined) {
+        npc.lastEmitTime[particle.name || ''] = 0;
       }
 
       if (!npc.particleArrays[particle.name || '']) {
         npc.particleArrays[particle.name || ''] = [];
       }
 
-      if (currentTime - npc.lastEmitTime[particle.name || ''] >= emitInterval) {
+      const particleArray = npc.particleArrays[particle.name || ''];
+      npc.lastEmitTime[particle.name || ''] += clampedDelta * 1000;
+
+      while (npc.lastEmitTime[particle.name || ''] >= emitInterval && particleArray.length < (particle.amount || 1)) {
         const randomLifetimeExtension = Math.random() * (particle.staggertime || 0);
         const baseLifetime = particle.lifetime || 1000;
         const windDirection = typeof particle.weather === 'object' ? particle.weather.wind_direction : null;
@@ -250,14 +341,8 @@ function createNPC(data: any) {
         newParticle.velocity.x = Number(particle.velocity.x || 0) + windBias.x;
         newParticle.velocity.y = Number(particle.velocity.y || 0) + windBias.y;
 
-        const particleArray = npc.particleArrays[particle.name || ''];
-        if (particleArray.length >= particle.amount) {
-          const removed = particleArray.shift();
-          particlePool.release(removed);
-        }
-
         particleArray.push(newParticle);
-        npc.lastEmitTime[particle.name || ''] = currentTime;
+        npc.lastEmitTime[particle.name || ''] -= emitInterval;
       }
 
       const particles = npc.particleArrays[particle.name || ''];
@@ -291,7 +376,7 @@ function createNPC(data: any) {
       }
 
       // Update wind burst cycle - creates pulsating wind effect
-      const deltaTimeMs = deltaTime * 1000; // Convert deltaTime back to ms
+      const deltaTimeMs = clampedDelta * 1000; // Convert deltaTime back to ms
       windBurst.update(deltaTimeMs);
 
       const npcPosX = npc.position.x + 16;
@@ -313,19 +398,25 @@ function createNPC(data: any) {
       // Velocity caps based on base particle velocity, wind can push beyond this
       const maxVelX = Math.abs(particle.velocity.x) || 1;
       const maxVelY = Math.abs(particle.velocity.y) || 1;
-      const fadeInDur = particle.lifetime * 0.4;
-      const fadeOutDur = particle.lifetime * 0.4;
       const particleOpacity = particle.opacity;
       const particleColor = particle.color || "white";
       const glowIntensity = particle.glow_intensity || 0;
-      const isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
-      // Set blend mode once for all particles
-      context.globalCompositeOperation = isMobile ? 'source-over' : 'lighter';
+      // Set blend mode once for all particles. Use additive 'lighter' on every
+      // platform so iOS matches desktop/editor brightness instead of rendering
+      // ~2x dimmer with plain alpha compositing.
+      context.globalCompositeOperation = 'lighter';
+      // Clear any stray shadow state from earlier draws so it can't re-blur the sprite.
+      context.shadowColor = 'transparent';
+      context.shadowBlur = 0;
+
+      // The gradient + glow are identical for every particle of this config, so
+      // look the sprite up once per frame instead of per particle.
+      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity);
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.currentLife -= deltaTime * 1000;
+        p.currentLife -= clampedDelta * 1000;
 
         if (p.currentLife <= 0) {
           particles.splice(i, 1);
@@ -335,7 +426,7 @@ function createNPC(data: any) {
 
         // Update physics - apply forces and velocity (match preview logic exactly)
         // Use capped delta on mobile to prevent physics explosions
-        const physDelta = isMobile ? Math.min(deltaTime, 0.1) : deltaTime;
+        const physDelta = clampedDelta;
 
         // Apply gravity
         p.velocity.y += gravY * physDelta;
@@ -357,7 +448,10 @@ function createNPC(data: any) {
         p.localposition.x += p.velocity.x * physDelta;
         p.localposition.y += p.velocity.y * physDelta;
 
-        // Calculate alpha
+        // Calculate alpha (fade durations based on this particle's own lifetime
+        // so staggertime extensions match the editor preview)
+        const fadeInDur = p.lifetime * 0.4;
+        const fadeOutDur = p.lifetime * 0.4;
         const lifeElapsed = p.lifetime - p.currentLife;
         let alpha;
         if (lifeElapsed < fadeInDur) {
@@ -370,54 +464,18 @@ function createNPC(data: any) {
 
         context.globalAlpha = alpha;
 
-        // Draw particle with gradient
-        const renderX = npcPosX - (p.size / 2) + p.localposition.x;
-        const renderY = npcPosY - (p.size / 2) + p.localposition.y;
-        const radius = p.size / 2;
-        const cx = renderX + radius;
-        const cy = renderY + radius;
-
-        const gradient = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
-
-        gradient.addColorStop(0, particleColor);
-        gradient.addColorStop(1, particleColor + "00");
-
-        if (glowIntensity > 0) {
-          context.shadowColor = particleColor;
-          context.shadowOffsetX = 0;
-          context.shadowOffsetY = 0;
-
-          const baseBlur = Math.max(4, radius * 0.8);
-          const glowLayers = Math.ceil(glowIntensity);
-          const glowOpacity = (glowIntensity - Math.floor(glowIntensity));
-
-          for (let g = 0; g < glowLayers; g++) {
-            context.shadowBlur = baseBlur + (g * 8 * glowIntensity);
-            context.globalAlpha = alpha * Math.max(0.3, 1 - (g * 0.2));
-            context.beginPath();
-            context.arc(cx, cy, radius, 0, Math.PI * 2);
-            context.fillStyle = gradient;
-            context.fill();
-          }
-
-          if (glowOpacity > 0) {
-            context.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * glowIntensity);
-            context.globalAlpha = alpha * glowOpacity * 0.5;
-            context.beginPath();
-            context.arc(cx, cy, radius, 0, Math.PI * 2);
-            context.fillStyle = gradient;
-            context.fill();
-          }
-
-          context.globalAlpha = alpha;
-          context.shadowColor = "transparent";
-          context.shadowBlur = 0;
-        } else {
-          context.beginPath();
-          context.arc(cx, cy, radius, 0, Math.PI * 2);
-          context.fillStyle = gradient;
-          context.fill();
-        }
+        // Draw the pre-rendered sprite (gradient + glow baked once). globalAlpha
+        // above applies the fade; additive 'lighter' blending is unchanged, so the
+        // composited result matches the previous per-frame draw.
+        const cx = npcPosX + p.localposition.x;
+        const cy = npcPosY + p.localposition.y;
+        context.drawImage(
+          particleSprite.canvas,
+          cx - particleSprite.half,
+          cy - particleSprite.half,
+          particleSprite.half * 2,
+          particleSprite.half * 2
+        );
       }
 
       // Reset blend mode
@@ -451,4 +509,4 @@ function deleteNPC(npc: any) {
   }
 }
 
-export { createNPC, reinitNpcSprite, particlePool, deleteNPC };
+export { createNPC, reinitNpcSprite, particlePool, getParticleSprite, deleteNPC };

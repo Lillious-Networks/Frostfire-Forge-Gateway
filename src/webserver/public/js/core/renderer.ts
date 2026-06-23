@@ -767,6 +767,9 @@ function animationLoop() {
   if (!ctx) return;
 
   const fpsTarget = parseFloat(fpsSlider.value);
+  // Treat the slider maximum as "uncapped": render every animation frame with no
+  // frame-rate gate (the browser/display still bounds the actual rate).
+  const uncapped = fpsTarget >= 240;
   const frameDuration = 1000 / fpsTarget;
   const now = performance.now();
   let deltaTime = (now - lastFrameTime) / 1000;
@@ -778,16 +781,21 @@ function animationLoop() {
     deltaTime = maxDeltaTime;
   }
 
-  if (now - nextFrameTime < frameDuration) {
-    requestAnimationFrame(animationLoop);
-    return;
-  }
+  if (!uncapped) {
+    if (now - nextFrameTime < frameDuration) {
+      requestAnimationFrame(animationLoop);
+      return;
+    }
 
-  // Step nextFrameTime forward by frameDuration; snap if we fell far behind
-  if (now - nextFrameTime > frameDuration * 3) {
+    // Step nextFrameTime forward by frameDuration; snap if we fell far behind
+    if (now - nextFrameTime > frameDuration * 3) {
+      nextFrameTime = now;
+    }
+    nextFrameTime += frameDuration;
+  } else {
+    // Uncapped: render every tick; keep the pacing clock in sync for when a cap returns.
     nextFrameTime = now;
   }
-  nextFrameTime += frameDuration;
 
   lastFrameTime = now;
 

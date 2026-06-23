@@ -4,19 +4,44 @@ import {
   calculateWindSpeed
 } from "./windphysics.ts";
 
-const rawDpr = window.devicePixelRatio || 1;
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
 const buffer = 200;
 let width: number = window.innerWidth + buffer * 2;
 let height: number = (window.visualViewport?.height || window.innerHeight) + buffer * 2;
-weatherCanvas.width = width * dpr;
-weatherCanvas.height = height * dpr;
-weatherCanvas.style.width = width + "px";
-weatherCanvas.style.height = height + "px";
-if (weatherCtx) {
-  weatherCtx.scale(dpr, dpr);
+
+// Re-assigning canvas.width/height wipes the backing store and resets the 2D
+// context. On iOS, visualViewport resize fires constantly (dynamic address bar,
+// rubber-band scroll), so we guard against no-op resizes to avoid blanking the
+// particle layer mid-animation, which shows up as flicker once WebKit stops
+// promoting the canvas to its own compositing layer.
+function resizeWeatherCanvas(): void {
+  const rawDpr = window.devicePixelRatio || 1;
+  const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
+  width = window.innerWidth + buffer * 2;
+  height = (window.visualViewport?.height || window.innerHeight) + buffer * 2;
+
+  const targetWidth = Math.round(width * dpr);
+  const targetHeight = Math.round(height * dpr);
+
+  if (weatherCanvas.width === targetWidth && weatherCanvas.height === targetHeight) {
+    return;
+  }
+
+  weatherCanvas.width = targetWidth;
+  weatherCanvas.height = targetHeight;
+  weatherCanvas.style.width = width + "px";
+  weatherCanvas.style.height = height + "px";
+
+  if (weatherCtx) {
+    weatherCtx.setTransform(1, 0, 0, 1, 0, 0);
+    weatherCtx.scale(dpr, dpr);
+  }
 }
+
+resizeWeatherCanvas();
+
+window.addEventListener("resize", resizeWeatherCanvas);
+window.visualViewport?.addEventListener("resize", resizeWeatherCanvas);
 
 let cameraOffsetX = 0;
 let cameraOffsetY = 0;
@@ -24,36 +49,6 @@ let cameraOffsetY = 0;
 let lastFrameTime = performance.now();
 const TARGET_FPS = 60;
 const FRAME_TIME = 1000 / TARGET_FPS;
-
-window.addEventListener("resize", () => {
-  const rawDpr = window.devicePixelRatio || 1;
-  const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
-  width = window.innerWidth + buffer * 2;
-  height = (window.visualViewport?.height || window.innerHeight) + buffer * 2;
-  weatherCanvas.width = width * dpr;
-  weatherCanvas.height = height * dpr;
-  weatherCanvas.style.width = width + "px";
-  weatherCanvas.style.height = height + "px";
-  if (weatherCtx) {
-    weatherCtx.setTransform(1, 0, 0, 1, 0, 0);
-    weatherCtx.scale(dpr, dpr);
-  }
-});
-
-window.visualViewport?.addEventListener("resize", () => {
-  const rawDpr = window.devicePixelRatio || 1;
-  const dpr = isMobileDevice ? Math.min(rawDpr, 2) : rawDpr;
-  width = window.innerWidth + buffer * 2;
-  height = window.visualViewport!.height + buffer * 2;
-  weatherCanvas.width = width * dpr;
-  weatherCanvas.height = height * dpr;
-  weatherCanvas.style.width = width + "px";
-  weatherCanvas.style.height = height + "px";
-  if (weatherCtx) {
-    weatherCtx.setTransform(1, 0, 0, 1, 0, 0);
-    weatherCtx.scale(dpr, dpr);
-  }
-});
 
 class SplashParticle {
   worldX = 0;

@@ -254,7 +254,7 @@ function updateOrientationClass() {
   }
 }
 
-function updateViewportDimensions() {
+function updateViewportMetrics() {
   const actualHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
 
   // Don't update viewport height if tile editor is active (it would break NPC dialog positioning)
@@ -263,6 +263,18 @@ function updateViewportDimensions() {
     document.documentElement.style.setProperty('--viewport-height', `${actualHeight}px`);
   }
 
+  if (document.getElementById("context-menu")) {
+    document.getElementById("context-menu")!.remove();
+  }
+
+  updateOrientationClass();
+}
+
+// Re-assigning canvas.width/height wipes the backing store and resets the
+// context transform the renderer relies on. Guard against no-op resizes so the
+// game canvas isn't blanked for a frame on every iOS viewport event (which
+// flickers once WebKit stops promoting the canvas to its own compositing layer).
+function resizeGameCanvas() {
   const rawDpr = window.devicePixelRatio || 1;
   const isTouchDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   const dpr = isTouchDevice ? Math.min(rawDpr, 2) : rawDpr;
@@ -271,17 +283,42 @@ function updateViewportDimensions() {
   const displayWidth = parseFloat(bodyStyle.width) || window.innerWidth;
   const displayHeight = parseFloat(bodyStyle.height) || window.innerHeight;
 
-  canvas.width = displayWidth * dpr;
-  canvas.height = displayHeight * dpr;
+  const targetWidth = Math.round(displayWidth * dpr);
+  const targetHeight = Math.round(displayHeight * dpr);
+
+  if (canvas.width === targetWidth && canvas.height === targetHeight) {
+    return;
+  }
+
+  const prevWidth = canvas.width;
+  const prevHeight = canvas.height;
+
+  // Snapshot the current frame before resizing. Reassigning canvas.width/height
+  // clears the backing store, so without this the canvas's black CSS background
+  // shows through for a frame before the render loop repaints — seen as black
+  // flicker while dragging to resize on PC.
+  let snapshot: HTMLCanvasElement | null = null;
+  if (ctx && prevWidth > 0 && prevHeight > 0) {
+    snapshot = document.createElement("canvas");
+    snapshot.width = prevWidth;
+    snapshot.height = prevHeight;
+    snapshot.getContext("2d")?.drawImage(canvas, 0, 0);
+  }
+
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
 
   canvas.style.width = displayWidth + "px";
   canvas.style.height = displayHeight + "px";
 
   if (ctx) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#000000";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Bridge the one-frame gap with the previous frame stretched to the new size
+    // until the next animation frame redraws everything crisply.
+    if (snapshot) {
+      ctx.drawImage(snapshot, 0, 0, prevWidth, prevHeight, 0, 0, targetWidth, targetHeight);
+    }
 
     if (isTouchDevice) {
       const mobileZoom = 0.85;
@@ -294,18 +331,19 @@ function updateViewportDimensions() {
     }
 
   }
-
-  if (document.getElementById("context-menu")) {
-    document.getElementById("context-menu")!.remove();
-  }
-
-  updateOrientationClass();
 }
 
-window.addEventListener("resize", updateViewportDimensions);
+function handleViewportResize() {
+  updateViewportMetrics();
+  resizeGameCanvas();
+}
 
-window.visualViewport?.addEventListener("resize", updateViewportDimensions);
-window.visualViewport?.addEventListener("scroll", updateViewportDimensions);
+window.addEventListener("resize", handleViewportResize);
+window.visualViewport?.addEventListener("resize", handleViewportResize);
+
+// Scroll never changes the canvas size, so only refresh lightweight metrics.
+// Touching canvas.width here would blank the canvas on every iOS scroll tick.
+window.visualViewport?.addEventListener("scroll", updateViewportMetrics);
 
 window.addEventListener("orientationchange", () => {
 
@@ -360,7 +398,7 @@ document
 fpsSlider.addEventListener("input", () => {
   document.getElementById(
     "limit-fps-label"
-  )!.innerText = `FPS: (${fpsSlider.value})`;
+  )!.innerText = `FPS: (${Number(fpsSlider.value) >= 240 ? "240+" : fpsSlider.value})`;
 });
 
 musicSlider.addEventListener("input", () => {
