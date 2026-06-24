@@ -1,6 +1,6 @@
 import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox } from "./ui.js";
-import { renderChunkToCanvas, clearChunkFromCache } from "./map.js";
+import { renderChunkToCanvas, redrawChunkCells, clearChunkFromCache } from "./map.js";
 
 declare global {
   interface Window {
@@ -116,6 +116,8 @@ class TileEditor {
   private tilesetCanvas: HTMLCanvasElement;
   private tilesetCtx: CanvasRenderingContext2D;
   private resizeHandle: HTMLElement;
+  private paletteAnimRunning = false;
+  private lastPaletteAnimSignature = '';
 
   constructor() {
 
@@ -147,6 +149,7 @@ class TileEditor {
 
     this.initializePanels();
     this.setupEventListeners();
+    this.startPaletteAnimation();
   }
 
   private initializePanels() {
@@ -1028,6 +1031,63 @@ class TileEditor {
     this.drawTileset();
   }
 
+  // Build a lookup of animated tiles for a tileset: localTileId -> {animation, totalDuration}.
+  private getAnimatedTilesForTileset(tileset: any): Map<number, { animation: Array<{ tileid: number; duration: number }>; totalDuration: number }> {
+    const lookup = new Map<number, { animation: Array<{ tileid: number; duration: number }>; totalDuration: number }>();
+    if (!tileset || !Array.isArray(tileset.tiles)) return lookup;
+    for (const tile of tileset.tiles) {
+      if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
+      const totalDuration = tile.animation.reduce((sum: number, frame: any) => sum + (frame.duration || 0), 0);
+      lookup.set(tile.id, { animation: tile.animation, totalDuration });
+    }
+    return lookup;
+  }
+
+  // Resolve the active local tile id for a Tiled animation at the given time (ms).
+  private getCurrentAnimationTileId(animation: Array<{ tileid: number; duration: number }>, totalDuration: number, now: number): number {
+    if (!animation || animation.length === 0) return 0;
+    if (totalDuration <= 0) return animation[0].tileid;
+    let t = now % totalDuration;
+    for (let i = 0; i < animation.length; i++) {
+      if (t < animation[i].duration) return animation[i].tileid;
+      t -= animation[i].duration;
+    }
+    return animation[animation.length - 1].tileid;
+  }
+
+  // Signature of the current animation frames for the active tileset. Changes only
+  // when a frame advances, so the palette is redrawn no more than necessary.
+  private computePaletteAnimSignature(): string {
+    if (!window.mapData) return '';
+    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
+    const animated = this.getAnimatedTilesForTileset(tileset);
+    if (animated.size === 0) return '';
+    const now = performance.now();
+    let sig = '';
+    animated.forEach((info, localId) => {
+      sig += `${localId}:${this.getCurrentAnimationTileId(info.animation, info.totalDuration, now)};`;
+    });
+    return sig;
+  }
+
+  // Redraw the palette whenever an animated tile advances a frame, while the editor
+  // is active. No-op (aside from a cheap signature check) when there are no animations.
+  private startPaletteAnimation() {
+    if (this.paletteAnimRunning) return;
+    this.paletteAnimRunning = true;
+    const tick = () => {
+      if (this.isActive && this.tilesetCtx && window.mapData) {
+        const sig = this.computePaletteAnimSignature();
+        if (sig !== this.lastPaletteAnimSignature) {
+          this.lastPaletteAnimSignature = sig;
+          this.drawTileset();
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   private drawTileset() {
     if (!window.mapData) return;
 
@@ -1042,6 +1102,41 @@ class TileEditor {
 
     this.tilesetCtx.imageSmoothingEnabled = false;
     this.tilesetCtx.drawImage(image, 0, 0, tileset.imagewidth * scale, tileset.imageheight * scale);
+
+    // Overdraw animated tiles with their current frame and mark them with a badge,
+    // so the palette shows animations live instead of the static base tile.
+    const animatedTiles = this.getAnimatedTilesForTileset(tileset);
+    if (animatedTiles.size > 0) {
+      const animTilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+      const animTw = tileset.tilewidth * scale;
+      const animTh = tileset.tileheight * scale;
+      const animNow = performance.now();
+      animatedTiles.forEach((info, localId) => {
+        const col = localId % animTilesPerRow;
+        const rowIdx = Math.floor(localId / animTilesPerRow);
+        const destX = col * animTw;
+        const destY = rowIdx * animTh;
+        const frameTileId = this.getCurrentAnimationTileId(info.animation, info.totalDuration, animNow);
+        const srcX = (frameTileId % animTilesPerRow) * tileset.tilewidth;
+        const srcY = Math.floor(frameTileId / animTilesPerRow) * tileset.tileheight;
+
+        this.tilesetCtx.clearRect(destX, destY, animTw, animTh);
+        this.tilesetCtx.drawImage(
+          image,
+          srcX, srcY, tileset.tilewidth, tileset.tileheight,
+          destX, destY, animTw, animTh
+        );
+
+        const badge = Math.max(4, Math.min(animTw, animTh) * 0.28);
+        this.tilesetCtx.fillStyle = 'rgba(255, 210, 40, 0.9)';
+        this.tilesetCtx.beginPath();
+        this.tilesetCtx.moveTo(destX, destY);
+        this.tilesetCtx.lineTo(destX + badge, destY);
+        this.tilesetCtx.lineTo(destX, destY + badge);
+        this.tilesetCtx.closePath();
+        this.tilesetCtx.fill();
+      });
+    }
 
     this.tilesetCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     this.tilesetCtx.lineWidth = 1;
@@ -2231,14 +2326,14 @@ class TileEditor {
 
     layer.data[tileIndex] = this.selectedTile;
 
-    this.rerenderChunk(chunkX, chunkY);
+    this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
   }
 
   private placeMultipleTiles(startTileX: number, startTileY: number) {
     if (!this.selectedLayer || !window.mapData || this.selectedTiles.length === 0) return;
 
     const chunkSize = window.mapData.chunkSize;
-    const affectedChunks = new Set<string>();
+    const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
     const changeGroup: TileChange[] = [];
 
     for (let row = 0; row < this.selectedTiles.length; row++) {
@@ -2277,7 +2372,9 @@ class TileEditor {
 
         layer.data[tileIndex] = tileId;
 
-        affectedChunks.add(chunkKey);
+        let cellArr = cellsByChunk.get(chunkKey);
+        if (!cellArr) { cellArr = []; cellsByChunk.set(chunkKey, cellArr); }
+        cellArr.push({ x: localTileX, y: localTileY });
       }
     }
 
@@ -2290,9 +2387,9 @@ class TileEditor {
       this.updateLayerList();
     }
 
-    affectedChunks.forEach(chunkKey => {
+    cellsByChunk.forEach((cells, chunkKey) => {
       const [chunkX, chunkY] = chunkKey.split('-').map(Number);
-      this.rerenderChunk(chunkX, chunkY);
+      this.redrawCells(chunkX, chunkY, cells);
     });
   }
 
@@ -2335,7 +2432,7 @@ class TileEditor {
 
     layer.data[tileIndex] = 0;
 
-    this.rerenderChunk(chunkX, chunkY);
+    this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
   }
 
   private copyTileFromWorld(tileX: number, tileY: number) {
@@ -2418,7 +2515,21 @@ class TileEditor {
 
     layer.data[tileIndex] = this.copiedTile;
 
-    this.rerenderChunk(chunkX, chunkY);
+    this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
+  }
+
+  // Incrementally redraw only the given local cells of a chunk's canvases. Falls
+  // back to a full (async) re-bake if the chunk's canvases aren't ready yet.
+  private redrawCells(chunkX: number, chunkY: number, cells: Array<{ x: number; y: number }>) {
+    if (!window.mapData || cells.length === 0) return;
+    const chunkKey = `${chunkX}-${chunkY}`;
+    const chunk = window.mapData.loadedChunks.get(chunkKey);
+    if (!chunk) return;
+    if (!chunk.lowerCanvas || !chunk.upperCanvas) {
+      this.rerenderChunk(chunkX, chunkY);
+      return;
+    }
+    redrawChunkCells(chunk, cells);
   }
 
   private async rerenderChunk(chunkX: number, chunkY: number) {
@@ -2556,7 +2667,13 @@ class TileEditor {
     }
 
     // Handle TileChange
-    const affectedChunks = new Set<string>();
+    const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
+
+    const recordCell = (chunkKey: string, change: TileChange) => {
+      let arr = cellsByChunk.get(chunkKey);
+      if (!arr) { arr = []; cellsByChunk.set(chunkKey, arr); }
+      arr.push({ x: change.tileX, y: change.tileY });
+    };
 
     if ('changes' in item) {
 
@@ -2572,7 +2689,7 @@ class TileEditor {
         const tileIndex = change.tileY * chunk.width + change.tileX;
         layer.data[tileIndex] = change.oldTileId;
 
-        affectedChunks.add(chunkKey);
+        recordCell(chunkKey, change);
         // Mark layer as unsaved when undoing
         this.unsavedLayers.add(change.layerName);
       });
@@ -2590,15 +2707,15 @@ class TileEditor {
       const tileIndex = change.tileY * chunk.width + change.tileX;
       layer.data[tileIndex] = change.oldTileId;
 
-      affectedChunks.add(chunkKey);
+      recordCell(chunkKey, change);
       // Mark layer as unsaved when undoing
       this.unsavedLayers.add(change.layerName);
       this.redoStack.push(change);
     }
 
-    affectedChunks.forEach(chunkKey => {
+    cellsByChunk.forEach((cells, chunkKey) => {
       const [chunkX, chunkY] = chunkKey.split('-').map(Number);
-      this.rerenderChunk(chunkX, chunkY);
+      this.redrawCells(chunkX, chunkY, cells);
     });
 
     this.updateLayerList();
@@ -2725,7 +2842,13 @@ class TileEditor {
     }
 
     // Handle TileChange
-    const affectedChunks = new Set<string>();
+    const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
+
+    const recordCell = (chunkKey: string, change: TileChange) => {
+      let arr = cellsByChunk.get(chunkKey);
+      if (!arr) { arr = []; cellsByChunk.set(chunkKey, arr); }
+      arr.push({ x: change.tileX, y: change.tileY });
+    };
 
     if ('changes' in item) {
 
@@ -2741,7 +2864,7 @@ class TileEditor {
         const tileIndex = change.tileY * chunk.width + change.tileX;
         layer.data[tileIndex] = change.newTileId;
 
-        affectedChunks.add(chunkKey);
+        recordCell(chunkKey, change);
         // Mark layer as unsaved when redoing
         this.unsavedLayers.add(change.layerName);
       });
@@ -2759,15 +2882,15 @@ class TileEditor {
       const tileIndex = change.tileY * chunk.width + change.tileX;
       layer.data[tileIndex] = change.newTileId;
 
-      affectedChunks.add(chunkKey);
+      recordCell(chunkKey, change);
       // Mark layer as unsaved when redoing
       this.unsavedLayers.add(change.layerName);
       this.undoStack.push(change);
     }
 
-    affectedChunks.forEach(chunkKey => {
+    cellsByChunk.forEach((cells, chunkKey) => {
       const [chunkX, chunkY] = chunkKey.split('-').map(Number);
-      this.rerenderChunk(chunkX, chunkY);
+      this.redrawCells(chunkX, chunkY, cells);
     });
 
     this.updateLayerList();

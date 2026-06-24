@@ -798,6 +798,113 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
   return { lowerCanvas, upperCanvas };
 }
 
+// Incrementally re-composite specific cells of an already-baked chunk. Used by the
+// tile editor so placing/erasing a tile only redraws the affected cells instead of
+// re-baking the entire chunk (which is far too expensive for interactive editing).
+// Mirrors the per-cell logic of renderChunkToCanvas (layer filtering, lower/upper
+// split, animated-tile handling) so results match a full re-bake.
+export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number; y: number }>): void {
+  if (!window.mapData || !chunkData.lowerCanvas || !chunkData.upperCanvas) return;
+
+  const lowerCtx = chunkData.lowerCanvas.getContext("2d");
+  const upperCtx = chunkData.upperCanvas.getContext("2d");
+  if (!lowerCtx || !upperCtx) return;
+  lowerCtx.imageSmoothingEnabled = false;
+  upperCtx.imageSmoothingEnabled = false;
+
+  const tilewidth = window.mapData.tilewidth;
+  const tileheight = window.mapData.tileheight;
+
+  const tilesetLookupMap = new Map<number, { tileset: any; image: HTMLImageElement }>();
+  for (let i = 0; i < window.mapData.tilesets.length; i++) {
+    const ts = window.mapData.tilesets[i];
+    const img = window.mapData.images[i];
+    if (img && img.complete && img.naturalWidth > 0) {
+      for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
+        tilesetLookupMap.set(tileIdx, { tileset: ts, image: img });
+      }
+    }
+  }
+
+  const animatedTileLookup = new Map<number, { tilesetIndex: number; tileset: any; animation: AnimationFrame[]; totalDuration: number }>();
+  for (let i = 0; i < window.mapData.tilesets.length; i++) {
+    const ts = window.mapData.tilesets[i];
+    if (!Array.isArray(ts.tiles)) continue;
+    for (const tile of ts.tiles) {
+      if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
+      const totalDuration = tile.animation.reduce((sum: number, frame: AnimationFrame) => sum + (frame.duration || 0), 0);
+      animatedTileLookup.set(ts.firstgid + tile.id, { tilesetIndex: i, tileset: ts, animation: tile.animation, totalDuration });
+    }
+  }
+
+  const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
+  if (!chunkData.animatedTiles) chunkData.animatedTiles = [];
+
+  for (const cell of cells) {
+    const { x, y } = cell;
+    if (x < 0 || y < 0 || x >= chunkData.width || y >= chunkData.height) continue;
+
+    const px = x * tilewidth;
+    const py = y * tileheight;
+
+    lowerCtx.clearRect(px, py, tilewidth, tileheight);
+    upperCtx.clearRect(px, py, tilewidth, tileheight);
+
+    // Drop animated-tile records previously registered at this cell.
+    chunkData.animatedTiles = chunkData.animatedTiles.filter((at) => !(at.destX === px && at.destY === py));
+
+    for (const layer of sortedLayers) {
+      const layerName = layer.name ? layer.name.toLowerCase() : '';
+      if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp')) continue;
+
+      const tileIndex = layer.data[y * chunkData.width + x];
+      if (tileIndex === 0) continue;
+
+      const layerGroup: 'lower' | 'upper' = layer.zIndex < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper';
+
+      const animInfo = animatedTileLookup.get(tileIndex);
+      if (animInfo) {
+        chunkData.animatedTiles.push({
+          layerGroup,
+          zIndex: layer.zIndex,
+          destX: px,
+          destY: py,
+          tilesetIndex: animInfo.tilesetIndex,
+          tileset: animInfo.tileset,
+          animation: animInfo.animation,
+          totalDuration: animInfo.totalDuration,
+        });
+        continue;
+      }
+
+      const tilesetInfo = tilesetLookupMap.get(tileIndex);
+      if (!tilesetInfo) continue;
+
+      const tileset = tilesetInfo.tileset;
+      const image = tilesetInfo.image;
+      const localTileIndex = tileIndex - tileset.firstgid;
+      const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+      const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
+      const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
+
+      const targetCtx = layerGroup === 'lower' ? lowerCtx : upperCtx;
+      try {
+        targetCtx.drawImage(
+          image,
+          srcX, srcY,
+          tileset.tilewidth, tileset.tileheight,
+          px, py,
+          tilewidth, tileheight
+        );
+      } catch (drawError) {
+        console.error(`Error drawing tile at (${x}, ${y}) in layer "${layer.name}":`, drawError);
+      }
+    }
+  }
+
+  chunkData.animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
+}
+
 function getChunkCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | null {
   if (!window.mapData) return null;
 
