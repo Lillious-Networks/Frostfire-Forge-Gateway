@@ -297,6 +297,7 @@ let chunkLoadThrottle = 0;
 function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[], offsetX: number, offsetY: number, selectedLayerName: string) {
   if (!ctx || !window.mapData) return;
 
+  const now = performance.now();
   const selectedLayerLower = selectedLayerName.toLowerCase();
   const isCollisionSelected = selectedLayerLower.includes('collision');
   const isNoPvpSelected = selectedLayerLower.includes('nopvp') || selectedLayerLower.includes('no-pvp');
@@ -362,6 +363,7 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
       try {
         ctx.globalAlpha = chunkAlpha;
         ctx.drawImage(chunkCanvas, screenX, screenY);
+        drawChunkAnimatedTiles(chunkData, layer, screenX, screenY, chunkAlpha, now);
       } catch (error) {
         console.error("Error drawing chunk canvas:", error);
       }
@@ -665,8 +667,64 @@ function recordChunkLoadTime(chunkKey: string) {
   }
 }
 
+// Resolve the active local tile id for a Tiled animation at the given time (ms).
+function getCurrentAnimationTileId(animation: Array<{ tileid: number; duration: number }>, totalDuration: number, now: number): number {
+  if (!animation || animation.length === 0) return 0;
+  if (totalDuration <= 0) return animation[0].tileid;
+  let t = now % totalDuration;
+  for (let i = 0; i < animation.length; i++) {
+    if (t < animation[i].duration) return animation[i].tileid;
+    t -= animation[i].duration;
+  }
+  return animation[animation.length - 1].tileid;
+}
+
+// Draw a chunk's animated tiles (which are skipped during static chunk baking) on
+// top of the matching layer group's pre-rendered canvas, at the current frame.
+function drawChunkAnimatedTiles(chunkData: any, layerGroup: 'lower' | 'upper', screenX: number, screenY: number, alpha: number, now: number) {
+  if (!ctx || !window.mapData) return;
+  const animatedTiles = chunkData?.animatedTiles;
+  if (!animatedTiles || animatedTiles.length === 0 || alpha <= 0) return;
+
+  const mapTileW = window.mapData.tilewidth;
+  const mapTileH = window.mapData.tileheight;
+  const prevAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = alpha;
+
+  for (const at of animatedTiles) {
+    if (at.layerGroup !== layerGroup) continue;
+
+    const image = window.mapData.images[at.tilesetIndex];
+    if (!image || !image.complete || image.naturalWidth === 0) continue;
+
+    const tileset = at.tileset;
+    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+    if (tilesPerRow <= 0) continue;
+
+    const frameTileId = getCurrentAnimationTileId(at.animation, at.totalDuration, now);
+    const srcX = (frameTileId % tilesPerRow) * tileset.tilewidth;
+    const srcY = Math.floor(frameTileId / tilesPerRow) * tileset.tileheight;
+
+    try {
+      ctx.drawImage(
+        image,
+        srcX, srcY,
+        tileset.tilewidth, tileset.tileheight,
+        screenX + at.destX, screenY + at.destY,
+        mapTileW, mapTileH
+      );
+    } catch {
+      // Ignore individual animated tile draw errors
+    }
+  }
+
+  ctx.globalAlpha = prevAlpha;
+}
+
 function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, playerTileY?: number) {
   if (!ctx || !window.mapData) return;
+
+  const now = performance.now();
 
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
@@ -739,6 +797,7 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
           ctx.globalAlpha = chunkAlpha;
           ctx.drawImage(chunkCanvas, screenX, screenY);
           ctx.globalAlpha = 1;
+          drawChunkAnimatedTiles(chunkData, 'lower', screenX, screenY, chunkAlpha, now);
         } catch (error) {
           console.error("Error drawing chunk canvas:", error);
         }
@@ -756,6 +815,7 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
 
         try {
           ctx.drawImage(chunkCanvas, screenX, screenY);
+          drawChunkAnimatedTiles(chunkData, 'upper', screenX, screenY, 1, now);
         } catch (error) {
           console.error("Error drawing upper chunk canvas:", error);
         }

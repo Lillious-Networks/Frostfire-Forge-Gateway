@@ -10,6 +10,22 @@ declare global {
   }
 }
 
+interface AnimationFrame {
+  tileid: number;
+  duration: number;
+}
+
+interface AnimatedTile {
+  layerGroup: 'lower' | 'upper';
+  zIndex: number;
+  destX: number;
+  destY: number;
+  tilesetIndex: number;
+  tileset: any;
+  animation: AnimationFrame[];
+  totalDuration: number;
+}
+
 interface ChunkData {
   chunkX: number;
   chunkY: number;
@@ -29,6 +45,7 @@ interface ChunkData {
   canvas?: HTMLCanvasElement;
   lowerCanvas?: HTMLCanvasElement;
   upperCanvas?: HTMLCanvasElement;
+  animatedTiles?: AnimatedTile[];
 }
 
 export default async function loadMap(metadata: any): Promise<boolean> {
@@ -685,6 +702,26 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
     }
   }
 
+  // Build animated tile lookup from Tiled tileset `tiles[].animation` definitions.
+  // Keyed by global tile id (firstgid + local id). Empty for maps with no animations.
+  const animatedTileLookup = new Map<number, { tilesetIndex: number; tileset: any; animation: AnimationFrame[]; totalDuration: number }>();
+  for (let i = 0; i < window.mapData.tilesets.length; i++) {
+    const ts = window.mapData.tilesets[i];
+    if (!Array.isArray(ts.tiles)) continue;
+    for (const tile of ts.tiles) {
+      if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
+      const totalDuration = tile.animation.reduce((sum: number, frame: AnimationFrame) => sum + (frame.duration || 0), 0);
+      animatedTileLookup.set(ts.firstgid + tile.id, {
+        tilesetIndex: i,
+        tileset: ts,
+        animation: tile.animation,
+        totalDuration,
+      });
+    }
+  }
+
+  const animatedTiles: AnimatedTile[] = [];
+
   for (let layerIdx = 0; layerIdx < sortedLayers.length; layerIdx++) {
     const layer = sortedLayers[layerIdx];
 
@@ -701,6 +738,23 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
       for (let x = 0; x < chunkData.width; x++) {
         const tileIndex = layer.data[y * chunkData.width + x];
         if (tileIndex === 0) continue;
+
+        // Animated tiles are not baked into the static chunk canvas; they are
+        // recorded here and drawn per-frame by the renderer on top of this layer group.
+        const animInfo = animatedTileLookup.get(tileIndex);
+        if (animInfo) {
+          animatedTiles.push({
+            layerGroup: layer.zIndex < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper',
+            zIndex: layer.zIndex,
+            destX: x * window.mapData.tilewidth,
+            destY: y * window.mapData.tileheight,
+            tilesetIndex: animInfo.tilesetIndex,
+            tileset: animInfo.tileset,
+            animation: animInfo.animation,
+            totalDuration: animInfo.totalDuration,
+          });
+          continue;
+        }
 
         // Use fast O(1) tileset lookup
         const tilesetInfo = tilesetLookupMap.get(tileIndex);
@@ -736,6 +790,10 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
       }
     }
   }
+
+  // Order animated tiles by layer zIndex so stacked animations draw correctly.
+  animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
+  chunkData.animatedTiles = animatedTiles;
 
   return { lowerCanvas, upperCanvas };
 }

@@ -260,11 +260,11 @@ body {
   right: 10px;
   z-index: 1002;
   display: none;
-  background: url("../img/ui/ui-book.png");
+  background: url("../img/ui/ui-guild.png");
   background-repeat: no-repeat;
   background-size: 100% 100%;
-  width: 404px;
-  height: 388px;
+  width: 416px;
+  height: 400px;
 }
 
 /* ========================================
