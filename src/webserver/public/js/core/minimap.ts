@@ -56,6 +56,38 @@ function createMinimap() {
   requestAnimationFrame(minimapLoop);
 }
 
+// Draws a static first-frame representation of a chunk's animated tiles onto the
+// minimap buffer. The minimap never animates; it always shows animation frame 0.
+function drawChunkAnimatedFirstFrames(chunkData: any, bufX: number, bufY: number, scale: number) {
+  if (!bufferCtx || !window.mapData) return;
+  const animatedTiles = chunkData?.animatedTiles;
+  if (!animatedTiles || animatedTiles.length === 0) return;
+
+  const destW = window.mapData.tilewidth * scale;
+  const destH = window.mapData.tileheight * scale;
+
+  for (const at of animatedTiles) {
+    const image = window.mapData.images[at.tilesetIndex];
+    if (!image || !image.complete || image.naturalWidth === 0) continue;
+
+    const tileset = at.tileset;
+    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+    if (tilesPerRow <= 0) continue;
+
+    const firstTileId = at.animation[0]?.tileid ?? 0;
+    const srcX = (firstTileId % tilesPerRow) * tileset.tilewidth;
+    const srcY = Math.floor(firstTileId / tilesPerRow) * tileset.tileheight;
+
+    bufferCtx.drawImage(
+      image,
+      srcX, srcY,
+      tileset.tilewidth, tileset.tileheight,
+      bufX + at.destX * scale, bufY + at.destY * scale,
+      destW, destH,
+    );
+  }
+}
+
 function renderMinimap() {
   if (!minimapCtx || !window.mapData) return;
 
@@ -135,6 +167,10 @@ function renderMinimap() {
         bufX, bufY, bufW, bufH,
       );
     }
+
+    // Animated tiles are skipped during static chunk baking, so draw a static
+    // first-frame version of each onto the minimap buffer.
+    drawChunkAnimatedFirstFrames(chunkData, bufX, bufY, scale);
   });
 
   bufferCtx.restore();
