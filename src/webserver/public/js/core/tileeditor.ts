@@ -2269,9 +2269,6 @@ class TileEditor {
       if (mapWidth < window.innerWidth) {
         mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
       }
-      if (mapHeight < window.innerHeight) {
-        mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
-      }
     }
 
     return {

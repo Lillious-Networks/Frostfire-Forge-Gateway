@@ -492,9 +492,6 @@ document.addEventListener("contextmenu", (event) => {
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
     }
-    if (mapHeight < window.innerHeight) {
-      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
-    }
   }
 
   const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
@@ -606,7 +603,6 @@ canvas.addEventListener("touchend", (e) => {
       const mapWidth = window.mapData.width * window.mapData.tilewidth;
       const mapHeight = window.mapData.height * window.mapData.tileheight;
       if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-      if (mapHeight < window.innerHeight) mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
     }
 
     const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
@@ -653,9 +649,6 @@ document.addEventListener("click", (event) => {
     const mapHeight = window.mapData.height * window.mapData.tileheight;
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-    if (mapHeight < window.innerHeight) {
-      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
     }
   }
 

@@ -740,9 +740,6 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
   if (mapWidth < viewportWidth) {
     mapCenterOffsetX = (viewportWidth - mapWidth) / 2;
   }
-  if (mapHeight < viewportHeight) {
-    mapCenterOffsetY = (viewportHeight - mapHeight) / 2;
-  }
 
   const offsetX = Math.round(viewportWidth / 2 - smoothMapX + mapCenterOffsetX);
   const offsetY = Math.round(viewportHeight / 2 - smoothMapY + mapCenterOffsetY);
@@ -1056,9 +1053,6 @@ function animationLoop() {
   if (mapWidth < window.innerWidth) {
     mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
   }
-  if (mapHeight < window.innerHeight) {
-    mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
-  }
 
   const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
   const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
@@ -1295,9 +1289,6 @@ function animationLoop() {
 
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-    if (mapHeight < window.innerHeight) {
-      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
     }
 
     const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
@@ -1569,9 +1560,6 @@ function animationLoop() {
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
     }
-    if (mapHeight < window.innerHeight) {
-      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
-    }
 
     const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
     const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
@@ -1590,9 +1578,6 @@ function animationLoop() {
 
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
-    }
-    if (mapHeight < window.innerHeight) {
-      mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
     }
 
     const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
