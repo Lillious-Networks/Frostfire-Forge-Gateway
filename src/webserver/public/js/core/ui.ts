@@ -568,6 +568,10 @@ if (adminPanelContainer) {
   registerPanelDrag({ element: adminPanelContainer, handle: adminPanelContainer, storageKey: "panel-pos-admin" });
 }
 
+if (hotbar) {
+  registerPanelDrag({ element: hotbar, handle: hotbar, storageKey: "panel-pos-hotbar" });
+}
+
 // Touch-based drag from spellbook to hotbar, and hotbar rearrange/remove (mobile)
 let touchDragActive = false;
 let touchDragSource: "spellbook" | "hotbar" | "inventory" = "spellbook";
