@@ -6,7 +6,7 @@ const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
-import { updateHealthBar, updateStaminaBar } from "./ui.js";
+import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -735,7 +735,7 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
 
   // Calculate centering offset for small maps
   let mapCenterOffsetX = 0;
-  let mapCenterOffsetY = 0;
+  const mapCenterOffsetY = 0;
 
   if (mapWidth < viewportWidth) {
     mapCenterOffsetX = (viewportWidth - mapWidth) / 2;
@@ -980,11 +980,12 @@ function animationLoop() {
   });
 
   if (currentPlayer) {
-    const { health, total_max_health, stamina, total_max_stamina } = currentPlayer.stats;
+    const { health, total_max_health, stamina, total_max_stamina, absorbtion } = currentPlayer.stats;
     const healthPercent = (health / total_max_health) * 100;
     const staminaPercent = (stamina / total_max_stamina) * 100;
     updateHealthBar(healthBar, healthPercent);
     updateStaminaBar(staminaBar, staminaPercent);
+    updateAbsorptionBar(absorbtion || 0, total_max_health);
   }
 
   const visibleNpcs = cache.npcs.filter(npc =>
@@ -1048,7 +1049,7 @@ function animationLoop() {
   const mapWidth = window.mapData.width * window.mapData.tilewidth;
   const mapHeight = window.mapData.height * window.mapData.tileheight;
   let mapCenterOffsetX = 0;
-  let mapCenterOffsetY = 0;
+  const mapCenterOffsetY = 0;
 
   if (mapWidth < window.innerWidth) {
     mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
@@ -1285,7 +1286,7 @@ function animationLoop() {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
     const mapHeight = window.mapData.height * window.mapData.tileheight;
     let mapCenterOffsetX = 0;
-    let mapCenterOffsetY = 0;
+    const mapCenterOffsetY = 0;
 
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
@@ -1555,7 +1556,7 @@ function animationLoop() {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
     const mapHeight = window.mapData.height * window.mapData.tileheight;
     let mapCenterOffsetX = 0;
-    let mapCenterOffsetY = 0;
+    const mapCenterOffsetY = 0;
 
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
@@ -1574,7 +1575,7 @@ function animationLoop() {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
     const mapHeight = window.mapData.height * window.mapData.tileheight;
     let mapCenterOffsetX = 0;
-    let mapCenterOffsetY = 0;
+    const mapCenterOffsetY = 0;
 
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;

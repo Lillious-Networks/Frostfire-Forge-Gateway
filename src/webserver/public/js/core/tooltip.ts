@@ -10,6 +10,7 @@ let currentTooltipElement: HTMLElement | null = null;
 let currentItemData: any = null;
 let currentMouseX: number = 0;
 let currentMouseY: number = 0;
+let currentTooltipKind: "item" | "spell" | null = null;
 
 function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mouseY: number, compareMode: boolean = false) {
   if (!tooltip || !itemData) return;
@@ -18,6 +19,7 @@ function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mo
   currentItemData = itemData;
   currentMouseX = mouseX;
   currentMouseY = mouseY;
+  currentTooltipKind = "item";
 
   tooltipName.className = "ui";
   tooltipName.innerText = "";
@@ -166,6 +168,7 @@ function hideItemTooltip() {
     tooltip.style.display = "none";
     currentTooltipElement = null;
     currentItemData = null;
+    currentTooltipKind = null;
   }
 }
 
@@ -229,18 +232,131 @@ function removeItemTooltip(element: HTMLElement) {
   }
 }
 
+function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, mouseY: number, anchor: "cursor" | "bottom-right" = "cursor") {
+  if (!tooltip || !spellData) return;
+
+  currentTooltipElement = element;
+  currentItemData = spellData;
+  currentMouseX = mouseX;
+  currentMouseY = mouseY;
+  currentTooltipKind = "spell";
+
+  tooltipName.className = "ui";
+  tooltipName.classList.add("common");
+  tooltipName.innerText = "";
+  tooltipType.innerText = "";
+  tooltipStats.innerHTML = "";
+  tooltipDescription.innerText = "";
+
+  const rawName = spellData.name || "Unknown Spell";
+  tooltipName.innerText = rawName.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+
+  tooltipType.innerText = "Spell";
+
+  const lines: { text: string; color: string }[] = [];
+
+  const damage = Number(spellData.damage) || 0;
+  if (damage > 0) {
+    lines.push({ text: `${damage} Damage`, color: "#ff6b6b" });
+  } else if (damage < 0) {
+    lines.push({ text: `${Math.abs(damage)} Healing`, color: "#4ade80" });
+  }
+
+  if (Array.isArray(spellData.effects)) {
+    for (const effect of spellData.effects) {
+      if (effect && effect.type === "absorbtion") {
+        const duration = effect.duration ? ` for ${effect.duration}s` : "";
+        lines.push({ text: `${effect.value} Absorb Shield${duration}`, color: "#7ab8ff" });
+      }
+    }
+  }
+
+  if (spellData.mana) lines.push({ text: `${spellData.mana} Mana`, color: "#469cd9" });
+  if (spellData.cast_time) lines.push({ text: `${spellData.cast_time}s Cast Time`, color: "#bdbdbd" });
+  if (spellData.cooldown) lines.push({ text: `${spellData.cooldown}s Cooldown`, color: "#bdbdbd" });
+
+  if (lines.length > 0) {
+    lines.forEach(({ text, color }) => {
+      const statDiv = document.createElement("div");
+      statDiv.style.color = color;
+      statDiv.innerText = text;
+      tooltipStats.appendChild(statDiv);
+    });
+    tooltipStats.style.display = "block";
+  } else {
+    tooltipStats.style.display = "none";
+  }
+
+  if (spellData.description) {
+    tooltipDescription.style.display = "block";
+    tooltipDescription.innerText = spellData.description;
+  } else {
+    tooltipDescription.style.display = "none";
+  }
+
+  tooltip.style.display = "block";
+  if (anchor === "bottom-right") {
+    positionTooltipBottomRight();
+  } else {
+    positionTooltip(mouseX, mouseY);
+  }
+}
+
+function positionTooltipBottomRight() {
+  if (!tooltip) return;
+  const padding = 10;
+  const rect = tooltip.getBoundingClientRect();
+  const x = window.innerWidth - rect.width - padding;
+  const y = window.innerHeight - rect.height - padding;
+  tooltip.style.left = `${Math.max(padding, x)}px`;
+  tooltip.style.top = `${Math.max(padding, y)}px`;
+}
+
+function setupSpellTooltip(element: HTMLElement, getSpellData: () => any, options?: { anchor?: "cursor" | "bottom-right" }) {
+  const anchor = options?.anchor || "cursor";
+
+  const handleMouseEnter = (e: MouseEvent) => {
+    const spellData = getSpellData();
+    if (spellData && spellData.name) {
+      showSpellTooltip(element, spellData, e.clientX, e.clientY, anchor);
+    }
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (currentTooltipElement === element && anchor === "cursor") {
+      updateTooltipPosition(e.clientX, e.clientY);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (currentTooltipElement === element) {
+      hideItemTooltip();
+    }
+  };
+
+  (element as any)._tooltipHandlers = {
+    mouseenter: handleMouseEnter,
+    mousemove: handleMouseMove,
+    mouseleave: handleMouseLeave
+  };
+
+  element.addEventListener("mouseenter", handleMouseEnter);
+  element.addEventListener("mousemove", handleMouseMove);
+  element.addEventListener("mouseleave", handleMouseLeave);
+}
+
 document.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "Shift" && currentTooltipElement && currentItemData) {
+  if (e.key === "Shift" && currentTooltipElement && currentItemData && currentTooltipKind === "item") {
 
     showItemTooltip(currentTooltipElement, currentItemData, currentMouseX, currentMouseY, true);
   }
 });
 
 document.addEventListener("keyup", (e: KeyboardEvent) => {
-  if (e.key === "Shift" && currentTooltipElement && currentItemData) {
+  if (e.key === "Shift" && currentTooltipElement && currentItemData && currentTooltipKind === "item") {
 
     showItemTooltip(currentTooltipElement, currentItemData, currentMouseX, currentMouseY, false);
   }
 });
 
-export { setupItemTooltip, removeItemTooltip, showItemTooltip, hideItemTooltip, updateTooltipPosition };
+export { setupItemTooltip, removeItemTooltip, showItemTooltip, hideItemTooltip, updateTooltipPosition, setupSpellTooltip, showSpellTooltip };

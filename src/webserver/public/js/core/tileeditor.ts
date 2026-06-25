@@ -2262,7 +2262,7 @@ class TileEditor {
 
     // Account for map centering offset for small maps
     let mapCenterOffsetX = 0;
-    let mapCenterOffsetY = 0;
+    const mapCenterOffsetY = 0;
     if (window.mapData) {
       const mapWidth = window.mapData.width * window.mapData.tilewidth;
       const mapHeight = window.mapData.height * window.mapData.tileheight;

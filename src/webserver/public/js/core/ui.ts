@@ -1,7 +1,8 @@
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { cast } from "./input.js";
-import { hideItemTooltip, setupItemTooltip, removeItemTooltip } from "./tooltip.js";
+import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip } from "./tooltip.js";
+import draggableUI from "./draggable.js";
 const debugContainer = document.getElementById("debug-container") as HTMLDivElement;
 const statUI = document.getElementById("stat-screen") as HTMLDivElement;
 const positionText = document.getElementById("position") as HTMLDivElement;
@@ -17,6 +18,12 @@ const ctx = canvas.getContext("2d", { alpha: false });
 const fpsSlider = document.getElementById("fps-slider") as HTMLInputElement;
 const healthBar = document.getElementById("health-progress-bar") as HTMLDivElement;
 const staminaBar = document.getElementById("stamina-progress-bar") as HTMLDivElement;
+const absorptionOverlayCanvas = document.getElementById("absorption-overlay-canvas") as HTMLCanvasElement;
+const absorptionOverlayCtx = absorptionOverlayCanvas ? absorptionOverlayCanvas.getContext("2d") : null;
+if (absorptionOverlayCanvas) {
+  absorptionOverlayCanvas.width = 179;
+  absorptionOverlayCanvas.height = 16;
+}
 const xpBar = document.getElementById("xp-bar") as HTMLDivElement;
 const musicSlider = document.getElementById("music-slider") as HTMLInputElement;
 const effectsSlider = document.getElementById("effects-slider") as HTMLInputElement;
@@ -85,7 +92,155 @@ hotbarSlots.forEach((slot, index) => {
     }
     cast(index);
   });
+
+  setupSpellTooltip(slot, () => {
+    const spellName = slot.dataset.spellName;
+    if (!spellName) return null;
+    const spells = Cache.getInstance().spells;
+    return spells ? spells[spellName] : null;
+  }, { anchor: "bottom-right" });
 });
+
+const buffBar = document.getElementById("buff-bar") as HTMLDivElement;
+const buffElements = new Map<string, { el: HTMLDivElement; timerEl: HTMLDivElement; endTime: number; spell: string }>();
+
+function createBuffIcon(spell: string, endTime: number) {
+  const el = document.createElement("div");
+  el.className = "buff-icon ui";
+
+  const meta = Cache.getInstance().spells[spell];
+  if (meta?.spriteUrl) {
+    const img = new Image();
+    img.draggable = false;
+    img.src = meta.spriteUrl;
+    el.appendChild(img);
+  } else {
+    const fallback = document.createElement("div");
+    fallback.className = "buff-fallback";
+    fallback.innerText = spell;
+    el.appendChild(fallback);
+  }
+
+  const timerEl = document.createElement("div");
+  timerEl.className = "buff-timer";
+  el.appendChild(timerEl);
+
+  setupSpellTooltip(el, () => Cache.getInstance().spells[spell] || { name: spell });
+
+  return { el, timerEl, endTime, spell };
+}
+
+function tickBuffTimers() {
+  const now = Date.now();
+  for (const [id, entry] of buffElements) {
+    const remaining = Math.ceil((entry.endTime - now) / 1000);
+    if (remaining <= 0) {
+      entry.el.remove();
+      buffElements.delete(id);
+    } else {
+      entry.timerEl.innerText = `${remaining}`;
+    }
+  }
+}
+
+function updateBuffBar(effects: any[]) {
+  if (!buffBar) return;
+
+  const incoming = new Map<string, { spell: string; endTime: number }>();
+  for (const e of (effects || [])) {
+    incoming.set(e.id, { spell: e.spell, endTime: Date.now() + (Number(e.remaining) || 0) * 1000 });
+  }
+
+  for (const [id, entry] of buffElements) {
+    if (!incoming.has(id)) {
+      entry.el.remove();
+      buffElements.delete(id);
+    }
+  }
+
+  for (const [id, info] of incoming) {
+    const existing = buffElements.get(id);
+    if (!existing) {
+      const entry = createBuffIcon(info.spell, info.endTime);
+      buffElements.set(id, entry);
+      buffBar.appendChild(entry.el);
+    } else {
+      existing.endTime = info.endTime;
+    }
+  }
+
+  tickBuffTimers();
+}
+
+setInterval(tickBuffTimers, 1000);
+
+if (buffBar) {
+  draggableUI.registerPanel("buff-bar", buffBar, buffBar);
+}
+
+// --- Hotbar spell cooldown clock + "ready" flash ---
+const READY_FLASH_MS = 600;
+const spellCooldowns = new Map<string, { start: number; end: number }>();
+let cooldownRaf = 0;
+
+function startSpellCooldown(spellName: string) {
+  if (!spellName) return;
+  const meta = Cache.getInstance().spells[spellName];
+  const cooldownSec = Number(meta?.cooldown) || 0;
+  if (cooldownSec <= 0) return;
+  const now = performance.now();
+  spellCooldowns.set(spellName, { start: now, end: now + cooldownSec * 1000 });
+  if (!cooldownRaf) cooldownRaf = requestAnimationFrame(tickSpellCooldowns);
+}
+
+function getCooldownOverlay(slot: HTMLDivElement): HTMLDivElement {
+  let overlay = slot.querySelector(".cooldown-overlay") as HTMLDivElement | null;
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.className = "cooldown-overlay";
+    slot.appendChild(overlay);
+  }
+  return overlay;
+}
+
+function flashSlotReady(slot: HTMLDivElement) {
+  slot.classList.remove("glow");
+  void slot.offsetWidth;
+  slot.classList.add("glow");
+  window.setTimeout(() => slot.classList.remove("glow"), READY_FLASH_MS);
+}
+
+function tickSpellCooldowns() {
+  const now = performance.now();
+  let active = false;
+
+  spellCooldowns.forEach((cd, spellName) => {
+    const total = cd.end - cd.start;
+    const progress = total > 0 ? Math.max(0, Math.min(1, (now - cd.start) / total)) : 1;
+    const finished = now >= cd.end;
+
+    hotbarSlots.forEach((slot) => {
+      if (slot.dataset.spellName !== spellName) return;
+      if (finished) {
+        const overlay = slot.querySelector(".cooldown-overlay") as HTMLDivElement | null;
+        if (overlay) overlay.remove();
+        flashSlotReady(slot);
+      } else {
+        const overlay = getCooldownOverlay(slot);
+        const deg = progress * 360;
+        overlay.style.background = `conic-gradient(transparent ${deg}deg, rgba(0, 0, 0, 0.6) ${deg}deg)`;
+      }
+    });
+
+    if (finished) {
+      spellCooldowns.delete(spellName);
+    } else {
+      active = true;
+    }
+  });
+
+  cooldownRaf = active ? requestAnimationFrame(tickSpellCooldowns) : 0;
+}
 
 function saveHotbarConfiguration() {
   const hotbarConfig: { [key: string]: string | null } = {};
@@ -325,6 +480,8 @@ function loadPanelPosition(element: HTMLElement, storageKey: string) {
       element.style.top = pos.y;
       element.style.bottom = "auto";
       element.style.right = "auto";
+      element.style.margin = "0";
+      element.style.transform = "none";
     }
   } catch (e) { /* ignore */ }
 }
@@ -1295,6 +1452,30 @@ function updateStaminaBar(bar: HTMLDivElement, staminaPercent: number) {
   });
 }
 
+function updateAbsorptionBar(absorbtion: number, totalMaxHealth: number) {
+  if (!absorptionOverlayCtx) return;
+  const ctxA = absorptionOverlayCtx;
+  ctxA.clearRect(0, 0, 179, 16);
+  if (!absorbtion || absorbtion <= 0 || !totalMaxHealth || totalMaxHealth <= 0) return;
+
+  const width = Math.max(0, Math.min(1, absorbtion / totalMaxHealth)) * 179;
+  const barTop = 3;
+  const barHeight = 10;
+
+  // Light, very transparent blue fill from left to the value point, with a soft overall glow
+  ctxA.shadowColor = "rgba(180, 220, 255, 0.7)";
+  ctxA.shadowBlur = 6;
+  ctxA.fillStyle = "rgba(180, 220, 255, 0.4)";
+  ctxA.fillRect(0, barTop, width, barHeight);
+
+  // Glowing border on the right side of the bar's value point
+  ctxA.shadowColor = "rgba(200, 230, 255, 0.95)";
+  ctxA.shadowBlur = 9;
+  ctxA.fillStyle = "rgba(210, 235, 255, 0.6)";
+  ctxA.fillRect(Math.max(0, width - 1.5), barTop, 2, barHeight);
+  ctxA.shadowBlur = 0;
+}
+
 function castSpell(id: string, spell: string, time: number) {
   spell = spell.toLowerCase();
 
@@ -1891,7 +2072,7 @@ if (guildCreateButton) {
 }
 
 export {
-    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, castSpell, positionText,
+    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,

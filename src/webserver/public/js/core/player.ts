@@ -108,6 +108,7 @@ async function createPlayer(data: any) {
       isHealing: boolean;
       isCrit: boolean;
       isMiss?: boolean;
+      isAbsorb?: boolean;
     }>,
     castingSpell: null as string | null,
     castingStartTime: 0,
@@ -204,7 +205,10 @@ async function createPlayer(data: any) {
         }
         context.textAlign = "center";
 
-        if (dmg.isMiss) {
+        if (dmg.isAbsorb) {
+          context.fillStyle = `rgba(180, 220, 255, ${opacity})`;
+          context.strokeStyle = `rgba(60, 110, 180, ${opacity})`;
+        } else if (dmg.isMiss) {
 
           context.fillStyle = `rgba(255, 255, 255, ${opacity})`;
           context.strokeStyle = `rgba(100, 100, 100, ${opacity})`;
@@ -222,6 +226,8 @@ async function createPlayer(data: any) {
 
         const displayText = dmg.isMiss
           ? "Miss"
+          : dmg.isAbsorb
+          ? `+${dmg.value}`
           : dmg.isCrit && !dmg.isHealing
           ? `${dmg.value}!`
           : `${dmg.value}`;
@@ -587,6 +593,23 @@ async function createPlayer(data: any) {
             healthPercent * 100,
             3
           );
+
+          const absorbtion = this.stats.absorbtion || 0;
+          if (absorbtion > 0) {
+            const absorbWidth = Math.min(absorbtion / maxHealth, 1) * 100;
+            const absorbX = this.renderPosition.x - 50;
+            const absorbY = this.renderPosition.y + 46 + guildOffset + uiOffset;
+            context.save();
+            context.shadowColor = "rgba(180, 220, 255, 0.7)";
+            context.shadowBlur = 5;
+            context.fillStyle = "rgba(180, 220, 255, 0.4)";
+            context.fillRect(absorbX, absorbY, absorbWidth, 3);
+            context.shadowColor = "rgba(200, 230, 255, 0.95)";
+            context.shadowBlur = 7;
+            context.fillStyle = "rgba(210, 235, 255, 0.6)";
+            context.fillRect(absorbX + Math.max(0, absorbWidth - 1.5), absorbY, 2, 3);
+            context.restore();
+          }
         }
 
         if (data.id === cachedPlayerId || this.targeted) {

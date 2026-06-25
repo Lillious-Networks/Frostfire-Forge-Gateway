@@ -485,7 +485,7 @@ document.addEventListener("contextmenu", (event) => {
 
   // Account for map centering offset for small maps
   let mapCenterOffsetX = 0;
-  let mapCenterOffsetY = 0;
+  const mapCenterOffsetY = 0;
   if (window.mapData) {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
     const mapHeight = window.mapData.height * window.mapData.tileheight;
@@ -598,7 +598,7 @@ canvas.addEventListener("touchend", (e) => {
     const screenY = touch.clientY - rect.top;
 
     let mapCenterOffsetX = 0;
-    let mapCenterOffsetY = 0;
+    const mapCenterOffsetY = 0;
     if (window.mapData) {
       const mapWidth = window.mapData.width * window.mapData.tilewidth;
       const mapHeight = window.mapData.height * window.mapData.tileheight;
@@ -643,7 +643,7 @@ document.addEventListener("click", (event) => {
 
   // Account for map centering offset for small maps
   let mapCenterOffsetX = 0;
-  let mapCenterOffsetY = 0;
+  const mapCenterOffsetY = 0;
   if (window.mapData) {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
     const mapHeight = window.mapData.height * window.mapData.tileheight;

@@ -6,7 +6,7 @@ import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
 import { updateTime, setHasWeather } from "./ambience.ts";
 import { setWeatherType, setWeatherData } from "./renderer.ts";
-import { setupItemTooltip, removeItemTooltip, hideItemTooltip } from "./tooltip.ts";
+import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 const cache = Cache.getInstance();
 
 // Global particle registry for resolving particle names to definitions
@@ -115,6 +115,8 @@ import {
   updateCurrencyDisplay,
   updateAdminMapInput,
   updateAdminPlayerListWithData,
+  updateBuffBar,
+  startSpellCooldown,
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
 import { createNPC, reinitNpcSprite } from "./npc.ts";
@@ -692,6 +694,9 @@ socket.onmessage = async (event) => {
     case "CAST_SPELL": {
       if (!data || !data.spell || (!data.time && data.time !== 0) || !data.id) return;
       castSpell(data.id, data.spell, data.time);
+      if (data.id === cachedPlayerId && data.spell !== "interrupted") {
+        startSpellCooldown(data.spell);
+      }
       break;
     }
     case "PROJECTILE": {
@@ -2312,7 +2317,20 @@ socket.onmessage = async (event) => {
           slot.classList.add("common");
 
           slot.draggable = true;
-          slot.dataset.spellName = spell.name || Object.keys(data)[i] || 'Unknown';
+          const spellName = spell.name || Object.keys(data)[i] || 'Unknown';
+          slot.dataset.spellName = spellName;
+
+          cache.spells[spellName] = {
+            name: spellName,
+            description: spell.description,
+            mana: spell.mana,
+            cooldown: spell.cooldown,
+            cast_time: spell.cast_time,
+            damage: spell.damage,
+            type: spell.type,
+            effects: spell.effects,
+            spriteUrl: spell.spriteUrl,
+          };
 
           if (spell.spriteUrl) {
             const iconImage = new Image();
@@ -2350,6 +2368,17 @@ socket.onmessage = async (event) => {
               }
             });
           });
+
+          setupSpellTooltip(slot, () => ({
+            name: slot.dataset.spellName,
+            description: spell.description,
+            mana: spell.mana,
+            cooldown: spell.cooldown,
+            cast_time: spell.cast_time,
+            damage: spell.damage,
+            type: spell.type,
+            effects: spell.effects,
+          }));
 
           grid.appendChild(slot);
         }
@@ -3030,7 +3059,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "UPDATESTATS": {
-      const { target, stats, isCrit, username, damage, entity } = JSON.parse(packet.decode(event.data))["data"];
+      const { target, stats, isCrit, username, damage, entity, absorb } = JSON.parse(packet.decode(event.data))["data"];
 
       let t;
 
@@ -3071,6 +3100,21 @@ socket.onmessage = async (event) => {
             isHealing: healthDiff > 0,
             isCrit: isCrit || false,
             isMiss: false,
+          });
+        } else if (absorb && absorb > 0 && !isRevive) {
+
+          const randomOffsetX = (Math.random() - 0.5) * 20;
+          const randomOffsetY = (Math.random() - 0.5) * 10;
+
+          t.damageNumbers.push({
+            value: absorb,
+            x: t.position.x + randomOffsetX,
+            y: t.position.y - 30 + randomOffsetY,
+            startTime: performance.now(),
+            isHealing: false,
+            isCrit: false,
+            isMiss: false,
+            isAbsorb: true,
           });
         } else if (damage === 0 && newHealth > 0 && oldHealth > 0 && !isRevive) {
 
@@ -3663,6 +3707,10 @@ socket.onmessage = async (event) => {
         draggedPlayer.position.y = Math.round(data.y);
         draggedPlayer.lastServerUpdate = performance.now();
       }
+      break;
+    }
+    case "EFFECTS": {
+      updateBuffBar(data || []);
       break;
     }
     default:

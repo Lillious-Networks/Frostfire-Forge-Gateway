@@ -27,6 +27,7 @@ class Cache {
   inventory: any[] = [];
   equipment: any = {};
   inventoryConfig: any = null;
+  spells: Record<string, any> = {};
 
   private constructor() {}
 
