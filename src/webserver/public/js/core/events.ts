@@ -488,7 +488,6 @@ document.addEventListener("contextmenu", (event) => {
   const mapCenterOffsetY = 0;
   if (window.mapData) {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    const mapHeight = window.mapData.height * window.mapData.tileheight;
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
     }
@@ -601,7 +600,6 @@ canvas.addEventListener("touchend", (e) => {
     const mapCenterOffsetY = 0;
     if (window.mapData) {
       const mapWidth = window.mapData.width * window.mapData.tilewidth;
-      const mapHeight = window.mapData.height * window.mapData.tileheight;
       if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
     }
 
@@ -646,7 +644,6 @@ document.addEventListener("click", (event) => {
   const mapCenterOffsetY = 0;
   if (window.mapData) {
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    const mapHeight = window.mapData.height * window.mapData.tileheight;
     if (mapWidth < window.innerWidth) {
       mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
     }

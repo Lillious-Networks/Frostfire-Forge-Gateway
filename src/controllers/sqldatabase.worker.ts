@@ -1,5 +1,4 @@
 import { SQL } from 'bun';
-import log from "../modules/logger";
 import { getSqlCert } from "./utils";
 import os from 'node:os';
 import path from 'node:path';

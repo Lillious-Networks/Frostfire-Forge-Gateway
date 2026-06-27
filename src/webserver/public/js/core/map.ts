@@ -153,6 +153,11 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       tilewidth: tilewidth,
       tileheight: tileheight,
       tilesets: tilesets,
+      infinite: (metadata?.infinite === true),
+      minTileX: 0,
+      minTileY: 0,
+      minChunkX: 0,
+      minChunkY: 0,
       images: images,
       chunksX: chunksX,
       chunksY: chunksY,
@@ -571,6 +576,118 @@ async function isChunkCached(mapName: string, chunkX: number, chunkY: number): P
   }
 }
 
+// Grow the map bounds if a loaded chunk contains tiles beyond the current width or
+// height, so persisted out-of-border content renders on reload even when the
+// LOAD_MAP dimensions are stale (otherwise renderMap would clip it away).
+function growBoundsForChunk(chunkData: any): void {
+  if (!window.mapData || !chunkData || !Array.isArray(chunkData.layers)) return;
+  const cs = window.mapData.chunkSize;
+  const baseX = (chunkData.chunkX || 0) * cs;
+  const baseY = (chunkData.chunkY || 0) * cs;
+  const cw = chunkData.width || cs;
+  if (cw <= 0) return;
+
+  let maxLocalX = -1;
+  let maxLocalY = -1;
+  for (const layer of chunkData.layers) {
+    if (!Array.isArray(layer.data)) continue;
+    const data = layer.data;
+    for (let i = 0; i < data.length; i++) {
+      if (!data[i]) continue;
+      const lx = i % cw;
+      const ly = (i - lx) / cw;
+      if (lx > maxLocalX) maxLocalX = lx;
+      if (ly > maxLocalY) maxLocalY = ly;
+    }
+  }
+  if (maxLocalX < 0) return;
+
+  const needW = baseX + maxLocalX + 1;
+  const needH = baseY + maxLocalY + 1;
+  let changed = false;
+  if (needW > window.mapData.width) { window.mapData.width = needW; changed = true; }
+  if (needH > window.mapData.height) { window.mapData.height = needH; changed = true; }
+  if (changed) {
+    window.mapData.chunksX = Math.ceil(window.mapData.width / cs);
+    window.mapData.chunksY = Math.ceil(window.mapData.height / cs);
+  }
+}
+
+// Recompute the map bounds from the actual content of the loaded chunks and SHRINK
+// them to fit (the symmetric counterpart to ensureChunkForTile growing the bounds
+// when painting). Used on save so empty expansion collapses immediately, client-
+// side, without waiting on a server round-trip. Growth is handled by
+// growBoundsForChunk when chunks load, so this only ever shrinks.
+export function recomputeMapBoundsFromLoadedChunks(): void {
+  if (!window.mapData) return;
+  const cs = window.mapData.chunkSize;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let hasContent = false;
+
+  window.mapData.loadedChunks.forEach((chunk: any) => {
+    if (!chunk || !Array.isArray(chunk.layers)) return;
+    const cw = chunk.width || cs;
+    const baseX = (chunk.chunkX || 0) * cs;
+    const baseY = (chunk.chunkY || 0) * cs;
+    for (const layer of chunk.layers) {
+      if (!Array.isArray(layer.data)) continue;
+      const data = layer.data;
+      for (let i = 0; i < data.length; i++) {
+        if (!data[i]) continue;
+        hasContent = true;
+        const lx = i % cw;
+        const ly = (i - lx) / cw;
+        const gx = baseX + lx;
+        const gy = baseY + ly;
+        if (gx < minX) minX = gx;
+        if (gx > maxX) maxX = gx;
+        if (gy < minY) minY = gy;
+        if (gy > maxY) maxY = gy;
+      }
+    }
+  });
+
+  if (!hasContent) return;
+
+  // Shrink the positive (right/down) extent to the content.
+  const tightW = maxX + 1;
+  const tightH = maxY + 1;
+  if (tightW < window.mapData.width) {
+    window.mapData.width = tightW;
+    window.mapData.chunksX = Math.ceil(tightW / cs);
+  }
+  if (tightH < window.mapData.height) {
+    window.mapData.height = tightH;
+    window.mapData.chunksY = Math.ceil(tightH / cs);
+  }
+
+  // Pull the negative (left/up) extent back toward the origin if the expansion
+  // there is now empty.
+  const newMinTileX = Math.min(0, minX);
+  const newMinTileY = Math.min(0, minY);
+  if (newMinTileX > (window.mapData.minTileX ?? 0)) {
+    window.mapData.minTileX = newMinTileX;
+    window.mapData.minChunkX = Math.floor(newMinTileX / cs);
+  }
+  if (newMinTileY > (window.mapData.minTileY ?? 0)) {
+    window.mapData.minTileY = newMinTileY;
+    window.mapData.minChunkY = Math.floor(newMinTileY / cs);
+  }
+
+  // Drop loaded chunks that now fall outside the recomputed bounds.
+  const keys = Array.from(window.mapData.loadedChunks.keys()) as string[];
+  const minCX = window.mapData.minChunkX ?? 0;
+  const minCY = window.mapData.minChunkY ?? 0;
+  for (const key of keys) {
+    const c = window.mapData.loadedChunks.get(key);
+    if (!c) continue;
+    if (c.chunkX < minCX || c.chunkY < minCY || c.chunkX >= window.mapData.chunksX || c.chunkY >= window.mapData.chunksY) {
+      window.mapData.loadedChunks.delete(key);
+    }
+  }
+}
+
 async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData | null> {
   if (!window.mapData) return null;
 
@@ -613,6 +730,10 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
     chunkData.canvas = lowerCanvas;
 
     window.mapData.loadedChunks.set(chunkKey, chunkData);
+
+    // Keep persisted out-of-border content visible on reload even if the LOAD_MAP
+    // dimensions are stale: grow the bounds to include this chunk's content.
+    growBoundsForChunk(chunkData);
 
     const preloadCache = (window as any).__preloadedMaps?.[window.mapData.name]?.loadedChunks;
     if (preloadCache) {
@@ -903,6 +1024,112 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
   }
 
   chunkData.animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
+}
+
+// Create an empty in-memory chunk, used by the editor when painting into the
+// infinite zone beyond the currently-loaded chunks. Its layer structure is
+// cloned from an existing loaded chunk so it matches the rest of the map.
+function createEmptyChunk(chunkX: number, chunkY: number): any | null {
+  if (!window.mapData) return null;
+  const chunkSize = window.mapData.chunkSize;
+
+  let template: any = null;
+  for (const c of window.mapData.loadedChunks.values()) { template = c; break; }
+  if (!template) return null;
+
+  const layers = template.layers.map((l: any) => ({
+    name: l.name,
+    zIndex: l.zIndex,
+    width: chunkSize,
+    height: chunkSize,
+    data: new Array(chunkSize * chunkSize).fill(0),
+  }));
+
+  const pixelW = chunkSize * window.mapData.tilewidth;
+  const pixelH = chunkSize * window.mapData.tileheight;
+  const lowerCanvas = document.createElement("canvas");
+  const upperCanvas = document.createElement("canvas");
+  lowerCanvas.width = pixelW; lowerCanvas.height = pixelH;
+  upperCanvas.width = pixelW; upperCanvas.height = pixelH;
+
+  const chunk: any = {
+    chunkX, chunkY,
+    startX: chunkX * chunkSize,
+    startY: chunkY * chunkSize,
+    width: chunkSize,
+    height: chunkSize,
+    tilewidth: window.mapData.tilewidth,
+    tileheight: window.mapData.tileheight,
+    layers,
+    lowerCanvas,
+    upperCanvas,
+    canvas: lowerCanvas,
+    animatedTiles: [],
+  };
+
+  window.mapData.loadedChunks.set(`${chunkX}-${chunkY}`, chunk);
+  return chunk;
+}
+
+// Ensure a tile at the given world-tile coords can be painted: grow the map's
+// logical bounds (infinite maps only) and create the target chunk if missing.
+// Returns the chunk + local coords, or null if not paintable (e.g. negative
+// coords, which require origin re-basing and are not supported yet).
+// Parse a "chunkX-chunkY" key, correctly handling negative indices.
+export function parseChunkKey(key: string): [number, number] {
+  const m = key.match(/^(-?\d+)-(-?\d+)$/);
+  if (!m) return [0, 0];
+  return [Number(m[1]), Number(m[2])];
+}
+
+// Ensure a tile at the given world-tile coords can be painted: grow the map's
+// logical bounds in any direction (infinite maps only) and create the target
+// chunk if missing. Existing content is never shifted while editing (no desync
+// with server-authoritative positions); the origin is re-based to (0,0) only at
+// save time. Returns the chunk + local coords, or null if not paintable.
+export function ensureChunkForTile(worldTileX: number, worldTileY: number): { chunk: any; chunkX: number; chunkY: number; localX: number; localY: number } | null {
+  if (!window.mapData) return null;
+
+  const chunkSize = window.mapData.chunkSize;
+  const chunkX = Math.floor(worldTileX / chunkSize);
+  const chunkY = Math.floor(worldTileY / chunkSize);
+  // Floor-mod keeps local coords in [0, chunkSize) even for negative world tiles.
+  const localX = ((worldTileX % chunkSize) + chunkSize) % chunkSize;
+  const localY = ((worldTileY % chunkSize) + chunkSize) % chunkSize;
+
+  if (window.mapData.infinite) {
+    if (window.mapData.minTileX === undefined) window.mapData.minTileX = 0;
+    if (window.mapData.minTileY === undefined) window.mapData.minTileY = 0;
+
+    // Grow the positive (right / down) extent.
+    if (worldTileX + 1 > window.mapData.width) {
+      window.mapData.width = worldTileX + 1;
+      window.mapData.chunksX = Math.ceil(window.mapData.width / chunkSize);
+    }
+    if (worldTileY + 1 > window.mapData.height) {
+      window.mapData.height = worldTileY + 1;
+      window.mapData.chunksY = Math.ceil(window.mapData.height / chunkSize);
+    }
+
+    // Grow the negative (left / up) extent.
+    if (worldTileX < window.mapData.minTileX) {
+      window.mapData.minTileX = worldTileX;
+      window.mapData.minChunkX = Math.floor(worldTileX / chunkSize);
+    }
+    if (worldTileY < window.mapData.minTileY) {
+      window.mapData.minTileY = worldTileY;
+      window.mapData.minChunkY = Math.floor(worldTileY / chunkSize);
+    }
+  } else if (worldTileX < 0 || worldTileY < 0 || worldTileX >= window.mapData.width || worldTileY >= window.mapData.height) {
+    return null;
+  }
+
+  let chunk = window.mapData.loadedChunks.get(`${chunkX}-${chunkY}`);
+  if (!chunk) {
+    chunk = createEmptyChunk(chunkX, chunkY);
+    if (!chunk) return null;
+  }
+  return { chunk, chunkX, chunkY, localX, localY };
 }
 
 function getChunkCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | null {

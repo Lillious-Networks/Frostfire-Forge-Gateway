@@ -4,7 +4,6 @@ const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
 const serverPort = useSSL ? httpsPort : httpPort;
 // Import all types from types.d.ts
-import type { GameServer, ClientSession, GatewayConfig } from "../../types";
 
 const config: GatewayConfig = {
   port: serverPort,

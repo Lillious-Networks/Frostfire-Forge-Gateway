@@ -2973,7 +2973,6 @@ class AnimatorTool {
     const input = document.createElement('input');
     input.id = 'coord-inline-input';
     input.type = 'text';
-    input.value = `${totalX}, ${totalY}`;
     input.style.cssText = `
       position: absolute;
       left: ${this.gridCanvas.offsetLeft + labelX}px;

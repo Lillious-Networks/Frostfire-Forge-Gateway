@@ -18,6 +18,9 @@ let lastDirection = "";
 let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0, nextFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
 let cameraInitialized: boolean = false;
+// Free-pan editor camera state (used only while the tile editor is active).
+let editorCameraX: number = 0, editorCameraY: number = 0;
+let editorCameraInitialized: boolean = false;
 
 // Chunk load time tracking for fade-in effect
 const chunkLoadTimes = new Map<string, number>();
@@ -176,6 +179,29 @@ let pendingRequest: boolean = false;
 
 function updateCamera(currentPlayer: any, deltaTime: number) {
   if (!getIsLoaded()) return;
+
+  const tileEditor = (window as any).tileEditor;
+  if (tileEditor?.isActive && window.mapData) {
+    // Free-pan editor camera: decoupled from player-follow and unclamped so the
+    // user can pan anywhere, including into the infinite paint zone.
+    if (!editorCameraInitialized) {
+      editorCameraX = cameraX;
+      editorCameraY = cameraY;
+      editorCameraInitialized = true;
+    }
+    cameraX = editorCameraX;
+    cameraY = editorCameraY;
+    smoothMapX = cameraX;
+    smoothMapY = cameraY;
+
+    if (weatherType) {
+      updateWeatherCanvas(cameraX, cameraY);
+      weather(weatherType, currentWeatherData);
+    }
+    return;
+  }
+  editorCameraInitialized = false;
+
   if (currentPlayer && window.mapData) {
     const targetX = currentPlayer.renderPosition.x;
     const targetY = currentPlayer.renderPosition.y;
@@ -201,6 +227,27 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
   }
 }
 
+// Pan the free-pan editor camera by a world-space delta.
+export function panEditorCamera(dx: number, dy: number) {
+  editorCameraX += dx;
+  editorCameraY += dy;
+  editorCameraInitialized = true;
+}
+
+// Recenter the editor camera on the local player (or the map center as a fallback).
+export function resetEditorCamera() {
+  const playersArray = Array.from(cache.players instanceof Map ? cache.players.values() : cache.players);
+  const currentPlayer = playersArray.find((p: any) => p.id === cachedPlayerId);
+  if (currentPlayer) {
+    editorCameraX = currentPlayer.renderPosition?.x ?? currentPlayer.position.x;
+    editorCameraY = currentPlayer.renderPosition?.y ?? currentPlayer.position.y;
+  } else if (window.mapData) {
+    editorCameraX = (window.mapData.width * window.mapData.tilewidth) / 2;
+    editorCameraY = (window.mapData.height * window.mapData.tileheight) / 2;
+  }
+  editorCameraInitialized = true;
+}
+
 function getVisibleChunks(): Array<{x: number, y: number}> {
   if (!window.mapData) return [];
 
@@ -215,8 +262,10 @@ function getVisibleChunks(): Array<{x: number, y: number}> {
 
   const padding = chunkPixelSize;
 
-  const startChunkX = Math.max(0, Math.floor((cameraLeft - padding) / chunkPixelSize));
-  const startChunkY = Math.max(0, Math.floor((cameraTop - padding) / chunkPixelSize));
+  const minCX = window.mapData.minChunkX ?? 0;
+  const minCY = window.mapData.minChunkY ?? 0;
+  const startChunkX = Math.max(minCX, Math.floor((cameraLeft - padding) / chunkPixelSize));
+  const startChunkY = Math.max(minCY, Math.floor((cameraTop - padding) / chunkPixelSize));
   const endChunkX = Math.min(window.mapData.chunksX - 1, Math.floor((cameraRight + padding) / chunkPixelSize));
   const endChunkY = Math.min(window.mapData.chunksY - 1, Math.floor((cameraBottom + padding) / chunkPixelSize));
 
@@ -240,7 +289,10 @@ async function loadVisibleChunks() {
 
   const chunksToUnload: string[] = [];
 
-  for (const chunkKey of loadedChunksSet) {
+  // Don't unload chunks while the editor is active: freshly painted / expansion
+  // chunks aren't on the server yet, so unloading would discard unsaved edits.
+  const editorActiveForUnload = (window as any).tileEditor?.isActive;
+  if (!editorActiveForUnload) for (const chunkKey of loadedChunksSet) {
     if (!visibleKeys.has(chunkKey)) {
 
       const chunkData = window.mapData.loadedChunks.get(chunkKey);
@@ -721,6 +773,68 @@ function drawChunkAnimatedTiles(chunkData: any, layerGroup: 'lower' | 'upper', s
   ctx.globalAlpha = prevAlpha;
 }
 
+// Draws the Tiled-style "infinite paint zone" outside the current map bounds while
+// the tile editor is active on an infinite map: the area beyond the map shows a
+// faint white grid over the black background, indicating it can be painted into.
+function renderInfiniteZone() {
+  if (!ctx || !window.mapData) return;
+
+  const tw = window.mapData.tilewidth;
+  const th = window.mapData.tileheight;
+  const mapWidth = window.mapData.width * tw;
+  const mapHeight = window.mapData.height * th;
+
+  let mapCenterOffsetX = 0;
+  let mapCenterOffsetY = 0;
+  if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+  if (mapHeight < window.innerHeight) mapCenterOffsetY = (window.innerHeight - mapHeight) / 2;
+
+  const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
+  const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  ctx.save();
+
+  // Clip to the viewport EXCLUDING the current map rect (even-odd), so the grid
+  // only appears in the out-of-bounds zone.
+  ctx.beginPath();
+  ctx.rect(0, 0, vw, vh);
+  // Exclude the full map extent (including any negative/expanded area) so the grid
+  // never draws over painted content.
+  const izMinTileX = window.mapData.minTileX ?? 0;
+  const izMinTileY = window.mapData.minTileY ?? 0;
+  ctx.rect(offsetX + izMinTileX * tw, offsetY + izMinTileY * th, mapWidth - izMinTileX * tw, mapHeight - izMinTileY * th);
+  ctx.clip('evenodd');
+
+  // The canvas is already cleared to black; draw a faint tile grid over it.
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  const worldLeft = -offsetX;
+  const worldTop = -offsetY;
+  const startCol = Math.floor(worldLeft / tw);
+  const endCol = Math.ceil((worldLeft + vw) / tw);
+  const startRow = Math.floor(worldTop / th);
+  const endRow = Math.ceil((worldTop + vh) / th);
+
+  for (let c = startCol; c <= endCol; c++) {
+    const sx = c * tw + offsetX;
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, vh);
+  }
+  for (let r = startRow; r <= endRow; r++) {
+    const sy = r * th + offsetY;
+    ctx.moveTo(0, sy);
+    ctx.lineTo(vw, sy);
+  }
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, playerTileY?: number) {
   if (!ctx || !window.mapData) return;
 
@@ -755,10 +869,15 @@ function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, pla
     tilesetLookupCache = buildTilesetLookupMap();
   }
 
-  // Set up clipping region to prevent rendering outside map bounds
+  // Set up clipping region to prevent rendering outside map bounds (extended to
+  // include any negative/expanded area while editing an infinite map).
   ctx.save();
   ctx.beginPath();
-  ctx.rect(offsetX, offsetY, mapWidth, mapHeight);
+  const clipMinTileX = window.mapData.minTileX ?? 0;
+  const clipMinTileY = window.mapData.minTileY ?? 0;
+  const clipMinX = clipMinTileX * window.mapData.tilewidth;
+  const clipMinY = clipMinTileY * window.mapData.tileheight;
+  ctx.rect(offsetX + clipMinX, offsetY + clipMinY, mapWidth - clipMinX, mapHeight - clipMinY);
   ctx.clip();
 
   if (isEditorActive && selectedLayer) {
@@ -1040,6 +1159,9 @@ function animationLoop() {
   }
 
   if (!wireframeDebugCheckbox.checked) {
+    if ((window as any).tileEditor?.isActive && window.mapData?.infinite) {
+      renderInfiniteZone();
+    }
     renderMap('lower');
   }
 
@@ -1047,7 +1169,6 @@ function animationLoop() {
 
   // Calculate map size in pixels and centering offset for small maps
   const mapWidth = window.mapData.width * window.mapData.tilewidth;
-  const mapHeight = window.mapData.height * window.mapData.tileheight;
   let mapCenterOffsetX = 0;
   const mapCenterOffsetY = 0;
 
@@ -1284,7 +1405,6 @@ function animationLoop() {
     ctx.save();
     // Calculate map size in pixels and centering offset for small maps
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    const mapHeight = window.mapData.height * window.mapData.tileheight;
     let mapCenterOffsetX = 0;
     const mapCenterOffsetY = 0;
 
@@ -1554,7 +1674,6 @@ function animationLoop() {
     ctx.save();
     // Calculate map size in pixels and centering offset for small maps
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    const mapHeight = window.mapData.height * window.mapData.tileheight;
     let mapCenterOffsetX = 0;
     const mapCenterOffsetY = 0;
 
@@ -1573,7 +1692,6 @@ function animationLoop() {
     ctx.save();
     // Calculate map size in pixels and centering offset for small maps
     const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    const mapHeight = window.mapData.height * window.mapData.tileheight;
     let mapCenterOffsetX = 0;
     const mapCenterOffsetY = 0;
 

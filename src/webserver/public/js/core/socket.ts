@@ -691,6 +691,10 @@ socket.onmessage = async (event) => {
       updateTime(data);
       break;
     }
+    case "EDITOR_TILE_EDIT": {
+      (window as any).tileEditor?.applyRemoteEdits(data);
+      break;
+    }
     case "CAST_SPELL": {
       if (!data || !data.spell || (!data.time && data.time !== 0) || !data.id) return;
       castSpell(data.id, data.spell, data.time);
@@ -1055,9 +1059,8 @@ socket.onmessage = async (event) => {
 
       if (window.mapData && window.mapData.loadedChunks) {
         const chunksToReload: Array<{x: number, y: number}> = [];
-        window.mapData.loadedChunks.forEach((chunk: any, key: string) => {
-          const [x, y] = key.split('-').map(Number);
-          chunksToReload.push({ x, y });
+        window.mapData.loadedChunks.forEach((chunk: any, _key: string) => {
+          chunksToReload.push({ x: chunk.chunkX, y: chunk.chunkY });
         });
 
         window.mapData.loadedChunks.clear();
@@ -1069,10 +1072,10 @@ socket.onmessage = async (event) => {
       break;
     }
     case "UPDATE_CHUNKS": {
-
+      // Refresh the saved chunks for other players (bounds are handled by MAP_REBASE).
       if (window.mapData && window.mapData.loadedChunks && data) {
-        const chunksToUpdate = data as Array<{chunkX: number, chunkY: number}>;
-
+        const payload = data as any;
+        const chunksToUpdate = (Array.isArray(payload) ? payload : (payload.chunks || [])) as Array<{chunkX: number, chunkY: number}>;
         import("./map.js").then(async ({ clearChunkFromCache }) => {
           for (const chunkCoord of chunksToUpdate) {
             const chunkKey = `${chunkCoord.chunkX}-${chunkCoord.chunkY}`;
@@ -1083,6 +1086,56 @@ socket.onmessage = async (event) => {
             }
           }
         });
+      }
+      break;
+    }
+    case "MAP_REBASE": {
+      // Post-save bounds update. shiftX/Y != 0 means a left/up origin re-base;
+      // shiftX/Y == 0 is a pure bounds change (grew or trimmed empty expansion).
+      if (window.mapData && data) {
+        const shiftX = Number(data.shiftX) || 0;
+        const shiftY = Number(data.shiftY) || 0;
+        const cs = window.mapData.chunkSize;
+        if (data.width) window.mapData.width = data.width;
+        if (data.height) window.mapData.height = data.height;
+        window.mapData.chunksX = Math.ceil(window.mapData.width / cs);
+        window.mapData.chunksY = Math.ceil(window.mapData.height / cs);
+        window.mapData.minTileX = 0;
+        window.mapData.minTileY = 0;
+        window.mapData.minChunkX = 0;
+        window.mapData.minChunkY = 0;
+
+        if (shiftX !== 0 || shiftY !== 0) {
+          // Origin re-based: shift cached render positions + view, re-fetch chunks.
+          const shiftEntity = (e: any) => {
+            if (e?.position) { e.position.x += shiftX; e.position.y += shiftY; }
+            if (e?.renderPosition) { e.renderPosition.x += shiftX; e.renderPosition.y += shiftY; }
+            if (e?.serverPosition) { e.serverPosition.x += shiftX; e.serverPosition.y += shiftY; }
+          };
+          cache.players.forEach(shiftEntity);
+          cache.npcs.forEach(shiftEntity);
+          cache.entities.forEach(shiftEntity);
+
+          import("./renderer.js").then(({ panEditorCamera }) => {
+            if ((window as any).tileEditor?.isActive) panEditorCamera(shiftX, shiftY);
+          });
+
+          import("./map.js").then(async ({ clearMapCache }) => {
+            await clearMapCache(window.mapData.name).catch(() => {});
+            window.mapData.loadedChunks.clear();
+          });
+        } else {
+          // Bounds-only: drop loaded chunks now outside the bounds so trimmed-away
+          // empty expansion disappears (no re-fetch — keeps in-memory edits).
+          const keys = Array.from(window.mapData.loadedChunks.keys()) as string[];
+          for (const key of keys) {
+            const chunk = window.mapData.loadedChunks.get(key);
+            if (!chunk) continue;
+            if (chunk.chunkX < 0 || chunk.chunkY < 0 || chunk.chunkX >= window.mapData.chunksX || chunk.chunkY >= window.mapData.chunksY) {
+              window.mapData.loadedChunks.delete(key);
+            }
+          }
+        }
       }
       break;
     }

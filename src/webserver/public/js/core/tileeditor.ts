@@ -1,6 +1,7 @@
 import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox } from "./ui.js";
-import { renderChunkToCanvas, redrawChunkCells, clearChunkFromCache } from "./map.js";
+import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, recomputeMapBoundsFromLoadedChunks, clearChunkFromCache } from "./map.js";
+import { panEditorCamera, resetEditorCamera } from "./renderer.js";
 
 declare global {
   interface Window {
@@ -118,6 +119,9 @@ class TileEditor {
   private resizeHandle: HTMLElement;
   private paletteAnimRunning = false;
   private lastPaletteAnimSignature = '';
+  private isPanningMap = false;
+  private panLastX = 0;
+  private panLastY = 0;
 
   constructor() {
 
@@ -350,7 +354,7 @@ class TileEditor {
     this.undoBtn.addEventListener('click', () => this.undo());
     this.redoBtn.addEventListener('click', () => this.redo());
     this.saveBtn.addEventListener('click', () => this.save());
-    this.resetViewBtn.addEventListener('click', () => this.resetPanelPositions());
+    this.resetViewBtn.addEventListener('click', () => { this.resetPanelPositions(); resetEditorCamera(); });
     this.toggleOpacityBtn.addEventListener('click', () => this.toggleLayerOpacity());
     this.toggleGridBtn.addEventListener('click', () => this.toggleGrid());
 
@@ -1356,6 +1360,16 @@ class TileEditor {
       return;
     }
 
+    if (this.isPanningMap) {
+      const dx = e.clientX - this.panLastX;
+      const dy = e.clientY - this.panLastY;
+      this.panLastX = e.clientX;
+      this.panLastY = e.clientY;
+      panEditorCamera(-dx, -dy);
+      this.previewTilePos = null;
+      return;
+    }
+
     const worldPos = this.screenToWorld(e.clientX, e.clientY);
     const worldX = worldPos.x;
     const worldY = worldPos.y;
@@ -1573,6 +1587,16 @@ class TileEditor {
     if (!this.isActive || !window.mapData) return;
 
     if ((e.target as HTMLElement).closest('#tile-editor-container')) {
+      return;
+    }
+
+    // Middle-mouse drag pans the free-pan editor camera (Tiled-style navigation).
+    if (e.button === 1) {
+      e.preventDefault();
+      this.isPanningMap = true;
+      this.panLastX = e.clientX;
+      this.panLastY = e.clientY;
+      canvas.style.cursor = 'grabbing';
       return;
     }
 
@@ -1833,6 +1857,11 @@ class TileEditor {
 
   private onMapMouseUp() {
     this.isMouseDown = false;
+
+    if (this.isPanningMap) {
+      this.isPanningMap = false;
+      canvas.style.cursor = 'default';
+    }
 
     // Finalize warp resizing
     if (this.resizingWarp && window.mapData) {
@@ -2265,7 +2294,6 @@ class TileEditor {
     const mapCenterOffsetY = 0;
     if (window.mapData) {
       const mapWidth = window.mapData.width * window.mapData.tilewidth;
-      const mapHeight = window.mapData.height * window.mapData.tileheight;
       if (mapWidth < window.innerWidth) {
         mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
       }
@@ -2287,16 +2315,9 @@ class TileEditor {
 
     if (!this.selectedTile) return;
 
-    const chunkSize = window.mapData.chunkSize;
-    const chunkX = Math.floor(tileX / chunkSize);
-    const chunkY = Math.floor(tileY / chunkSize);
-    const localTileX = tileX % chunkSize;
-    const localTileY = tileY % chunkSize;
-
-    const chunkKey = `${chunkX}-${chunkY}`;
-    const chunk = window.mapData.loadedChunks.get(chunkKey);
-
-    if (!chunk) return;
+    const ensured = ensureChunkForTile(tileX, tileY);
+    if (!ensured) return;
+    const { chunk, chunkX, chunkY, localX: localTileX, localY: localTileY } = ensured;
 
     const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
     if (!layer) return;
@@ -2324,12 +2345,12 @@ class TileEditor {
     layer.data[tileIndex] = this.selectedTile;
 
     this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
+    this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: this.selectedTile as number }]);
   }
 
   private placeMultipleTiles(startTileX: number, startTileY: number) {
     if (!this.selectedLayer || !window.mapData || this.selectedTiles.length === 0) return;
 
-    const chunkSize = window.mapData.chunkSize;
     const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
     const changeGroup: TileChange[] = [];
 
@@ -2339,15 +2360,10 @@ class TileEditor {
         const worldTileX = startTileX + col;
         const worldTileY = startTileY + row;
 
-        const chunkX = Math.floor(worldTileX / chunkSize);
-        const chunkY = Math.floor(worldTileY / chunkSize);
-        const localTileX = worldTileX % chunkSize;
-        const localTileY = worldTileY % chunkSize;
-
+        const ensured = ensureChunkForTile(worldTileX, worldTileY);
+        if (!ensured) continue;
+        const { chunk, chunkX, chunkY, localX: localTileX, localY: localTileY } = ensured;
         const chunkKey = `${chunkX}-${chunkY}`;
-        const chunk = window.mapData.loadedChunks.get(chunkKey);
-
-        if (!chunk) continue;
 
         const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
         if (!layer) continue;
@@ -2385,9 +2401,11 @@ class TileEditor {
     }
 
     cellsByChunk.forEach((cells, chunkKey) => {
-      const [chunkX, chunkY] = chunkKey.split('-').map(Number);
+      const [chunkX, chunkY] = parseChunkKey(chunkKey);
       this.redrawCells(chunkX, chunkY, cells);
     });
+
+    this.sendTileEdits(changeGroup.map(ch => ({ chunkX: ch.chunkX, chunkY: ch.chunkY, layerName: ch.layerName, x: ch.tileX, y: ch.tileY, tileId: ch.newTileId })));
   }
 
   private eraseTile(tileX: number, tileY: number) {
@@ -2430,6 +2448,7 @@ class TileEditor {
     layer.data[tileIndex] = 0;
 
     this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
+    this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: 0 }]);
   }
 
   private copyTileFromWorld(tileX: number, tileY: number) {
@@ -2480,16 +2499,9 @@ class TileEditor {
 
     if (this.copiedTile === null || !this.selectedLayer || !window.mapData) return;
 
-    const chunkSize = window.mapData.chunkSize;
-    const chunkX = Math.floor(tileX / chunkSize);
-    const chunkY = Math.floor(tileY / chunkSize);
-    const localTileX = tileX % chunkSize;
-    const localTileY = tileY % chunkSize;
-
-    const chunkKey = `${chunkX}-${chunkY}`;
-    const chunk = window.mapData.loadedChunks.get(chunkKey);
-
-    if (!chunk) return;
+    const ensured = ensureChunkForTile(tileX, tileY);
+    if (!ensured) return;
+    const { chunk, chunkX, chunkY, localX: localTileX, localY: localTileY } = ensured;
 
     const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
     if (!layer) return;
@@ -2513,6 +2525,7 @@ class TileEditor {
     layer.data[tileIndex] = this.copiedTile;
 
     this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
+    this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: this.copiedTile as number }]);
   }
 
   // Incrementally redraw only the given local cells of a chunk's canvases. Falls
@@ -2527,6 +2540,42 @@ class TileEditor {
       return;
     }
     redrawChunkCells(chunk, cells);
+  }
+
+  // Broadcast tile edits to other admins editing the same map so concurrent edits
+  // stay in sync (best-effort relay; persistence still happens on Save).
+  private sendTileEdits(edits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }>) {
+    if (!this.isActive || !window.mapData || edits.length === 0) return;
+    sendRequest({ type: 'EDITOR_TILE_EDIT', data: { mapName: window.mapData.name, edits } });
+  }
+
+  // Apply tile edits received live from another editor. Remote edits are not pushed
+  // onto the local undo stack and are not re-broadcast.
+  public applyRemoteEdits(data: { mapName: string; edits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }> }) {
+    if (!window.mapData || !data || data.mapName !== window.mapData.name || !Array.isArray(data.edits)) return;
+
+    const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
+    const chunkSize = window.mapData.chunkSize;
+    for (const edit of data.edits) {
+      const chunkKey = `${edit.chunkX}-${edit.chunkY}`;
+      // Grow bounds / create the chunk if a remote editor painted into the zone.
+      const ensured = ensureChunkForTile(edit.chunkX * chunkSize + edit.x, edit.chunkY * chunkSize + edit.y);
+      if (!ensured) continue;
+      const chunk = ensured.chunk;
+      const layer = chunk.layers.find((l: any) => l.name === edit.layerName);
+      if (!layer) continue;
+      const idx = edit.y * chunk.width + edit.x;
+      if (idx < 0 || idx >= layer.data.length) continue;
+      layer.data[idx] = edit.tileId;
+      let arr = cellsByChunk.get(chunkKey);
+      if (!arr) { arr = []; cellsByChunk.set(chunkKey, arr); }
+      arr.push({ x: edit.x, y: edit.y });
+    }
+
+    cellsByChunk.forEach((cells, chunkKey) => {
+      const [cx, cy] = parseChunkKey(chunkKey);
+      this.redrawCells(cx, cy, cells);
+    });
   }
 
   private async rerenderChunk(chunkX: number, chunkY: number) {
@@ -2665,11 +2714,13 @@ class TileEditor {
 
     // Handle TileChange
     const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
+    const broadcastEdits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }> = [];
 
-    const recordCell = (chunkKey: string, change: TileChange) => {
+    const recordCell = (chunkKey: string, change: TileChange, tileId: number) => {
       let arr = cellsByChunk.get(chunkKey);
       if (!arr) { arr = []; cellsByChunk.set(chunkKey, arr); }
       arr.push({ x: change.tileX, y: change.tileY });
+      broadcastEdits.push({ chunkX: change.chunkX, chunkY: change.chunkY, layerName: change.layerName, x: change.tileX, y: change.tileY, tileId });
     };
 
     if ('changes' in item) {
@@ -2686,7 +2737,7 @@ class TileEditor {
         const tileIndex = change.tileY * chunk.width + change.tileX;
         layer.data[tileIndex] = change.oldTileId;
 
-        recordCell(chunkKey, change);
+        recordCell(chunkKey, change, change.oldTileId);
         // Mark layer as unsaved when undoing
         this.unsavedLayers.add(change.layerName);
       });
@@ -2704,17 +2755,18 @@ class TileEditor {
       const tileIndex = change.tileY * chunk.width + change.tileX;
       layer.data[tileIndex] = change.oldTileId;
 
-      recordCell(chunkKey, change);
+      recordCell(chunkKey, change, change.oldTileId);
       // Mark layer as unsaved when undoing
       this.unsavedLayers.add(change.layerName);
       this.redoStack.push(change);
     }
 
     cellsByChunk.forEach((cells, chunkKey) => {
-      const [chunkX, chunkY] = chunkKey.split('-').map(Number);
+      const [chunkX, chunkY] = parseChunkKey(chunkKey);
       this.redrawCells(chunkX, chunkY, cells);
     });
 
+    this.sendTileEdits(broadcastEdits);
     this.updateLayerList();
   }
 
@@ -2840,11 +2892,13 @@ class TileEditor {
 
     // Handle TileChange
     const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
+    const broadcastEdits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }> = [];
 
-    const recordCell = (chunkKey: string, change: TileChange) => {
+    const recordCell = (chunkKey: string, change: TileChange, tileId: number) => {
       let arr = cellsByChunk.get(chunkKey);
       if (!arr) { arr = []; cellsByChunk.set(chunkKey, arr); }
       arr.push({ x: change.tileX, y: change.tileY });
+      broadcastEdits.push({ chunkX: change.chunkX, chunkY: change.chunkY, layerName: change.layerName, x: change.tileX, y: change.tileY, tileId });
     };
 
     if ('changes' in item) {
@@ -2861,7 +2915,7 @@ class TileEditor {
         const tileIndex = change.tileY * chunk.width + change.tileX;
         layer.data[tileIndex] = change.newTileId;
 
-        recordCell(chunkKey, change);
+        recordCell(chunkKey, change, change.newTileId);
         // Mark layer as unsaved when redoing
         this.unsavedLayers.add(change.layerName);
       });
@@ -2879,17 +2933,18 @@ class TileEditor {
       const tileIndex = change.tileY * chunk.width + change.tileX;
       layer.data[tileIndex] = change.newTileId;
 
-      recordCell(chunkKey, change);
+      recordCell(chunkKey, change, change.newTileId);
       // Mark layer as unsaved when redoing
       this.unsavedLayers.add(change.layerName);
       this.undoStack.push(change);
     }
 
     cellsByChunk.forEach((cells, chunkKey) => {
-      const [chunkX, chunkY] = chunkKey.split('-').map(Number);
+      const [chunkX, chunkY] = parseChunkKey(chunkKey);
       this.redrawCells(chunkX, chunkY, cells);
     });
 
+    this.sendTileEdits(broadcastEdits);
     this.updateLayerList();
   }
 
@@ -3255,8 +3310,38 @@ class TileEditor {
 
     const chunks = Array.from(chunkChanges.values());
 
-    chunks.forEach(chunk => {
-    });
+    // Shrink the map's bounds client-side to fit the actual content (the symmetric
+    // counterpart to painting growing them). This collapses empty expansion in the
+    // editor immediately, before saving — and the recomputed bounds are what we send.
+    recomputeMapBoundsFromLoadedChunks();
+
+    // Editor extent for server-side growth / origin re-base. minTileX/minTileY are
+    // <= 0 when the map was expanded left/up.
+    const saveMinTileX = window.mapData.minTileX ?? 0;
+    const saveMinTileY = window.mapData.minTileY ?? 0;
+    const shiftTilesX = -Math.min(0, saveMinTileX);
+    const shiftTilesY = -Math.min(0, saveMinTileY);
+    const didShift = shiftTilesX > 0 || shiftTilesY > 0;
+    const saveBounds = {
+      minTileX: saveMinTileX,
+      minTileY: saveMinTileY,
+      width: window.mapData.width,
+      height: window.mapData.height,
+      infinite: window.mapData.infinite === true,
+    };
+
+    // For left/up expansion the origin re-bases on save, so shift object positions
+    // to match before sending (the server shifts the object-group layers itself).
+    if (didShift) {
+      const dpx = shiftTilesX * window.mapData.tilewidth;
+      const dpy = shiftTilesY * window.mapData.tileheight;
+      for (const w of Object.values(window.mapData.warps || {}) as any[]) {
+        if (w?.position) { w.position.x += dpx; w.position.y += dpy; }
+      }
+      for (const g of Object.values(window.mapData.graveyards || {}) as any[]) {
+        if (g?.position) { g.position.x += dpx; g.position.y += dpy; }
+      }
+    }
 
     // Count objects being saved
     // Convert graveyards and warps from objects to arrays for saving
@@ -3267,18 +3352,21 @@ class TileEditor {
         }))
       : [];
 
-      const warpsArray = Object.entries(window.mapData.warps).map(([name, data]: any) => ({
-        name,
-        ...data,
-        x: data.x ?? '',
-        y: data.y ?? '',
-      }));
+      const warpsArray = window.mapData?.warps
+        ? Object.entries(window.mapData.warps).map(([name, data]: any) => ({
+            name,
+            ...data,
+            x: data.x ?? '',
+            y: data.y ?? '',
+          }))
+        : [];
 
     const savePayload: any = {
       type: 'SAVE_MAP',
       data: {
         mapName: window.mapData.name,
         chunks: chunks,
+        bounds: saveBounds,
         graveyards: graveyardsArray,
         warps: warpsArray
       }
