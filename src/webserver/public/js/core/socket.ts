@@ -695,6 +695,14 @@ socket.onmessage = async (event) => {
       (window as any).tileEditor?.applyRemoteEdits(data);
       break;
     }
+    case "EDITOR_LAYER_LOCK": {
+      (window as any).tileEditor?.applyRemoteLayerLock(data);
+      break;
+    }
+    case "EDITOR_SYNC_READY": {
+      (window as any).tileEditor?.onSyncReady();
+      break;
+    }
     case "CAST_SPELL": {
       if (!data || !data.spell || (!data.time && data.time !== 0) || !data.id) return;
       castSpell(data.id, data.spell, data.time);

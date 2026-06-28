@@ -377,9 +377,10 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
     const tileEditor = (window as any).tileEditor;
     const useDimming = tileEditor?.isActive && tileEditor.dimOtherLayers;
 
-    // Check if any layer in this chunk matches our selection criteria
-    let shouldDrawChunk = false;
-    let chunkAlpha = 1.0;
+    // Check whether the selected layer belongs to this canvas half, and whether
+    // any visible layer lives here (collision/no-pvp are excluded unless selected).
+    let selectedLayerInThisCanvas = false;
+    let hasVisibleLayer = false;
 
     for (const chunkLayer of sortedLayers) {
       const belongsToThisCanvas = layer === 'lower'
@@ -388,30 +389,32 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
 
       if (!belongsToThisCanvas) continue;
 
-      const isSelected = chunkLayer.name === selectedLayerName;
+      if (chunkLayer.name === selectedLayerName) {
+        selectedLayerInThisCanvas = true;
+      }
+
       const layerNameLower = chunkLayer.name.toLowerCase();
-      const isCollisionLayer = layerNameLower.includes('collision');
-      const isNoPvpLayer = layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp');
+      const isCollisionOrNoPvp = layerNameLower.includes('collision') ||
+        layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp');
+
+      if (isCollisionOrNoPvp && chunkLayer.name !== selectedLayerName) continue;
 
       const isLayerVisible = tileEditor?.isLayerVisible(chunkLayer.name) ?? true;
-
-      if ((isCollisionLayer || isNoPvpLayer) && !isSelected) continue;
-
-      shouldDrawChunk = true;
-
-      if (isCollisionSelected || isNoPvpSelected) {
-        if (!(isCollisionLayer || isNoPvpLayer)) {
-          chunkAlpha = isLayerVisible ? 1.0 : 0;
-        }
-      } else if (useDimming) {
-        chunkAlpha = isSelected ? (isLayerVisible ? 1.0 : 0) : (isLayerVisible ? 0.5 : 0);
-        break;
-      } else {
-        chunkAlpha = isLayerVisible ? 1.0 : 0;
+      if (isLayerVisible) {
+        hasVisibleLayer = true;
       }
     }
 
-    if (shouldDrawChunk) {
+    if (hasVisibleLayer) {
+      let chunkAlpha = 1.0;
+
+      if (isCollisionSelected || isNoPvpSelected) {
+        // Special layers: only draw the selected special layer
+        chunkAlpha = 1.0;
+      } else if (useDimming) {
+        chunkAlpha = selectedLayerInThisCanvas ? 1.0 : 0.5;
+      }
+
       try {
         ctx.globalAlpha = chunkAlpha;
         ctx.drawImage(chunkCanvas, screenX, screenY);

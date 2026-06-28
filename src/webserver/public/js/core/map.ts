@@ -41,6 +41,7 @@ interface ChunkData {
     data: number[];
     width: number;
     height: number;
+    locked?: boolean;
   }>;
   canvas?: HTMLCanvasElement;
   lowerCanvas?: HTMLCanvasElement;
@@ -783,7 +784,7 @@ async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunk
   }
 }
 
-async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {
+async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = false): Promise<{lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {
   if (!window.mapData) throw new Error("Map data not initialized");
 
   const pixelWidth = chunkData.width * window.mapData.tilewidth;
@@ -851,6 +852,11 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
       continue;
     }
 
+    const tileEditor = (window as any).tileEditor;
+    if (tileEditor?.isActive && !tileEditor.isLayerVisible(layer.name)) {
+      continue;
+    }
+
     const ctx = layer.zIndex < Number(PLAYER_Z_INDEX) ? lowerCtx : upperCtx;
 
     let tileCount = 0;
@@ -905,7 +911,7 @@ async function renderChunkToCanvas(chunkData: ChunkData): Promise<{lowerCanvas: 
         tileCount++;
 
         // Yield to browser every TILES_PER_FRAME tiles to keep frame rate smooth
-        if (tileCount % TILES_PER_FRAME === 0) {
+        if (!skipYield && tileCount % TILES_PER_FRAME === 0) {
           await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
@@ -978,6 +984,9 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
       const layerName = layer.name ? layer.name.toLowerCase() : '';
       if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp')) continue;
 
+      const tileEditor = (window as any).tileEditor;
+      if (tileEditor?.isActive && !tileEditor.isLayerVisible(layer.name)) continue;
+
       const tileIndex = layer.data[y * chunkData.width + x];
       if (tileIndex === 0) continue;
 
@@ -1043,6 +1052,7 @@ function createEmptyChunk(chunkX: number, chunkY: number): any | null {
     width: chunkSize,
     height: chunkSize,
     data: new Array(chunkSize * chunkSize).fill(0),
+    locked: l.locked,
   }));
 
   const pixelW = chunkSize * window.mapData.tilewidth;
@@ -1159,4 +1169,19 @@ function getChunkUpperCanvas(chunkX: number, chunkY: number): HTMLCanvasElement 
   return chunk?.upperCanvas || null;
 }
 
-export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached };
+async function rebakeAllChunks() {
+  if (!window.mapData) return;
+
+  const chunks = [...window.mapData.loadedChunks.values()];
+  for (const chunkData of chunks) {
+    try {
+      const { lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
+      chunkData.lowerCanvas = lowerCanvas;
+      chunkData.upperCanvas = upperCanvas;
+    } catch (error) {
+      console.error('Error rebaking chunk:', error);
+    }
+  }
+}
+
+export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached, rebakeAllChunks };

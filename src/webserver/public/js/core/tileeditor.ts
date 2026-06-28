@@ -1,6 +1,6 @@
 import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox } from "./ui.js";
-import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, recomputeMapBoundsFromLoadedChunks, clearChunkFromCache } from "./map.js";
+import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, recomputeMapBoundsFromLoadedChunks, clearChunkFromCache, rebakeAllChunks } from "./map.js";
 import { panEditorCamera, resetEditorCamera } from "./renderer.js";
 
 declare global {
@@ -64,6 +64,7 @@ class TileEditor {
   private dimOtherLayers: boolean = false;
   private objectLayerVisibility: Map<string, boolean> = new Map();
   private layerVisibility: Map<string, boolean> = new Map();
+  private layerLocked: Map<string, boolean> = new Map();
   private minimizedPanelPositions: Map<string, { top: string, left: string, transform: string }> = new Map();
   private unsavedLayers: Set<string> = new Set();
   private undoStack: (TileChange | TileChangeGroup | ObjectMutation)[] = [];
@@ -79,6 +80,13 @@ class TileEditor {
   private selectionStartTile: { x: number, y: number } | null = null;
   private selectionEndTile: { x: number, y: number } | null = null;
   private selectedTiles: number[][] = [];
+  private selectedTilesFromMap: boolean = false;
+  private modifiedChunkKeys: Set<string> = new Set();
+  private layerDataSnapshot: Map<string, Map<string, number[]>> | null = null;
+
+  private isMapDraggingSelection: boolean = false;
+  private mapDragStartTile: { x: number, y: number } | null = null;
+  private mapDragEndTile: { x: number, y: number } | null = null;
 
   private isPanningTileset: boolean = false;
   private tilesetPanStartX: number = 0;
@@ -391,27 +399,133 @@ class TileEditor {
     canvas.addEventListener('contextmenu', (e) => this.onMapContextMenu(e));
   }
 
-  public toggle() {
-    this.isActive = !this.isActive;
-    this.container.style.display = this.isActive ? 'block' : 'none';
-
+  public async toggle() {
     if (this.isActive) {
-
-      this.panels.forEach(panelState => {
-        panelState.panel.style.display = 'flex';
-      });
-      this.initialize();
+      await this.closeEditor();
     } else {
-
-      collisionTilesDebugCheckbox.checked = false;
-      noPvpDebugCheckbox.checked = false;
-
-      const gridCheckbox = document.getElementById('show-grid-checkbox') as HTMLInputElement;
-      if (gridCheckbox) {
-        gridCheckbox.checked = false;
-      }
-      this.toggleGridBtn.classList.remove('active');
+      await this.openEditor();
     }
+  }
+
+  private async openEditor() {
+    this.isActive = true;
+    this.modifiedChunkKeys.clear();
+
+    // Snapshot the saved state BEFORE sync so close reverts ALL edits (local + synced)
+    this.saveLayerSnapshot();
+
+    this.showSyncNotification();
+    sendRequest({ type: 'EDITOR_OPEN', data: null });
+    await this.waitForSyncReady();
+    this.hideSyncNotification();
+
+    this.panels.forEach(panelState => {
+      panelState.panel.style.display = 'flex';
+    });
+    this.initialize();
+  }
+
+  private async closeEditor() {
+    this.isActive = false;
+    this.container.style.display = 'none';
+    this.hideSyncNotification();
+
+    sendRequest({ type: 'EDITOR_CLOSE', data: null });
+
+    await this.restoreLayerSnapshot();
+
+    collisionTilesDebugCheckbox.checked = false;
+    noPvpDebugCheckbox.checked = false;
+
+    const gridCheckbox = document.getElementById('show-grid-checkbox') as HTMLInputElement;
+    if (gridCheckbox) {
+      gridCheckbox.checked = false;
+    }
+    this.toggleGridBtn.classList.remove('active');
+  }
+
+  private saveLayerSnapshot() {
+    if (!window.mapData) return;
+    this.layerDataSnapshot = new Map();
+    for (const [chunkKey, chunkData] of window.mapData.loadedChunks) {
+      const layerMap = new Map<string, number[]>();
+      for (const layer of chunkData.layers) {
+        layerMap.set(layer.name, layer.data ? [...layer.data] : []);
+      }
+      this.layerDataSnapshot.set(chunkKey, layerMap);
+    }
+  }
+
+  private async restoreLayerSnapshot() {
+    if (!window.mapData || !this.layerDataSnapshot) return;
+
+    const rebakes: Promise<void>[] = [];
+
+    for (const chunkKey of this.modifiedChunkKeys) {
+      const chunkData = window.mapData.loadedChunks.get(chunkKey);
+      const savedLayers = this.layerDataSnapshot.get(chunkKey);
+      if (!chunkData || !savedLayers) continue;
+
+      for (const [layerName, saved] of savedLayers) {
+        const layer = chunkData.layers.find((l: any) => l.name === layerName);
+        if (layer && saved.length === layer.data.length) {
+          for (let i = 0; i < saved.length; i++) {
+            layer.data[i] = saved[i];
+          }
+        }
+      }
+
+      rebakes.push(
+        renderChunkToCanvas(chunkData, true).then(({ lowerCanvas, upperCanvas }) => {
+          chunkData.lowerCanvas = lowerCanvas;
+          chunkData.upperCanvas = upperCanvas;
+          chunkData.canvas = lowerCanvas;
+        })
+      );
+    }
+
+    await Promise.all(rebakes);
+    this.layerDataSnapshot = null;
+  }
+
+  private syncReadyResolve: (() => void) | null = null;
+
+  private waitForSyncReady(): Promise<void> {
+    return new Promise((resolve) => {
+      this.syncReadyResolve = resolve;
+    });
+  }
+
+  public onSyncReady() {
+    if (this.syncReadyResolve) {
+      this.syncReadyResolve();
+      this.syncReadyResolve = null;
+    }
+  }
+
+  private showSyncNotification() {
+    this.container.style.display = 'block';
+    // Hide panels during sync by pausing their display until sync completes
+    this.panels.forEach(panelState => {
+      panelState.panel.style.display = 'none';
+    });
+    // Create a DOM notification overlay
+    const existing = document.getElementById('te-sync-notification');
+    if (!existing) {
+      const el = document.createElement('div');
+      el.id = 'te-sync-notification';
+      el.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:10001;'
+        + 'background:rgba(30,41,59,0.95);border:1px solid rgba(46,204,113,0.5);border-radius:6px;'
+        + 'padding:10px 20px;color:#f1f5f9;font-family:\'Space Mono\',monospace;font-size:14px;'
+        + 'pointer-events:none;';
+      el.textContent = 'Syncing map state...';
+      document.body.appendChild(el);
+    }
+  }
+
+  private hideSyncNotification() {
+    const el = document.getElementById('te-sync-notification');
+    if (el) el.remove();
   }
 
   private initialize() {
@@ -473,16 +587,24 @@ class TileEditor {
       .sort((a: any, b: any) => a.zIndex - b.zIndex);
 
     layers.forEach((layer: any) => {
+      const isCollision = layer.name.toLowerCase().includes('collision');
+      const isNoPvp = layer.name.toLowerCase().includes('nopvp') || layer.name.toLowerCase().includes('no-pvp');
+
       // Initialize visibility if not set
       if (!this.layerVisibility.has(layer.name)) {
         this.layerVisibility.set(layer.name, true);
       }
 
+      // Always read lock state from chunk layer data (authoritative server state),
+      // falling back to name heuristic only when no lock data is present
+      if (typeof layer.locked === 'boolean') {
+        this.layerLocked.set(layer.name, layer.locked);
+      } else if (!this.layerLocked.has(layer.name)) {
+        this.layerLocked.set(layer.name, isCollision || isNoPvp);
+      }
+
       const layerItem = document.createElement('div');
       layerItem.className = 'te-layer-item ui';
-
-      const isCollision = layer.name.toLowerCase().includes('collision');
-      const isNoPvp = layer.name.toLowerCase().includes('nopvp') || layer.name.toLowerCase().includes('no-pvp');
 
       let colorStyle = '';
       if (isCollision) {
@@ -493,12 +615,39 @@ class TileEditor {
 
       const isVisible = this.layerVisibility.get(layer.name) ?? true;
       const eyeEmoji = isVisible ? '👁️' : '🚫';
+      const isLocked = this.layerLocked.get(layer.name) ?? false;
+      const lockEmoji = isLocked ? '🔒' : '🔓';
 
-      layerItem.innerHTML = `<span class="te-layer-label" style="${colorStyle}">${layer.name}</span><span class="te-layer-eye">${eyeEmoji}</span>`;
+      if (isLocked) {
+        layerItem.classList.add('locked');
+      }
+
+      layerItem.innerHTML = `<span class="te-layer-label" style="${colorStyle}">${layer.name}</span><span class="te-layer-lock">${lockEmoji}</span><span class="te-layer-eye">${eyeEmoji}</span>`;
 
       layerItem.addEventListener('click', (e) => {
-        // If clicking on the eye emoji area, toggle visibility
-        if ((e.target as HTMLElement).classList.contains('te-layer-eye')) {
+        // If clicking on the lock emoji, toggle lock state
+        if ((e.target as HTMLElement).classList.contains('te-layer-lock')) {
+          const newLocked = !(this.layerLocked.get(layer.name) ?? false);
+          this.layerLocked.set(layer.name, newLocked);
+          this.propagateLayerLockToChunks(layer.name, newLocked);
+          this.sendLayerLockChange(layer.name, newLocked);
+
+          const lockSpan = layerItem.querySelector('.te-layer-lock') as HTMLElement;
+          if (lockSpan) {
+            lockSpan.textContent = newLocked ? '🔒' : '🔓';
+          }
+          if (newLocked) {
+            layerItem.classList.add('locked');
+          } else {
+            layerItem.classList.remove('locked');
+          }
+
+          // If the currently selected layer is now locked, update toolbar state
+          if (layer.name === this.selectedLayer) {
+            this.updateToolbarForLayerLock(layer.name);
+          }
+        } else if ((e.target as HTMLElement).classList.contains('te-layer-eye')) {
+          // If clicking on the eye emoji area, toggle visibility
           const isCurrentlyVisible = this.layerVisibility.get(layer.name) ?? true;
           const newVisibility = !isCurrentlyVisible;
           this.layerVisibility.set(layer.name, newVisibility);
@@ -508,6 +657,8 @@ class TileEditor {
           if (eyeSpan) {
             eyeSpan.textContent = newVisibility ? '👁️' : '🚫';
           }
+
+          rebakeAllChunks();
         } else {
           // Otherwise select the layer
           this.selectLayer(layer.name);
@@ -541,7 +692,8 @@ class TileEditor {
     const layerItems = this.layersList.querySelectorAll('.te-layer-item');
     layerItems.forEach((item) => {
       const labelSpan = item.querySelector('.te-layer-label');
-      if (labelSpan?.textContent === layerName) {
+      const labelText = labelSpan?.textContent?.replace(' *', '') || '';
+      if (labelText === layerName) {
         item.classList.add('active');
       } else {
         item.classList.remove('active');
@@ -555,6 +707,31 @@ class TileEditor {
     collisionTilesDebugCheckbox.checked = isCollision;
 
     noPvpDebugCheckbox.checked = isNoPvp;
+
+    this.updateToolbarForLayerLock(layerName);
+  }
+
+  private updateToolbarForLayerLock(layerName: string) {
+    const isLocked = this.isLayerLocked(layerName);
+
+    if (isLocked) {
+      this.paintBtn.classList.add('disabled');
+      this.eraseBtn.classList.add('disabled');
+      this.copyBtn.classList.add('disabled');
+      this.pasteBtn.classList.add('disabled');
+      (this.paintBtn as HTMLButtonElement).disabled = true;
+      (this.eraseBtn as HTMLButtonElement).disabled = true;
+      (this.copyBtn as HTMLButtonElement).disabled = true;
+      (this.pasteBtn as HTMLButtonElement).disabled = true;
+    } else {
+      this.paintBtn.classList.remove('disabled');
+      this.eraseBtn.classList.remove('disabled');
+      this.copyBtn.classList.remove('disabled');
+      (this.paintBtn as HTMLButtonElement).disabled = false;
+      (this.eraseBtn as HTMLButtonElement).disabled = false;
+      (this.copyBtn as HTMLButtonElement).disabled = false;
+      this.updatePasteButtonState();
+    }
   }
 
   private hasObjectLayerChanges(objectType: 'Graveyards' | 'Warps'): boolean {
@@ -701,6 +878,10 @@ class TileEditor {
 
   public isLayerVisible(layerName: string): boolean {
     return this.layerVisibility.get(layerName) ?? true;
+  }
+
+  public isLayerLocked(layerName: string): boolean {
+    return this.layerLocked.get(layerName) ?? false;
   }
 
   public getSelectedObjectName(): string | null {
@@ -989,15 +1170,19 @@ class TileEditor {
       item.classList.remove('active');
     });
 
-    // Re-enable Map Tools buttons
-    this.paintBtn.classList.remove('disabled');
-    this.eraseBtn.classList.remove('disabled');
-    this.copyBtn.classList.remove('disabled');
-    this.pasteBtn.classList.remove('disabled');
-    (this.paintBtn as HTMLButtonElement).disabled = false;
-    (this.eraseBtn as HTMLButtonElement).disabled = false;
-    (this.copyBtn as HTMLButtonElement).disabled = false;
-    (this.pasteBtn as HTMLButtonElement).disabled = false;
+    // Re-enable Map Tools buttons (respect lock state)
+    if (this.selectedLayer) {
+      this.updateToolbarForLayerLock(this.selectedLayer);
+    } else {
+      this.paintBtn.classList.remove('disabled');
+      this.eraseBtn.classList.remove('disabled');
+      this.copyBtn.classList.remove('disabled');
+      this.pasteBtn.classList.remove('disabled');
+      (this.paintBtn as HTMLButtonElement).disabled = false;
+      (this.eraseBtn as HTMLButtonElement).disabled = false;
+      (this.copyBtn as HTMLButtonElement).disabled = false;
+      (this.pasteBtn as HTMLButtonElement).disabled = false;
+    }
   }
 
   private loadTilesets() {
@@ -1188,7 +1373,7 @@ class TileEditor {
       );
     }
 
-    else if (this.selectedTiles.length > 0) {
+    else if (this.selectedTiles.length > 0 && !this.selectedTilesFromMap) {
       const height = this.selectedTiles.length;
       const width = this.selectedTiles[0].length;
 
@@ -1282,6 +1467,7 @@ class TileEditor {
     if (!window.mapData || !this.isSelectingTiles) return;
 
     this.isSelectingTiles = false;
+    this.selectedTilesFromMap = false;
 
     const tileset = window.mapData.tilesets[this.currentTilesetIndex];
     if (!tileset || !this.selectionStartTile || !this.selectionEndTile) return;
@@ -1373,6 +1559,15 @@ class TileEditor {
     const worldPos = this.screenToWorld(e.clientX, e.clientY);
     const worldX = worldPos.x;
     const worldY = worldPos.y;
+
+    if (this.isMapDraggingSelection) {
+      const tileX = Math.floor(worldX / window.mapData.tilewidth);
+      const tileY = Math.floor(worldY / window.mapData.tileheight);
+      this.mapDragEndTile = { x: tileX, y: tileY };
+      canvas.style.cursor = 'crosshair';
+      this.previewTilePos = null;
+      return;
+    }
 
     // Handle resizing warps
     if (this.resizingWarp) {
@@ -1574,11 +1769,13 @@ class TileEditor {
 
     this.previewTilePos = { x: tileX, y: tileY };
 
-    if (this.isMouseDown && this.currentTool === 'paint') {
+    const isLayerLocked = this.selectedLayer ? this.isLayerLocked(this.selectedLayer) : false;
+
+    if (!isLayerLocked && this.isMouseDown && this.currentTool === 'paint') {
       this.placeTile(tileX, tileY);
-    } else if (this.isMouseDown && this.currentTool === 'erase') {
+    } else if (!isLayerLocked && this.isMouseDown && this.currentTool === 'erase') {
       this.eraseTile(tileX, tileY);
-    } else if (this.isMouseDown && this.currentTool === 'paste') {
+    } else if (!isLayerLocked && this.isMouseDown && this.currentTool === 'paste') {
       this.pasteTile(tileX, tileY);
     }
   }
@@ -1734,13 +1931,22 @@ class TileEditor {
 
     if (e.button === 2) {
       e.preventDefault();
-      this.copyTileFromWorld(tileX, tileY);
+      if (this.selectedLayer) {
+        this.isMapDraggingSelection = true;
+        this.mapDragStartTile = { x: tileX, y: tileY };
+        this.mapDragEndTile = { x: tileX, y: tileY };
+      } else {
+        this.copyTileFromWorld(tileX, tileY);
+      }
       return;
     }
 
     if (e.button === 0) {
       this.isMouseDown = true;
 
+      if (this.selectedLayer && this.isLayerLocked(this.selectedLayer)) {
+        return;
+      }
 
       if (this.currentTool === 'paint') {
         this.placeTile(tileX, tileY);
@@ -1857,6 +2063,24 @@ class TileEditor {
 
   private onMapMouseUp() {
     this.isMouseDown = false;
+
+    if (this.isMapDraggingSelection && this.mapDragStartTile) {
+      this.isMapDraggingSelection = false;
+
+      const startX = this.mapDragStartTile.x;
+      const startY = this.mapDragStartTile.y;
+      const endX = this.mapDragEndTile?.x ?? startX;
+      const endY = this.mapDragEndTile?.y ?? startY;
+
+      if (startX === endX && startY === endY) {
+        this.copyTileFromWorld(startX, startY);
+      } else {
+        this.copyTilesFromWorld(startX, startY, endX, endY);
+      }
+
+      canvas.style.cursor = 'default';
+      return;
+    }
 
     if (this.isPanningMap) {
       this.isPanningMap = false;
@@ -2308,6 +2532,8 @@ class TileEditor {
   private placeTile(tileX: number, tileY: number) {
     if (!this.selectedLayer || !window.mapData) return;
 
+    if (this.isLayerLocked(this.selectedLayer)) return;
+
     if (this.selectedTiles.length > 0) {
       this.placeMultipleTiles(tileX, tileY);
       return;
@@ -2350,6 +2576,8 @@ class TileEditor {
 
   private placeMultipleTiles(startTileX: number, startTileY: number) {
     if (!this.selectedLayer || !window.mapData || this.selectedTiles.length === 0) return;
+
+    if (this.isLayerLocked(this.selectedLayer)) return;
 
     const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
     const changeGroup: TileChange[] = [];
@@ -2410,6 +2638,8 @@ class TileEditor {
 
   private eraseTile(tileX: number, tileY: number) {
     if (!this.selectedLayer || !window.mapData) return;
+
+    if (this.isLayerLocked(this.selectedLayer)) return;
 
     const chunkSize = window.mapData.chunkSize;
     const chunkX = Math.floor(tileX / chunkSize);
@@ -2495,9 +2725,81 @@ class TileEditor {
     }
   }
 
+  private copyTilesFromWorld(startX: number, startY: number, endX: number, endY: number) {
+    if (!this.selectedLayer || !window.mapData) return;
+
+    const minX = Math.min(startX, endX);
+    const maxX = Math.max(startX, endX);
+    const minY = Math.min(startY, endY);
+    const maxY = Math.max(startY, endY);
+
+    const tiles: number[][] = [];
+    for (let y = minY; y <= maxY; y++) {
+      const row: number[] = [];
+      for (let x = minX; x <= maxX; x++) {
+        const chunkSize = window.mapData.chunkSize;
+        const chunkX = Math.floor(x / chunkSize);
+        const chunkY = Math.floor(y / chunkSize);
+        const localX = x % chunkSize;
+        const localY = y % chunkSize;
+
+        const chunkKey = `${chunkX}-${chunkY}`;
+        const chunk = window.mapData.loadedChunks.get(chunkKey);
+
+        if (!chunk) {
+          row.push(0);
+          continue;
+        }
+
+        const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
+        if (!layer) {
+          row.push(0);
+          continue;
+        }
+
+        const tileIndex = localY * chunk.width + localX;
+        row.push(layer.data[tileIndex] || 0);
+      }
+      tiles.push(row);
+    }
+
+    if (tiles.length === 1 && tiles[0].length === 1) {
+      this.selectedTile = tiles[0][0];
+      this.selectedTiles = [];
+      this.selectedTilesFromMap = false;
+      if (tiles[0][0] > 0) {
+        this.copiedTile = tiles[0][0];
+
+        const tilesetIndex = window.mapData.tilesets.findIndex((t: any) =>
+          t.firstgid <= tiles[0][0] && tiles[0][0] < t.firstgid + t.tilecount
+        );
+
+        if (tilesetIndex !== -1 && tilesetIndex !== this.currentTilesetIndex) {
+          this.selectTileset(tilesetIndex);
+        } else if (tilesetIndex !== -1) {
+          this.drawTileset();
+        }
+
+        this.scrollToSelectedTile();
+        this.setTool('paste');
+        this.updatePasteButtonState();
+      }
+    } else {
+      this.selectedTile = null;
+      this.selectedTiles = tiles;
+      this.selectedTilesFromMap = true;
+      this.copiedTile = null;
+      this.setTool('paint');
+      this.updatePasteButtonState();
+      this.drawTileset();
+    }
+  }
+
   private pasteTile(tileX: number, tileY: number) {
 
     if (this.copiedTile === null || !this.selectedLayer || !window.mapData) return;
+
+    if (this.isLayerLocked(this.selectedLayer)) return;
 
     const ensured = ensureChunkForTile(tileX, tileY);
     if (!ensured) return;
@@ -2533,6 +2835,7 @@ class TileEditor {
   private redrawCells(chunkX: number, chunkY: number, cells: Array<{ x: number; y: number }>) {
     if (!window.mapData || cells.length === 0) return;
     const chunkKey = `${chunkX}-${chunkY}`;
+    this.modifiedChunkKeys.add(chunkKey);
     const chunk = window.mapData.loadedChunks.get(chunkKey);
     if (!chunk) return;
     if (!chunk.lowerCanvas || !chunk.upperCanvas) {
@@ -2552,7 +2855,7 @@ class TileEditor {
   // Apply tile edits received live from another editor. Remote edits are not pushed
   // onto the local undo stack and are not re-broadcast.
   public applyRemoteEdits(data: { mapName: string; edits: Array<{ chunkX: number; chunkY: number; layerName: string; x: number; y: number; tileId: number }> }) {
-    if (!window.mapData || !data || data.mapName !== window.mapData.name || !Array.isArray(data.edits)) return;
+    if (!this.isActive || !window.mapData || !data || data.mapName !== window.mapData.name || !Array.isArray(data.edits)) return;
 
     const cellsByChunk = new Map<string, Array<{ x: number; y: number }>>();
     const chunkSize = window.mapData.chunkSize;
@@ -2576,6 +2879,52 @@ class TileEditor {
       const [cx, cy] = parseChunkKey(chunkKey);
       this.redrawCells(cx, cy, cells);
     });
+  }
+
+  private sendLayerLockChange(layerName: string, locked: boolean) {
+    if (!this.isActive || !window.mapData) return;
+    sendRequest({ type: 'EDITOR_LAYER_LOCK', data: { mapName: window.mapData.name, layerName, locked } });
+  }
+
+  public applyRemoteLayerLock(data: { mapName: string; layerName: string; locked: boolean }) {
+    if (!window.mapData || !data || data.mapName !== window.mapData.name) return;
+
+    this.layerLocked.set(data.layerName, data.locked);
+    this.propagateLayerLockToChunks(data.layerName, data.locked);
+
+    // Update UI if the layer is visible in the list
+    const layerItems = this.layersList.querySelectorAll('.te-layer-item');
+    layerItems.forEach((item) => {
+      const labelSpan = item.querySelector('.te-layer-label');
+      const labelText = labelSpan?.textContent?.replace(' *', '') || '';
+      if (labelText === data.layerName) {
+        const lockSpan = item.querySelector('.te-layer-lock') as HTMLElement;
+        if (lockSpan) {
+          lockSpan.textContent = data.locked ? '🔒' : '🔓';
+        }
+        if (data.locked) {
+          item.classList.add('locked');
+        } else {
+          item.classList.remove('locked');
+        }
+      }
+    });
+
+    // Update toolbar if this layer is currently selected
+    if (this.selectedLayer === data.layerName) {
+      this.updateToolbarForLayerLock(data.layerName);
+    }
+  }
+
+  private propagateLayerLockToChunks(layerName: string, locked: boolean) {
+    if (!window.mapData) return;
+
+    for (const chunk of window.mapData.loadedChunks.values()) {
+      const layer = chunk.layers.find((l: any) => l.name === layerName);
+      if (layer) {
+        layer.locked = locked;
+      }
+    }
   }
 
   private async rerenderChunk(chunkX: number, chunkY: number) {
@@ -3300,7 +3649,8 @@ class TileEditor {
               layers: chunk.layers.map((layer: any) => ({
                 name: layer.name,
                 zIndex: layer.zIndex,
-                data: [...layer.data]
+                data: [...layer.data],
+                locked: layer.locked,
               }))
             });
           }
@@ -3387,6 +3737,11 @@ class TileEditor {
   }
 
   private setTool(tool: 'paint' | 'erase' | 'copy' | 'paste') {
+    // Prevent switching to editing tools when the selected layer is locked
+    if (tool !== 'copy' && this.selectedLayer && this.isLayerLocked(this.selectedLayer)) {
+      return;
+    }
+
     this.currentTool = tool;
 
     this.paintBtn.classList.toggle('active', tool === 'paint');
@@ -3410,6 +3765,12 @@ class TileEditor {
 
     // Don't allow mode changes when an object layer is selected
     if (this.selectedObject && ['p', 'e', 'c', 'v'].includes(e.key)) {
+      return;
+    }
+
+    // Don't allow editing tools when the selected layer is locked
+    const isLayerLocked = this.selectedLayer ? this.isLayerLocked(this.selectedLayer) : false;
+    if (isLayerLocked && ['p', 'e', 'v'].includes(e.key)) {
       return;
     }
 
@@ -3466,6 +3827,12 @@ class TileEditor {
 
     // Check if clicking on tile editor container
     if ((e.target as HTMLElement).closest('#tile-editor-container')) {
+      return;
+    }
+
+    // When a tile layer is selected, right-click is for tile copying - suppress context menu
+    if (this.selectedLayer) {
+      e.preventDefault();
       return;
     }
 
@@ -4291,7 +4658,9 @@ class TileEditor {
 
   private updatePasteButtonState() {
 
-    if (this.copiedTile === null) {
+    const isLayerLocked = this.selectedLayer ? this.isLayerLocked(this.selectedLayer) : false;
+
+    if (this.copiedTile === null || isLayerLocked) {
       (this.pasteBtn as HTMLButtonElement).disabled = true;
       this.pasteBtn.style.opacity = '0.5';
       this.pasteBtn.style.cursor = 'not-allowed';
@@ -4334,9 +4703,41 @@ class TileEditor {
   }
 
   public renderPreview() {
-    if (!this.isActive || !this.previewTilePos || !window.mapData || !ctx) return;
+    if (!this.isActive || !window.mapData || !ctx) return;
 
     ctx.save();
+
+    if (this.isMapDraggingSelection && this.mapDragStartTile && this.mapDragEndTile) {
+      const minX = Math.min(this.mapDragStartTile.x, this.mapDragEndTile.x);
+      const maxX = Math.max(this.mapDragStartTile.x, this.mapDragEndTile.x);
+      const minY = Math.min(this.mapDragStartTile.y, this.mapDragEndTile.y);
+      const maxY = Math.max(this.mapDragStartTile.y, this.mapDragEndTile.y);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillRect(
+        minX * window.mapData.tilewidth,
+        minY * window.mapData.tileheight,
+        (maxX - minX + 1) * window.mapData.tilewidth,
+        (maxY - minY + 1) * window.mapData.tileheight
+      );
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        minX * window.mapData.tilewidth,
+        minY * window.mapData.tileheight,
+        (maxX - minX + 1) * window.mapData.tilewidth,
+        (maxY - minY + 1) * window.mapData.tileheight
+      );
+      ctx.restore();
+      return;
+    }
+
+    if (!this.previewTilePos) {
+      ctx.restore();
+      return;
+    }
+
     ctx.globalAlpha = 0.6;
     ctx.imageSmoothingEnabled = false;
 
@@ -4345,7 +4746,15 @@ class TileEditor {
         for (let row = 0; row < this.selectedTiles.length; row++) {
           for (let col = 0; col < this.selectedTiles[row].length; col++) {
             const tileId = this.selectedTiles[row][col];
-            if (tileId === 0) continue;
+            const worldX = (this.previewTilePos.x + col) * window.mapData.tilewidth;
+            const worldY = (this.previewTilePos.y + row) * window.mapData.tileheight;
+
+            if (tileId === 0) {
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(worldX, worldY, window.mapData.tilewidth, window.mapData.tileheight);
+              continue;
+            }
 
             const tileset = window.mapData.tilesets.find((t: any) =>
               t.firstgid <= tileId && tileId < t.firstgid + t.tilecount
@@ -4361,9 +4770,6 @@ class TileEditor {
             const srcX = (localTileId % tilesPerRow) * tileset.tilewidth;
             const srcY = Math.floor(localTileId / tilesPerRow) * tileset.tileheight;
 
-            const worldX = (this.previewTilePos.x + col) * window.mapData.tilewidth;
-            const worldY = (this.previewTilePos.y + row) * window.mapData.tileheight;
-
             ctx.drawImage(
               image,
               srcX, srcY,
@@ -4371,6 +4777,10 @@ class TileEditor {
               worldX, worldY,
               window.mapData.tilewidth, window.mapData.tileheight
             );
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(worldX, worldY, window.mapData.tilewidth, window.mapData.tileheight);
           }
         }
       } catch (e) {
@@ -4501,6 +4911,15 @@ class TileEditor {
     } catch (e) {
       console.error('Error drawing preview tile:', e);
     }
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(
+      worldX,
+      worldY,
+      window.mapData.tilewidth,
+      window.mapData.tileheight
+    );
 
     ctx.restore();
   }

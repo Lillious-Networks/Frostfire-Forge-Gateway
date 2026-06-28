@@ -3216,7 +3216,7 @@ input[type=range]:disabled {
   transform: translate(370px, -50%);
   width: auto;
   min-width: 150px;
-  max-width: 250px;
+  max-width: 280px;
   max-height: 500px;
   cursor: grab;
   display: flex;
@@ -3293,6 +3293,15 @@ input[type=range]:disabled {
 .te-layer-eye {
   margin-left: 8px;
   font-size: 14px;
+}
+
+.te-layer-lock {
+  margin-left: 4px;
+  font-size: 14px;
+}
+
+.te-layer-item.locked .te-layer-label {
+  opacity: 0.6;
 }
 
 /* Objects Panel Styles */
