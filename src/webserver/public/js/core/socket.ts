@@ -2479,6 +2479,95 @@ socket.onmessage = async (event) => {
 
       break;
     }
+    case "LEARN_SPELL": {
+      const spell = JSON.parse(packet.decode(event.data))["data"];
+      const grid = spellBookUI.querySelector("#grid");
+      if (!grid || !spell?.name) break;
+
+      cache.spells[spell.name] = {
+        name: spell.name,
+        description: spell.description,
+        mana: spell.mana,
+        cooldown: spell.cooldown,
+        cast_time: spell.cast_time,
+        damage: spell.damage,
+        type: spell.type,
+        effects: spell.effects,
+        spriteUrl: spell.spriteUrl,
+      };
+
+      const slot = document.createElement("div");
+      slot.classList.add("slot", "ui", "common");
+      slot.draggable = true;
+      slot.dataset.spellName = spell.name;
+
+      if (spell.spriteUrl) {
+        const img = new Image();
+        img.draggable = false;
+        img.width = 32;
+        img.height = 32;
+        img.onload = () => slot.appendChild(img);
+        img.src = spell.spriteUrl;
+      } else {
+        slot.textContent = spell.name;
+      }
+
+      slot.addEventListener("dragstart", (event: DragEvent) => {
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "copy";
+          event.dataTransfer.setData("text/plain", slot.dataset.spellName || "");
+          const icon = slot.querySelector("img");
+          if (icon) event.dataTransfer.setData("image/src", icon.src);
+        }
+      });
+      slot.addEventListener("click", () => {
+        const target = Array.from(cache?.players).find(p => p?.targeted) || null;
+        sendRequest({ type: "HOTBAR", data: { spell: slot.dataset.spellName, target } });
+      });
+      setupSpellTooltip(slot, () => cache.spells[spell.name] || { name: spell.name });
+
+      const empty = grid.querySelector(".slot.empty");
+      if (empty) grid.replaceChild(slot, empty);
+      else grid.appendChild(slot);
+
+      hotbarSlots.forEach((s) => {
+        if (s.dataset.spellName === spell.name && spell.spriteUrl) {
+          const img = new Image();
+          img.draggable = false;
+          img.width = 32;
+          img.height = 32;
+          img.onload = () => { s.innerHTML = ""; s.classList.remove("empty"); s.appendChild(img); };
+          img.src = spell.spriteUrl;
+        }
+      });
+      break;
+    }
+    case "UNLEARN_SPELL": {
+      const data = JSON.parse(packet.decode(event.data))["data"];
+      const name = data?.name;
+      if (!name) break;
+
+      delete cache.spells[name];
+
+      const grid = spellBookUI.querySelector("#grid");
+      if (grid) {
+        const slot = grid.querySelector(`.slot[data-spell-name="${CSS.escape(name)}"]`);
+        if (slot) {
+          const empty = document.createElement("div");
+          empty.classList.add("slot", "empty", "ui");
+          grid.replaceChild(empty, slot);
+        }
+      }
+
+      hotbarSlots.forEach((s) => {
+        if (s.dataset.spellName === name) {
+          s.innerHTML = "";
+          s.classList.add("empty");
+          delete s.dataset.spellName;
+        }
+      });
+      break;
+    }
     case "COLLECTABLES":
       {
         const data = JSON.parse(packet.decode(event.data))["data"];
@@ -2486,6 +2575,8 @@ socket.onmessage = async (event) => {
 
         const grid = collectablesUI.querySelector("#grid");
         if (!grid) return;
+
+        cache.collectables = data;
 
         grid.querySelectorAll(".slot").forEach((slot) => {
           grid.removeChild(slot);
@@ -2499,6 +2590,7 @@ socket.onmessage = async (event) => {
             slot.classList.add("slot");
             slot.classList.add("ui");
             slot.classList.add("epic");
+            slot.dataset.collectableItem = data[i].item;
 
             if (data[i].iconUrl) {
 
@@ -2536,6 +2628,141 @@ socket.onmessage = async (event) => {
         }
         break;
       }
+    case "ADD_INVENTORY_ITEM": {
+      const item = JSON.parse(packet.decode(event.data))["data"];
+      if (!item?.name) break;
+
+      cache.inventory.push(item);
+      itemsByName.set(item.name, item);
+
+      const grid = inventoryGrid;
+      if (!grid) break;
+
+      const slot = document.createElement("div");
+      slot.classList.add("slot", "ui");
+      slot.dataset.inventoryIndex = String(grid.querySelectorAll(".slot:not(.empty)").length);
+      slot.draggable = true;
+      slot.setAttribute("draggable", "true");
+      slot.dataset.itemName = item.name;
+      slot.dataset.itemType = item.type || "";
+      if (item.quality) slot.classList.add(item.quality.toLowerCase() || "common");
+      if (item.type === "equipment" && item.equipment_slot) {
+        slot.dataset.equipmentSlot = item.equipment_slot;
+      }
+
+      setupItemTooltip(slot, () => {
+        const name = slot.dataset.itemName;
+        if (!name || !cache.inventory) return null;
+        return cache.inventory.find((invItem: any) => invItem.name === name);
+      });
+
+      if (item.iconUrl) {
+        createCachedImage(item.iconUrl).then((img) => {
+          img.draggable = false;
+          img.style.pointerEvents = "none";
+          img.width = 32;
+          img.height = 32;
+          slot.appendChild(img);
+          if (item.quantity > 1) {
+            const qty = document.createElement("div");
+            qty.classList.add("quantity-label");
+            qty.innerText = `x${item.quantity}`;
+            qty.style.pointerEvents = "none";
+            slot.appendChild(qty);
+          }
+        });
+      } else {
+        slot.innerHTML = `${item.name}${item.quantity > 1 ? `<br>x${item.quantity}` : ""}`;
+      }
+
+      const empty = grid.querySelector(".slot.empty");
+      if (empty) grid.replaceChild(slot, empty);
+      else grid.appendChild(slot);
+
+      setupInventorySlotHandlers();
+      break;
+    }
+    case "REMOVE_INVENTORY_ITEM": {
+      const data = JSON.parse(packet.decode(event.data))["data"];
+      const name = data?.name;
+      if (!name) break;
+
+      const idx = cache.inventory.findIndex((i: any) => i.name === name);
+      if (idx !== -1) cache.inventory.splice(idx, 1);
+      itemsByName.delete(name);
+
+      const grid = inventoryGrid;
+      if (grid) {
+        const slot = grid.querySelector(`.slot[data-item-name="${CSS.escape(name)}"]`);
+        if (slot) {
+          removeItemTooltip(slot as HTMLElement);
+          const empty = document.createElement("div");
+          empty.classList.add("slot", "empty", "ui");
+          grid.replaceChild(empty, slot);
+        }
+      }
+
+      setupInventorySlotHandlers();
+      break;
+    }
+    case "ADD_COLLECTABLE": {
+      const data = JSON.parse(packet.decode(event.data))["data"];
+      if (!data?.item) break;
+
+      cache.collectables.push(data);
+
+      const grid = collectablesUI.querySelector("#grid");
+      if (!grid) break;
+
+      const slot = document.createElement("div");
+      slot.classList.add("slot", "ui", "epic");
+      slot.dataset.collectableItem = data.item;
+
+      slot.addEventListener("click", () => {
+        if (data.type === "mount") {
+          cache.mount = data.item;
+          sendRequest({ type: "MOUNT", data: { mount: data.item } });
+        }
+      });
+
+      if (data.iconUrl) {
+        createCachedImage(data.iconUrl).then((img) => {
+          img.width = 32;
+          img.height = 32;
+          img.draggable = false;
+          slot.appendChild(img);
+        });
+        grid.appendChild(slot);
+      } else {
+        slot.innerHTML = `${data.item}`;
+        grid.appendChild(slot);
+      }
+
+      const empty = grid.querySelector(".slot.empty");
+      if (empty) grid.replaceChild(slot, empty);
+      else grid.appendChild(slot);
+      break;
+    }
+    case "REMOVE_COLLECTABLE": {
+      const data = JSON.parse(packet.decode(event.data))["data"];
+      const item = data?.item;
+      if (!item) break;
+
+      const idx = cache.collectables.findIndex((c: any) => c.item === item);
+      if (idx !== -1) cache.collectables.splice(idx, 1);
+      if (cache.mount === item) cache.mount = null;
+
+      const grid = collectablesUI.querySelector("#grid");
+      if (grid) {
+        const slot = grid.querySelector(`.slot[data-collectable-item="${CSS.escape(item)}"]`);
+        if (slot) {
+          const empty = document.createElement("div");
+          empty.classList.add("slot", "empty", "ui");
+          grid.replaceChild(empty, slot);
+        }
+      }
+      break;
+    }
     case "EQUIPMENT": {
       const data = JSON.parse(packet.decode(event.data))["data"];
 

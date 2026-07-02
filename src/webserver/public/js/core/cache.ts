@@ -24,10 +24,12 @@ class Cache {
     spell: string;
     isEntityTarget?: boolean;
   }> = [];
+  // existing fields above...
   inventory: any[] = [];
   equipment: any = {};
   inventoryConfig: any = null;
   spells: Record<string, any> = {};
+  collectables: any[] = [];
 
   private constructor() {}
 
