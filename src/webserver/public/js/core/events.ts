@@ -195,9 +195,7 @@ window.addEventListener("keydown", async (e) => {
   }
 });
 
-window.addEventListener("keyup", (e) => {
-
-  const activeElement = document.activeElement;
+window.addEventListener("keyup", (e) => {  const activeElement = document.activeElement;
   const isTypingInInput = activeElement && (
     activeElement.tagName === 'INPUT' ||
     activeElement.tagName === 'TEXTAREA' ||

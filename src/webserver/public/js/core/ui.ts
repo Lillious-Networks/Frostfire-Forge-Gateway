@@ -433,24 +433,10 @@ let panelDragOffsetX = 0;
 let panelDragOffsetY = 0;
 let activeDragPanel: PanelDragTarget | null = null;
 
-// Grid overlay for UI edit mode — desktop only
-const gridOverlay = isMobileDevice ? null : (() => {
-  const el = document.createElement("div");
-  el.id = "ui-edit-grid";
-  el.style.cssText =
-    "position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;" +
-    "pointer-events:none;display:none;" +
-    `background-image:linear-gradient(rgba(255,255,255,0.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.06) 1px,transparent 1px);` +
-    `background-size:${GRID_SIZE}px ${GRID_SIZE}px;`;
-  document.body.appendChild(el);
-  return el;
-})();
-
 if (!isMobileDevice) {
   document.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Control" && !e.repeat) {
       ctrlHeld = true;
-      if (gridOverlay) gridOverlay.style.display = "block";
       updateDragCursors();
     }
   });
@@ -458,14 +444,12 @@ if (!isMobileDevice) {
   document.addEventListener("keyup", (e: KeyboardEvent) => {
     if (e.key === "Control") {
       ctrlHeld = false;
-      if (gridOverlay) gridOverlay.style.display = "none";
       updateDragCursors();
     }
   });
 
   window.addEventListener("blur", () => {
     ctrlHeld = false;
-    if (gridOverlay) gridOverlay.style.display = "none";
     updateDragCursors();
   });
 }

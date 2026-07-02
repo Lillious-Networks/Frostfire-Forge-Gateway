@@ -1,6 +1,6 @@
 import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox } from "./ui.js";
-import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, recomputeMapBoundsFromLoadedChunks, clearChunkFromCache, rebakeAllChunks } from "./map.js";
+import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, clearChunkFromCache, rebakeAllChunks } from "./map.js";
 import { panEditorCamera, resetEditorCamera } from "./renderer.js";
 
 declare global {
@@ -61,7 +61,6 @@ class TileEditor {
   private currentPropertyObjectType: string | null = null;
   private currentPropertyObjectName: string | null = null;
   private currentTilesetIndex: number = 0;
-  private dimOtherLayers: boolean = false;
   private objectLayerVisibility: Map<string, boolean> = new Map();
   private layerVisibility: Map<string, boolean> = new Map();
   private layerLocked: Map<string, boolean> = new Map();
@@ -115,8 +114,8 @@ class TileEditor {
   private redoBtn: HTMLElement;
   private saveBtn: HTMLElement;
   private resetViewBtn: HTMLElement;
-  private toggleOpacityBtn: HTMLElement;
   private toggleGridBtn: HTMLElement;
+  private clearBtn: HTMLElement;
   private layersList: HTMLElement;
   private objectsPanel: HTMLElement;
   private objectsList: HTMLElement;
@@ -130,6 +129,8 @@ class TileEditor {
   private isPanningMap = false;
   private panLastX = 0;
   private panLastY = 0;
+  private isShiftHeld = false;
+  private lastPlacedTilePos: { x: number, y: number } | null = null;
 
   constructor() {
 
@@ -149,8 +150,8 @@ class TileEditor {
     this.redoBtn = document.getElementById('te-redo') as HTMLElement;
     this.saveBtn = document.getElementById('te-save') as HTMLElement;
     this.resetViewBtn = document.getElementById('te-reset-view') as HTMLElement;
-    this.toggleOpacityBtn = document.getElementById('te-toggle-opacity') as HTMLElement;
     this.toggleGridBtn = document.getElementById('te-toggle-grid') as HTMLElement;
+    this.clearBtn = document.getElementById('te-clear') as HTMLElement;
     this.layersList = document.getElementById('tile-editor-layers-list') as HTMLElement;
     this.objectsPanel = document.getElementById('tile-editor-objects-panel') as HTMLElement;
     this.objectsList = document.getElementById('tile-editor-objects-list') as HTMLElement;
@@ -363,11 +364,12 @@ class TileEditor {
     this.redoBtn.addEventListener('click', () => this.redo());
     this.saveBtn.addEventListener('click', () => this.save());
     this.resetViewBtn.addEventListener('click', () => { this.resetPanelPositions(); resetEditorCamera(); });
-    this.toggleOpacityBtn.addEventListener('click', () => this.toggleLayerOpacity());
     this.toggleGridBtn.addEventListener('click', () => this.toggleGrid());
+    this.clearBtn.addEventListener('click', () => this.clearAllEdits());
 
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
     document.addEventListener('keyup', (e) => this.onKeyUp(e));
+    window.addEventListener('blur', () => { this.isShiftHeld = false; });
 
     this.panels.forEach((panelState, id) => {
       panelState.header.addEventListener('mousedown', (e) => this.onPanelDragStart(id, e));
@@ -540,7 +542,6 @@ class TileEditor {
 
     this.updatePasteButtonState();
 
-    this.toggleOpacityBtn.classList.remove('active');
   }
 
   private convertMapObjectsToEditorFormat() {
@@ -596,11 +597,11 @@ class TileEditor {
       }
 
       // Always read lock state from chunk layer data (authoritative server state),
-      // falling back to name heuristic only when no lock data is present
+      // falling back to unlocked when no lock data is present
       if (typeof layer.locked === 'boolean') {
         this.layerLocked.set(layer.name, layer.locked);
       } else if (!this.layerLocked.has(layer.name)) {
-        this.layerLocked.set(layer.name, isCollision || isNoPvp);
+        this.layerLocked.set(layer.name, false);
       }
 
       const layerItem = document.createElement('div');
@@ -1546,6 +1547,8 @@ class TileEditor {
       return;
     }
 
+    this.isShiftHeld = e.shiftKey;
+
     if (this.isPanningMap) {
       const dx = e.clientX - this.panLastX;
       const dy = e.clientY - this.panLastY;
@@ -1948,6 +1951,16 @@ class TileEditor {
         return;
       }
 
+      if ((this.isShiftHeld || e.shiftKey) && this.lastPlacedTilePos) {
+        if (this.currentTool === 'paint') {
+          this.placeLineTiles(this.lastPlacedTilePos.x, this.lastPlacedTilePos.y, tileX, tileY);
+        } else if (this.currentTool === 'paste') {
+          this.pasteLineTiles(this.lastPlacedTilePos.x, this.lastPlacedTilePos.y, tileX, tileY);
+        }
+        this.lastPlacedTilePos = { x: tileX, y: tileY };
+        return;
+      }
+
       if (this.currentTool === 'paint') {
         this.placeTile(tileX, tileY);
       } else if (this.currentTool === 'erase') {
@@ -2072,10 +2085,18 @@ class TileEditor {
       const endX = this.mapDragEndTile?.x ?? startX;
       const endY = this.mapDragEndTile?.y ?? startY;
 
-      if (startX === endX && startY === endY) {
-        this.copyTileFromWorld(startX, startY);
+      if (this.currentTool === 'erase') {
+        if (startX === endX && startY === endY) {
+          this.eraseTile(startX, startY);
+        } else {
+          this.eraseTilesInRegion(startX, startY, endX, endY);
+        }
       } else {
-        this.copyTilesFromWorld(startX, startY, endX, endY);
+        if (startX === endX && startY === endY) {
+          this.copyTileFromWorld(startX, startY);
+        } else {
+          this.copyTilesFromWorld(startX, startY, endX, endY);
+        }
       }
 
       canvas.style.cursor = 'default';
@@ -2479,21 +2500,6 @@ class TileEditor {
 
   }
 
-  private toggleLayerOpacity() {
-    this.dimOtherLayers = !this.dimOtherLayers;
-
-    if (this.dimOtherLayers) {
-      this.toggleOpacityBtn.classList.add('active');
-    } else {
-      this.toggleOpacityBtn.classList.remove('active');
-    }
-
-  }
-
-  public shouldDimLayer(layerName: string): boolean {
-    return this.dimOtherLayers && layerName !== this.selectedLayer;
-  }
-
   private toggleGrid() {
     const gridCheckbox = document.getElementById('show-grid-checkbox') as HTMLInputElement;
     if (gridCheckbox) {
@@ -2569,6 +2575,7 @@ class TileEditor {
     this.updateLayerList();
 
     layer.data[tileIndex] = this.selectedTile;
+    this.lastPlacedTilePos = { x: tileX, y: tileY };
 
     this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
     this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: this.selectedTile as number }]);
@@ -2634,6 +2641,7 @@ class TileEditor {
     });
 
     this.sendTileEdits(changeGroup.map(ch => ({ chunkX: ch.chunkX, chunkY: ch.chunkY, layerName: ch.layerName, x: ch.tileX, y: ch.tileY, tileId: ch.newTileId })));
+    this.lastPlacedTilePos = { x: startTileX, y: startTileY };
   }
 
   private eraseTile(tileX: number, tileY: number) {
@@ -2676,9 +2684,87 @@ class TileEditor {
     this.updateLayerList();
 
     layer.data[tileIndex] = 0;
+    this.lastPlacedTilePos = { x: tileX, y: tileY };
 
     this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
     this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: 0 }]);
+  }
+
+  private eraseTilesInRegion(startX: number, startY: number, endX: number, endY: number) {
+    if (!this.selectedLayer || !window.mapData) return;
+
+    if (this.isLayerLocked(this.selectedLayer)) return;
+
+    const minX = Math.min(startX, endX);
+    const maxX = Math.max(startX, endX);
+    const minY = Math.min(startY, endY);
+    const maxY = Math.max(startY, endY);
+
+    const changes: TileChange[] = [];
+    const cellsByChunk: Map<string, { x: number, y: number }[]> = new Map();
+
+    const chunkSize = window.mapData.chunkSize;
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const cx = Math.floor(x / chunkSize);
+        const cy = Math.floor(y / chunkSize);
+        const lx = x % chunkSize;
+        const ly = y % chunkSize;
+
+        const chunkKey = `${cx}-${cy}`;
+        const chunk = window.mapData.loadedChunks.get(chunkKey);
+        if (!chunk) continue;
+
+        const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
+        if (!layer) continue;
+
+        const tileIndex = ly * chunk.width + lx;
+        const oldTileId = layer.data[tileIndex];
+        if (oldTileId === 0) continue;
+
+        changes.push({
+          chunkX: cx,
+          chunkY: cy,
+          layerName: this.selectedLayer,
+          tileX: lx,
+          tileY: ly,
+          oldTileId,
+          newTileId: 0
+        });
+
+        if (!cellsByChunk.has(chunkKey)) {
+          cellsByChunk.set(chunkKey, []);
+        }
+        cellsByChunk.get(chunkKey)!.push({ x: lx, y: ly });
+
+        layer.data[tileIndex] = 0;
+      }
+    }
+
+    if (changes.length === 0) return;
+
+    this.undoStack.push({ changes });
+    this.redoStack = [];
+
+    this.unsavedLayers.add(this.selectedLayer);
+    this.updateLayerList();
+
+    for (const [key, cells] of cellsByChunk) {
+      const [cxStr, cyStr] = key.split('-');
+      const cx = parseInt(cxStr);
+      const cy = parseInt(cyStr);
+      this.redrawCells(cx, cy, cells);
+    }
+
+    this.sendTileEdits(changes.map(ch => ({
+      chunkX: ch.chunkX,
+      chunkY: ch.chunkY,
+      layerName: ch.layerName,
+      x: ch.tileX,
+      y: ch.tileY,
+      tileId: 0
+    })));
   }
 
   private copyTileFromWorld(tileX: number, tileY: number) {
@@ -2825,6 +2911,7 @@ class TileEditor {
     this.redoStack = [];
 
     layer.data[tileIndex] = this.copiedTile;
+    this.lastPlacedTilePos = { x: tileX, y: tileY };
 
     this.redrawCells(chunkX, chunkY, [{ x: localTileX, y: localTileY }]);
     this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: this.copiedTile as number }]);
@@ -2843,6 +2930,164 @@ class TileEditor {
       return;
     }
     redrawChunkCells(chunk, cells);
+  }
+
+  private getLineTiles(x0: number, y0: number, x1: number, y1: number): { x: number, y: number }[] {
+    const tiles: { x: number, y: number }[] = [];
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    let x = x0;
+    let y = y0;
+
+    while (true) {
+      tiles.push({ x, y });
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) {
+        err -= dy;
+        x += sx;
+      }
+      if (e2 < dx) {
+        err += dx;
+        y += sy;
+      }
+    }
+    return tiles;
+  }
+
+  private placeLineTiles(fromX: number, fromY: number, toX: number, toY: number) {
+    if (!this.selectedLayer || !window.mapData || !this.selectedTile) return;
+
+    if (this.isLayerLocked(this.selectedLayer)) return;
+
+    const lineTiles = this.getLineTiles(fromX, fromY, toX, toY);
+    const changes: TileChange[] = [];
+    const cellsByChunk: Map<string, { x: number, y: number }[]> = new Map();
+
+    for (const pos of lineTiles) {
+      const ensured = ensureChunkForTile(pos.x, pos.y);
+      if (!ensured) continue;
+      const { chunk, chunkX, chunkY, localX, localY } = ensured;
+
+      const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
+      if (!layer) continue;
+
+      const tileIndex = localY * chunk.width + localX;
+      const oldTileId = layer.data[tileIndex];
+
+      if (oldTileId === this.selectedTile) continue;
+
+      changes.push({
+        chunkX,
+        chunkY,
+        layerName: this.selectedLayer,
+        tileX: localX,
+        tileY: localY,
+        oldTileId,
+        newTileId: this.selectedTile
+      });
+
+      const chunkKey = `${chunkX}-${chunkY}`;
+      if (!cellsByChunk.has(chunkKey)) {
+        cellsByChunk.set(chunkKey, []);
+      }
+      cellsByChunk.get(chunkKey)!.push({ x: localX, y: localY });
+
+      layer.data[tileIndex] = this.selectedTile;
+    }
+
+    if (changes.length === 0) return;
+
+    this.undoStack.push({ changes });
+    this.redoStack = [];
+
+    this.unsavedLayers.add(this.selectedLayer);
+    this.updateLayerList();
+
+    for (const [key, cells] of cellsByChunk) {
+      const [cxStr, cyStr] = key.split('-');
+      const cx = parseInt(cxStr);
+      const cy = parseInt(cyStr);
+      this.redrawCells(cx, cy, cells);
+    }
+
+    this.sendTileEdits(changes.map(ch => ({
+      chunkX: ch.chunkX,
+      chunkY: ch.chunkY,
+      layerName: ch.layerName,
+      x: ch.tileX,
+      y: ch.tileY,
+      tileId: ch.newTileId
+    })));
+  }
+
+  private pasteLineTiles(fromX: number, fromY: number, toX: number, toY: number) {
+    if (!this.selectedLayer || !window.mapData || this.copiedTile === null) return;
+
+    if (this.isLayerLocked(this.selectedLayer)) return;
+
+    const lineTiles = this.getLineTiles(fromX, fromY, toX, toY);
+    const changes: TileChange[] = [];
+    const cellsByChunk: Map<string, { x: number, y: number }[]> = new Map();
+
+    for (const pos of lineTiles) {
+      const ensured = ensureChunkForTile(pos.x, pos.y);
+      if (!ensured) continue;
+      const { chunk, chunkX, chunkY, localX, localY } = ensured;
+
+      const layer = chunk.layers.find((l: any) => l.name === this.selectedLayer);
+      if (!layer) continue;
+
+      const tileIndex = localY * chunk.width + localX;
+      const oldTileId = layer.data[tileIndex];
+
+      if (oldTileId === this.copiedTile) continue;
+
+      changes.push({
+        chunkX,
+        chunkY,
+        layerName: this.selectedLayer,
+        tileX: localX,
+        tileY: localY,
+        oldTileId,
+        newTileId: this.copiedTile!
+      });
+
+      const chunkKey = `${chunkX}-${chunkY}`;
+      if (!cellsByChunk.has(chunkKey)) {
+        cellsByChunk.set(chunkKey, []);
+      }
+      cellsByChunk.get(chunkKey)!.push({ x: localX, y: localY });
+
+      layer.data[tileIndex] = this.copiedTile!;
+    }
+
+    if (changes.length === 0) return;
+
+    this.undoStack.push({ changes });
+    this.redoStack = [];
+
+    this.unsavedLayers.add(this.selectedLayer);
+    this.updateLayerList();
+
+    for (const [key, cells] of cellsByChunk) {
+      const [cxStr, cyStr] = key.split('-');
+      const cx = parseInt(cxStr);
+      const cy = parseInt(cyStr);
+      this.redrawCells(cx, cy, cells);
+    }
+
+    this.sendTileEdits(changes.map(ch => ({
+      chunkX: ch.chunkX,
+      chunkY: ch.chunkY,
+      layerName: ch.layerName,
+      x: ch.tileX,
+      y: ch.tileY,
+      tileId: ch.newTileId
+    })));
   }
 
   // Broadcast tile edits to other admins editing the same map so concurrent edits
@@ -2939,6 +3184,12 @@ class TileEditor {
     chunk.upperCanvas = upperCanvas;
     chunk.canvas = lowerCanvas;
 
+  }
+
+  private clearAllEdits() {
+    while (this.undoStack.length > 0) {
+      this.undo();
+    }
   }
 
   private undo() {
@@ -3108,6 +3359,15 @@ class TileEditor {
       // Mark layer as unsaved when undoing
       this.unsavedLayers.add(change.layerName);
       this.redoStack.push(change);
+    }
+
+    const lastUndoChange = 'changes' in item ? (item.changes[(item.changes as TileChange[]).length - 1]) : (item as TileChange);
+    if (lastUndoChange) {
+      const chunkSize = window.mapData.chunkSize;
+      this.lastPlacedTilePos = {
+        x: lastUndoChange.chunkX * chunkSize + lastUndoChange.tileX,
+        y: lastUndoChange.chunkY * chunkSize + lastUndoChange.tileY
+      };
     }
 
     cellsByChunk.forEach((cells, chunkKey) => {
@@ -3286,6 +3546,15 @@ class TileEditor {
       // Mark layer as unsaved when redoing
       this.unsavedLayers.add(change.layerName);
       this.undoStack.push(change);
+    }
+
+    const lastRedoChange = 'changes' in item ? (item.changes[(item.changes as TileChange[]).length - 1]) : (item as TileChange);
+    if (lastRedoChange) {
+      const chunkSize = window.mapData.chunkSize;
+      this.lastPlacedTilePos = {
+        x: lastRedoChange.chunkX * chunkSize + lastRedoChange.tileX,
+        y: lastRedoChange.chunkY * chunkSize + lastRedoChange.tileY
+      };
     }
 
     cellsByChunk.forEach((cells, chunkKey) => {
@@ -3660,13 +3929,8 @@ class TileEditor {
 
     const chunks = Array.from(chunkChanges.values());
 
-    // Shrink the map's bounds client-side to fit the actual content (the symmetric
-    // counterpart to painting growing them). This collapses empty expansion in the
-    // editor immediately, before saving — and the recomputed bounds are what we send.
-    recomputeMapBoundsFromLoadedChunks();
-
     // Editor extent for server-side growth / origin re-base. minTileX/minTileY are
-    // <= 0 when the map was expanded left/up.
+    // <= 0 when the map was expanded left/up. Clamp to 0 to disable left/up expansion.
     const saveMinTileX = window.mapData.minTileX ?? 0;
     const saveMinTileY = window.mapData.minTileY ?? 0;
     const shiftTilesX = -Math.min(0, saveMinTileX);
@@ -3724,6 +3988,8 @@ class TileEditor {
 
     sendRequest(savePayload);
 
+    this.layerDataSnapshot = null;
+
     Promise.all(chunks.map(chunk =>
       clearChunkFromCache(window.mapData.name, chunk.chunkX, chunk.chunkY)
     )).catch(() => {});
@@ -3743,6 +4009,7 @@ class TileEditor {
     }
 
     this.currentTool = tool;
+    this.lastPlacedTilePos = null;
 
     this.paintBtn.classList.toggle('active', tool === 'paint');
     this.eraseBtn.classList.toggle('active', tool === 'erase');
@@ -3757,6 +4024,11 @@ class TileEditor {
 
   private onKeyDown(e: KeyboardEvent) {
     if (!this.isActive) return;
+
+    if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      this.isShiftHeld = true;
+      return;
+    }
 
     const target = e.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
@@ -3817,7 +4089,9 @@ class TileEditor {
   }
 
   private onKeyUp(e: KeyboardEvent) {
-    // Handle key up events if needed
+    if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      this.isShiftHeld = false;
+    }
   }
 
   private onMapContextMenu(e: MouseEvent) {
@@ -4713,7 +4987,14 @@ class TileEditor {
       const minY = Math.min(this.mapDragStartTile.y, this.mapDragEndTile.y);
       const maxY = Math.max(this.mapDragStartTile.y, this.mapDragEndTile.y);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      if (this.currentTool === 'erase') {
+        ctx.fillStyle = 'rgba(231, 76, 60, 0.3)';
+        ctx.strokeStyle = 'rgba(255, 89, 71, 1.0)';
+      } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      }
+
       ctx.fillRect(
         minX * window.mapData.tilewidth,
         minY * window.mapData.tileheight,
@@ -4721,7 +5002,6 @@ class TileEditor {
         (maxY - minY + 1) * window.mapData.tileheight
       );
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.lineWidth = 2;
       ctx.strokeRect(
         minX * window.mapData.tilewidth,
@@ -4734,6 +5014,47 @@ class TileEditor {
     }
 
     if (!this.previewTilePos) {
+      ctx.restore();
+      return;
+    }
+
+    if (this.isShiftHeld && this.lastPlacedTilePos && this.currentTool !== 'erase') {
+      const lineTiles = this.getLineTiles(this.lastPlacedTilePos.x, this.lastPlacedTilePos.y, this.previewTilePos.x, this.previewTilePos.y);
+
+      const tileToUse = this.currentTool === 'paste' ? this.copiedTile : this.selectedTile;
+      if (tileToUse) {
+        const tileset = window.mapData.tilesets.find((t: any) =>
+          t.firstgid <= tileToUse && tileToUse < t.firstgid + t.tilecount
+        );
+        if (tileset) {
+          const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
+          if (image && image.complete) {
+            const localId = tileToUse - tileset.firstgid;
+            const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+            const srcX = (localId % tilesPerRow) * tileset.tilewidth;
+            const srcY = Math.floor(localId / tilesPerRow) * tileset.tileheight;
+
+            ctx.globalAlpha = 0.6;
+            ctx.imageSmoothingEnabled = false;
+
+            for (const pos of lineTiles) {
+              const wx = pos.x * window.mapData.tilewidth;
+              const wy = pos.y * window.mapData.tileheight;
+
+              ctx.drawImage(
+                image, srcX, srcY,
+                tileset.tilewidth, tileset.tileheight,
+                wx, wy,
+                window.mapData.tilewidth, window.mapData.tileheight
+              );
+
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(wx, wy, window.mapData.tilewidth, window.mapData.tileheight);
+            }
+          }
+        }
+      }
       ctx.restore();
       return;
     }

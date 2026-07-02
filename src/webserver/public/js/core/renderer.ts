@@ -229,8 +229,24 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
 
 // Pan the free-pan editor camera by a world-space delta.
 export function panEditorCamera(dx: number, dy: number) {
+  if (!window.mapData) return;
+  const tw = window.mapData.tilewidth;
+  const th = window.mapData.tileheight;
+  const mapW = window.mapData.width * tw;
+  const mapH = window.mapData.height * th;
+  const pad = Math.max(window.innerWidth, window.innerHeight);
+
   editorCameraX += dx;
   editorCameraY += dy;
+  // Clamp so camera cannot pan into negative-tile territory (left/up expansion disabled)
+  const minX = window.innerWidth / 2;
+  const minY = window.innerHeight / 2;
+  const maxX = mapW + pad;
+  const maxY = mapH + pad;
+  if (editorCameraX < minX) editorCameraX = minX;
+  if (editorCameraY < minY) editorCameraY = minY;
+  if (editorCameraX > maxX) editorCameraX = maxX;
+  if (editorCameraY > maxY) editorCameraY = maxY;
   editorCameraInitialized = true;
 }
 
@@ -350,9 +366,6 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
   if (!ctx || !window.mapData) return;
 
   const now = performance.now();
-  const selectedLayerLower = selectedLayerName.toLowerCase();
-  const isCollisionSelected = selectedLayerLower.includes('collision');
-  const isNoPvpSelected = selectedLayerLower.includes('nopvp') || selectedLayerLower.includes('no-pvp');
 
   for (const chunk of visibleChunks) {
     const chunkKey = `${chunk.x}-${chunk.y}`;
@@ -375,11 +388,8 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
 
     const sortedLayers = [...chunkData.layers].sort((a: any, b: any) => a.zIndex - b.zIndex);
     const tileEditor = (window as any).tileEditor;
-    const useDimming = tileEditor?.isActive && tileEditor.dimOtherLayers;
 
-    // Check whether the selected layer belongs to this canvas half, and whether
-    // any visible layer lives here (collision/no-pvp are excluded unless selected).
-    let selectedLayerInThisCanvas = false;
+    // Check whether any visible layer lives here (collision/no-pvp are excluded unless selected).
     let hasVisibleLayer = false;
 
     for (const chunkLayer of sortedLayers) {
@@ -388,10 +398,6 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
         : chunkLayer.zIndex >= PLAYER_Z_INDEX;
 
       if (!belongsToThisCanvas) continue;
-
-      if (chunkLayer.name === selectedLayerName) {
-        selectedLayerInThisCanvas = true;
-      }
 
       const layerNameLower = chunkLayer.name.toLowerCase();
       const isCollisionOrNoPvp = layerNameLower.includes('collision') ||
@@ -406,19 +412,10 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
     }
 
     if (hasVisibleLayer) {
-      let chunkAlpha = 1.0;
-
-      if (isCollisionSelected || isNoPvpSelected) {
-        // Special layers: only draw the selected special layer
-        chunkAlpha = 1.0;
-      } else if (useDimming) {
-        chunkAlpha = selectedLayerInThisCanvas ? 1.0 : 0.5;
-      }
-
       try {
-        ctx.globalAlpha = chunkAlpha;
+        ctx.globalAlpha = 1.0;
         ctx.drawImage(chunkCanvas, screenX, screenY);
-        drawChunkAnimatedTiles(chunkData, layer, screenX, screenY, chunkAlpha, now);
+        drawChunkAnimatedTiles(chunkData, layer, screenX, screenY, 1.0, now);
       } catch (error) {
         console.error("Error drawing chunk canvas:", error);
       }
@@ -805,9 +802,9 @@ function renderInfiniteZone() {
   ctx.beginPath();
   ctx.rect(0, 0, vw, vh);
   // Exclude the full map extent (including any negative/expanded area) so the grid
-  // never draws over painted content.
-  const izMinTileX = window.mapData.minTileX ?? 0;
-  const izMinTileY = window.mapData.minTileY ?? 0;
+  // never draws over painted content. Left/up expansion is disabled, so clamp to 0.
+  const izMinTileX = Math.max(0, window.mapData.minTileX ?? 0);
+  const izMinTileY = Math.max(0, window.mapData.minTileY ?? 0);
   ctx.rect(offsetX + izMinTileX * tw, offsetY + izMinTileY * th, mapWidth - izMinTileX * tw, mapHeight - izMinTileY * th);
   ctx.clip('evenodd');
 
