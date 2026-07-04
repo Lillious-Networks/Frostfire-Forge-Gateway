@@ -188,6 +188,7 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
       editorCameraX = cameraX;
       editorCameraY = cameraY;
       editorCameraInitialized = true;
+      (window as any).__resetEditorCamera = false;
     }
     cameraX = editorCameraX;
     cameraY = editorCameraY;

@@ -22,6 +22,9 @@ import animator_html from "./public/animator.html";
 import login_html from "./public/index.html";
 import register_html from "./public/register.html";
 import game_html from "./public/game.html";
+import map_editor_html from "./public/map-editor.html";
+import particleeditor_html from "./public/particleeditor.html";
+import npceditor_html from "./public/npceditor.html";
 import forgotpassword_html from "./public/forgot-password.html";
 import changepassword_html from "./public/change-password.html";
 import realmselection_html from "./public/realm-selection.html";
@@ -48,6 +51,9 @@ const routes = {
   "/": login_html,
   "/registration": register_html,
   "/game": game_html,
+  "/map-editor": map_editor_html,
+  "/particle-editor": particleeditor_html,
+  "/npc-editor": npceditor_html,
   "/animator": animator_html,
   "/login": (req: Request, server: any) => login(req, server),
   "/verify": (req: Request, server: any) => authenticate(req, server),
@@ -159,6 +165,9 @@ Bun.serve({
       "/update-password": routes["/update-password"],
       "/realm-selection": routes["/realm-selection"],
       "/game": routes["/game"],
+      "/map-editor": routes["/map-editor"],
+      "/particle-editor": routes["/particle-editor"],
+      "/npc-editor": routes["/npc-editor"],
       "/animator": routes["/animator"],
       "/login": routes["/login"],
       "/verify": routes["/verify"],

@@ -1,0 +1,107 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Particle Editor</title>
+    <link rel="stylesheet" href="./css/game.css" />
+    <link rel="stylesheet" href="./css/editor.css" />
+    <script defer src="./js/core/preventzoomcontrols.js" type="text/javascript"></script>
+    <script defer src="./js/core/particleeditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body oncontextmenu="return false;">
+    <div id="editor-layout">
+      <div id="editor-toolbar">
+        <span id="editor-toolbar-title">Particle Editor</span>
+        <span class="tool-divider"></span>
+        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button type="button" id="btn-reset" title="Reset">Reset</button>
+        <span class="tool-divider"></span>
+        <button type="button" id="btn-new" title="New Particle">New</button>
+        <button type="button" id="btn-delete" title="Delete Particle" class="editor-danger-btn" style="height:32px;padding:4px 10px;font-size:11px;margin:0;">Delete</button>
+      </div>
+      <div id="editor-main">
+        <div id="editor-sidebar">
+          <div class="sidebar-section-header">Particles</div>
+          <input type="text" id="particle-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false">
+          <div id="particle-list" class="editor-list"></div>
+        </div>
+        <div id="editor-content" class="editor-content-area">
+          <div id="editor-tab-bar">
+            <button class="editor-tab-btn active" data-tab="appearance">Appearance</button>
+            <button class="editor-tab-btn" data-tab="physics">Physics</button>
+            <button class="editor-tab-btn" data-tab="emission">Emission</button>
+            <button class="editor-tab-btn" data-tab="advanced">Advanced</button>
+          </div>
+          <div id="editor-form">
+            <div class="editor-tab-panel active" data-tab="appearance">
+              <div class="editor-form-section">
+                <label class="editor-form-label">Size <span id="val-size">5</span></label>
+                <input type="range" id="inp-size" class="editor-form-input editor-range" min="1" max="50" value="5">
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Opacity <span id="val-opacity">0.8</span></label>
+                <input type="range" id="inp-opacity" class="editor-form-input editor-range" min="0" max="1" step="0.01" value="0.8">
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Color</label>
+                <input type="color" id="inp-color" class="editor-form-input">
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Z-Index</label>
+                <input type="number" id="inp-zindex" class="editor-form-input" step="1" value="0">
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Glow Intensity <span id="val-glow">0</span></label>
+                <input type="range" id="inp-glow" class="editor-form-input editor-range" min="0" max="10" step="0.1" value="0">
+              </div>
+              <div class="editor-form-check"><input type="checkbox" id="inp-visible"><label>Visible</label></div>
+            </div>
+            <div class="editor-tab-panel" data-tab="physics">
+              <div class="editor-form-section">
+                <label class="editor-form-label">Velocity</label>
+                <div class="editor-form-row"><div><label class="editor-form-label">X</label><input type="number" id="inp-vel-x" class="editor-form-input" step="0.1"></div><div><label class="editor-form-label">Y</label><input type="number" id="inp-vel-y" class="editor-form-input" step="0.1"></div></div>
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Gravity</label>
+                <div class="editor-form-row"><div><label class="editor-form-label">X</label><input type="number" id="inp-grav-x" class="editor-form-input" step="0.1"></div><div><label class="editor-form-label">Y</label><input type="number" id="inp-grav-y" class="editor-form-input" step="0.1"></div></div>
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Spread</label>
+                <div class="editor-form-row"><div><label class="editor-form-label">X</label><input type="number" id="inp-spread-x" class="editor-form-input" step="0.1"></div><div><label class="editor-form-label">Y</label><input type="number" id="inp-spread-y" class="editor-form-input" step="0.1"></div></div>
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Local Position</label>
+                <div class="editor-form-row"><div><label class="editor-form-label">X</label><input type="number" id="inp-lpos-x" class="editor-form-input" step="0.1"></div><div><label class="editor-form-label">Y</label><input type="number" id="inp-lpos-y" class="editor-form-input" step="0.1"></div></div>
+              </div>
+              <div class="editor-form-check"><input type="checkbox" id="inp-weather"><label>Affected by Weather</label></div>
+            </div>
+            <div class="editor-tab-panel" data-tab="emission">
+              <div class="editor-form-section">
+                <div class="editor-form-row"><div><label class="editor-form-label">Lifetime (ms)</label><input type="number" id="inp-lifetime" class="editor-form-input" min="1" step="1"></div><div><label class="editor-form-label">Interval (ms)</label><input type="number" id="inp-interval" class="editor-form-input" min="1" step="1"></div></div>
+              </div>
+              <div class="editor-form-section">
+                <div class="editor-form-row"><div><label class="editor-form-label">Max Amount</label><input type="number" id="inp-amount" class="editor-form-input" min="1" step="1"></div><div><label class="editor-form-label">Stagger Time</label><input type="number" id="inp-stagger" class="editor-form-input" min="0" step="0.1"></div></div>
+              </div>
+            </div>
+            <div class="editor-tab-panel" data-tab="advanced">
+              <div class="editor-form-section">
+                <div class="editor-form-check"><input type="checkbox" id="inp-time"><label>Affected by Time</label></div>
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Time On (HH:MM)</label>
+                <input type="time" id="inp-timeon" class="editor-form-input">
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Time Off (HH:MM)</label>
+                <input type="time" id="inp-timeoff" class="editor-form-input">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="editor-preview-area">
+        <canvas id="particle-preview-canvas" width="200" height="200" style="width:200px;height:200px;display:block;background:#222;image-rendering:pixelated"></canvas>
+      </div>
+    </div>
+  </body>
+</html>

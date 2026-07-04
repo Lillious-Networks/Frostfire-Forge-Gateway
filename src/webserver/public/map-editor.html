@@ -1,0 +1,45 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Map Editor</title>
+    <link rel="stylesheet" href="./css/game.css" />
+    <link rel="stylesheet" href="./css/editor.css" />
+    <script defer src="./js/core/preventzoomcontrols.js" type="text/javascript"></script>
+    <script defer src="./js/core/tileeditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body oncontextmenu="return false;">
+    <div id="editor-layout">
+      <div id="editor-toolbar">
+        <span id="editor-toolbar-title">Map Editor</span>
+        <span class="tool-divider"></span>
+        <button type="button" id="te-tool-paint" class="ui te-tool active" title="Paint (P)">Paint</button>
+        <button type="button" id="te-tool-erase" class="ui te-tool" title="Erase (E)">Erase</button>
+        <button type="button" id="te-copy" class="ui te-tool" title="Copy (C)">Copy</button>
+        <button type="button" id="te-paste" class="ui te-tool" title="Paste (V)">Paste</button>
+        <span class="tool-divider"></span>
+        <button type="button" id="te-undo" class="ui" title="Undo (Ctrl+Z)">Undo</button>
+        <button type="button" id="te-redo" class="ui" title="Redo (Ctrl+Y)">Redo</button>
+        <button type="button" id="te-save" class="ui" title="Save (Ctrl+S)">Save</button>
+        <span class="tool-divider"></span>
+        <button type="button" id="te-reset-view" class="ui" title="Reset View">Reset</button>
+        <button type="button" id="te-toggle-grid" class="ui" title="Toggle Grid">Grid</button>
+        <button type="button" id="te-clear" class="ui" title="Clear All My Edits">Clear</button>
+      </div>
+      <div id="editor-main">
+        <div id="editor-sidebar">
+          <div class="sidebar-section-header">Layers</div>
+          <div id="editor-layers-list" class="editor-list"></div>
+          <div class="sidebar-section-header">Objects</div>
+          <div id="editor-objects-list"></div>
+        </div>
+        <div id="editor-tileset-area">
+          <div id="editor-tileset-tabs"></div>
+          <div id="editor-tileset-container">
+            <canvas id="editor-tileset-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

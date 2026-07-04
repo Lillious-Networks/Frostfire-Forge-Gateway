@@ -30,16 +30,6 @@ interface ObjectMutation {
   newState: { x?: number, y?: number, width?: number, height?: number } | null;
 }
 
-interface PanelDragState {
-  panel: HTMLElement;
-  header: HTMLElement;
-  isDragging: boolean;
-  startX: number;
-  startY: number;
-  offsetX: number;
-  offsetY: number;
-}
-
 class TileEditor {
   public isActive: boolean = false;
   private currentTool: 'paint' | 'erase' | 'copy' | 'paste' = 'paint';
@@ -64,20 +54,15 @@ class TileEditor {
   private objectLayerVisibility: Map<string, boolean> = new Map();
   private layerVisibility: Map<string, boolean> = new Map();
   private layerLocked: Map<string, boolean> = new Map();
-  private minimizedPanelPositions: Map<string, { top: string, left: string, transform: string }> = new Map();
   private unsavedLayers: Set<string> = new Set();
   private undoStack: (TileChange | TileChangeGroup | ObjectMutation)[] = [];
   private redoStack: (TileChange | TileChangeGroup | ObjectMutation)[] = [];
   private copiedTile: number | null = null;
   private isMouseDown: boolean = false;
   private previewTilePos: { x: number, y: number } | null = null;
-  private hoveredTilesetPos: { x: number, y: number } | null = null;
   private lastSaveTime: number = 0;
   private saveCooldownMs: number = 500;
 
-  private isSelectingTiles: boolean = false;
-  private selectionStartTile: { x: number, y: number } | null = null;
-  private selectionEndTile: { x: number, y: number } | null = null;
   private selectedTiles: number[][] = [];
   private selectedTilesFromMap: boolean = false;
   private modifiedChunkKeys: Set<string> = new Set();
@@ -87,45 +72,10 @@ class TileEditor {
   private mapDragStartTile: { x: number, y: number } | null = null;
   private mapDragEndTile: { x: number, y: number } | null = null;
 
-  private isPanningTileset: boolean = false;
-  private tilesetPanStartX: number = 0;
-  private tilesetPanStartY: number = 0;
-  private tilesetScrollStartX: number = 0;
-  private tilesetScrollStartY: number = 0;
-
-  private isResizing: boolean = false;
-  private resizeStartX: number = 0;
-  private resizeStartY: number = 0;
-  private resizeStartWidth: number = 0;
-  private resizeStartHeight: number = 0;
-
-  private panels: Map<string, PanelDragState> = new Map();
-
-  private container: HTMLElement;
-  private toolbarPanel: HTMLElement;
-  private layersPanel: HTMLElement;
-  private tilesetPanel: HTMLElement;
-  private tilesetHeader: HTMLElement;
-  private paintBtn: HTMLElement;
-  private eraseBtn: HTMLElement;
-  private copyBtn: HTMLElement;
-  private pasteBtn: HTMLElement;
-  private undoBtn: HTMLElement;
-  private redoBtn: HTMLElement;
-  private saveBtn: HTMLElement;
-  private resetViewBtn: HTMLElement;
-  private toggleGridBtn: HTMLElement;
-  private clearBtn: HTMLElement;
-  private layersList: HTMLElement;
-  private objectsPanel: HTMLElement;
-  private objectsList: HTMLElement;
-  private tilesetTabs: HTMLElement;
-  private tilesetContainer: HTMLElement;
-  private tilesetCanvas: HTMLCanvasElement;
-  private tilesetCtx: CanvasRenderingContext2D;
-  private resizeHandle: HTMLElement;
-  private paletteAnimRunning = false;
-  private lastPaletteAnimSignature = '';
+  private editorWindow: Window | null = null;
+  private bridgeReady: boolean = false;
+  private messageQueue: any[] = [];
+  private windowCloseInterval: ReturnType<typeof setInterval> | null = null;
   private isPanningMap = false;
   private panLastX = 0;
   private panLastY = 0;
@@ -133,266 +83,15 @@ class TileEditor {
   private lastPlacedTilePos: { x: number, y: number } | null = null;
 
   constructor() {
-
-    this.container = document.getElementById('tile-editor-container') as HTMLElement;
-    this.toolbarPanel = document.getElementById('tile-editor-toolbar-panel') as HTMLElement;
-    this.layersPanel = document.getElementById('tile-editor-layers-panel') as HTMLElement;
-    this.tilesetPanel = document.getElementById('tile-editor-tileset-panel') as HTMLElement;
-
-    this.tilesetHeader = this.tilesetPanel.querySelector('.te-panel-header') as HTMLElement;
-    this.resizeHandle = this.tilesetPanel.querySelector('.te-resize-handle') as HTMLElement;
-
-    this.paintBtn = document.getElementById('te-tool-paint') as HTMLElement;
-    this.eraseBtn = document.getElementById('te-tool-erase') as HTMLElement;
-    this.copyBtn = document.getElementById('te-copy') as HTMLElement;
-    this.pasteBtn = document.getElementById('te-paste') as HTMLElement;
-    this.undoBtn = document.getElementById('te-undo') as HTMLElement;
-    this.redoBtn = document.getElementById('te-redo') as HTMLElement;
-    this.saveBtn = document.getElementById('te-save') as HTMLElement;
-    this.resetViewBtn = document.getElementById('te-reset-view') as HTMLElement;
-    this.toggleGridBtn = document.getElementById('te-toggle-grid') as HTMLElement;
-    this.clearBtn = document.getElementById('te-clear') as HTMLElement;
-    this.layersList = document.getElementById('tile-editor-layers-list') as HTMLElement;
-    this.objectsPanel = document.getElementById('tile-editor-objects-panel') as HTMLElement;
-    this.objectsList = document.getElementById('tile-editor-objects-list') as HTMLElement;
-    this.tilesetTabs = document.getElementById('tile-editor-tileset-tabs') as HTMLElement;
-    this.tilesetContainer = document.getElementById('tile-editor-tileset-container') as HTMLElement;
-    this.tilesetCanvas = document.getElementById('tile-editor-tileset-canvas') as HTMLCanvasElement;
-    this.tilesetCtx = this.tilesetCanvas.getContext('2d')!;
-
-    this.initializePanels();
     this.setupEventListeners();
-    this.startPaletteAnimation();
-  }
-
-  private initializePanels() {
-
-    const toolbarHeader = this.toolbarPanel.querySelector('.te-panel-header') as HTMLElement;
-    this.panels.set('toolbar', {
-      panel: this.toolbarPanel,
-      header: toolbarHeader || this.toolbarPanel,
-      isDragging: false,
-      startX: 0,
-      startY: 0,
-      offsetX: 0,
-      offsetY: 0
-    });
-
-    const layersHeader = this.layersPanel.querySelector('.te-panel-header') as HTMLElement;
-    this.panels.set('layers', {
-      panel: this.layersPanel,
-      header: layersHeader || this.layersPanel,
-      isDragging: false,
-      startX: 0,
-      startY: 0,
-      offsetX: 0,
-      offsetY: 0
-    });
-
-    const objectsPanelHeader = this.objectsPanel.querySelector('.te-panel-header') as HTMLElement;
-    this.panels.set('objects', {
-      panel: this.objectsPanel,
-      header: objectsPanelHeader,
-      isDragging: false,
-      startX: 0,
-      startY: 0,
-      offsetX: 0,
-      offsetY: 0
-    });
-
-    this.panels.set('tileset', {
-      panel: this.tilesetPanel,
-      header: this.tilesetHeader,
-      isDragging: false,
-      startX: 0,
-      startY: 0,
-      offsetX: 0,
-      offsetY: 0
-    });
-
-    this.loadPanelPositions();
-    this.loadMinimizedStates();
-
-    const closeButtons = document.querySelectorAll('.te-panel-close');
-    closeButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        const panelType = target.getAttribute('data-panel');
-        if (panelType === 'tileset') {
-          this.toggle();
-        } else if (panelType === 'objects') {
-          this.objectsPanel.style.display = 'none';
-        }
-      });
-    });
-
-    const minimizeButtons = document.querySelectorAll('.te-panel-minimize');
-    minimizeButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const target = e.target as HTMLElement;
-        const panelType = target.getAttribute('data-panel');
-        if (panelType) {
-          this.togglePanelMinimize(panelType);
-        }
-      });
-    });
-
-    const panelHeaders = document.querySelectorAll('.te-panel-header');
-    panelHeaders.forEach(header => {
-      header.addEventListener('click', (e) => {
-        // If clicking on a minimized panel header, toggle maximize
-        const panelId = (header.parentElement as any)?.id;
-        if (panelId && (header.parentElement as HTMLElement).classList.contains('minimized')) {
-          const panelType = panelId.replace('tile-editor-', '').replace('-panel', '');
-          this.togglePanelMinimize(panelType);
-        }
-      });
-    });
-  }
-
-  private togglePanelMinimize(panelType: string) {
-    const panelState = this.panels.get(panelType);
-    if (!panelState) return;
-
-    const panel = panelState.panel;
-    panel.classList.toggle('minimized');
-
-    if (panel.classList.contains('minimized')) {
-      // Save current position before minimizing
-      const style = getComputedStyle(panel);
-      const savedPos = {
-        top: panel.style.top || style.top,
-        left: panel.style.left || style.left,
-        transform: panel.style.transform || style.transform
-      };
-
-      // For tileset panel that hasn't been moved, use default centered positioning
-      if (panelType === 'tileset' && (panel.style.top === '' && panel.style.left === '')) {
-        savedPos.top = '50%';
-        savedPos.left = '50%';
-        savedPos.transform = 'translate(-50%, -50%)';
-      }
-
-      this.minimizedPanelPositions.set(panelType, savedPos);
-    } else {
-      // Restore saved position
-      const savedPos = this.minimizedPanelPositions.get(panelType);
-      if (savedPos) {
-        panel.style.bottom = 'auto';
-        panel.style.right = 'auto';
-        panel.style.top = savedPos.top;
-        panel.style.left = savedPos.left;
-        panel.style.transform = savedPos.transform;
-      }
-    }
-
-    // Recalculate all minimized panel positions
-    this.updateMinimizedPanelPositions();
-    this.saveMinimizedStates();
-  }
-
-  private loadMinimizedStates() {
-    try {
-      const saved = localStorage.getItem('tile-editor-minimized-states');
-      if (!saved) return;
-
-      const minimizedStates = JSON.parse(saved);
-      Object.entries(minimizedStates).forEach(([panelType, isMinimized]: [string, any]) => {
-        if (isMinimized) {
-          const panelState = this.panels.get(panelType);
-          if (panelState) {
-            const panel = panelState.panel;
-            panel.classList.add('minimized');
-
-            // Save the position before it was minimized
-            if (panelType === 'tileset') {
-              this.minimizedPanelPositions.set(panelType, {
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)'
-              });
-            }
-          }
-        }
-      });
-
-      // Recalculate positions for all minimized panels
-      this.updateMinimizedPanelPositions();
-    } catch (e) {
-      console.error('Error loading minimized states:', e);
-    }
-  }
-
-  private saveMinimizedStates() {
-    try {
-      const minimizedStates: { [key: string]: boolean } = {};
-      this.panels.forEach((panelState, panelType) => {
-        minimizedStates[panelType] = panelState.panel.classList.contains('minimized');
-      });
-      localStorage.setItem('tile-editor-minimized-states', JSON.stringify(minimizedStates));
-    } catch (e) {
-      console.error('Error saving minimized states:', e);
-    }
-  }
-
-  private updateMinimizedPanelPositions() {
-    const minimizedPanels = Array.from(document.querySelectorAll('.te-floating-panel.minimized'));
-    minimizedPanels.forEach((panel, index) => {
-      const offset = index * 50; // Stack them vertically with 50px spacing
-      (panel as HTMLElement).style.bottom = `${20 + offset}px`;
-      (panel as HTMLElement).style.right = '20px';
-      (panel as HTMLElement).style.top = 'auto';
-      (panel as HTMLElement).style.left = 'auto';
-      (panel as HTMLElement).style.transform = 'none';
-    });
+    this.setupMessageListener();
   }
 
   private setupEventListeners() {
 
-    this.paintBtn.addEventListener('click', () => this.setTool('paint'));
-    this.eraseBtn.addEventListener('click', () => this.setTool('erase'));
-    this.copyBtn.addEventListener('click', () => this.setTool('copy'));
-    this.pasteBtn.addEventListener('click', () => {
-
-      if (this.copiedTile !== null) {
-        this.setTool('paste');
-      }
-    });
-
-    this.undoBtn.addEventListener('click', () => this.undo());
-    this.redoBtn.addEventListener('click', () => this.redo());
-    this.saveBtn.addEventListener('click', () => this.save());
-    this.resetViewBtn.addEventListener('click', () => { this.resetPanelPositions(); resetEditorCamera(); });
-    this.toggleGridBtn.addEventListener('click', () => this.toggleGrid());
-    this.clearBtn.addEventListener('click', () => this.clearAllEdits());
-
     document.addEventListener('keydown', (e) => this.onKeyDown(e));
     document.addEventListener('keyup', (e) => this.onKeyUp(e));
     window.addEventListener('blur', () => { this.isShiftHeld = false; });
-
-    this.panels.forEach((panelState, id) => {
-      panelState.header.addEventListener('mousedown', (e) => this.onPanelDragStart(id, e));
-    });
-
-    document.addEventListener('mousemove', (e) => this.onPanelDrag(e));
-    document.addEventListener('mouseup', () => this.onPanelDragEnd());
-
-    window.addEventListener('resize', () => this.repositionPanelsToViewport());
-
-    this.tilesetCanvas.addEventListener('mousedown', (e) => this.onTilesetMouseDown(e));
-    this.tilesetCanvas.addEventListener('mousemove', (e) => this.onTilesetMouseMove(e));
-    this.tilesetCanvas.addEventListener('mouseup', (e) => this.onTilesetMouseUp(e));
-    this.tilesetCanvas.addEventListener('mouseleave', () => this.onTilesetMouseLeave());
-
-    this.tilesetContainer.addEventListener('mousedown', (e) => this.onTilesetPanStart(e));
-    this.tilesetContainer.addEventListener('mousemove', (e) => this.onTilesetPan(e));
-    this.tilesetContainer.addEventListener('mouseup', (e) => this.onTilesetPanEnd(e));
-    this.tilesetContainer.addEventListener('mouseleave', (e) => this.onTilesetPanEnd(e));
-
-    this.resizeHandle.addEventListener('mousedown', (e) => this.onResizeStart(e));
-    document.addEventListener('mousemove', (e) => this.onResize(e));
-    document.addEventListener('mouseup', () => this.onResizeEnd());
 
     canvas.addEventListener('mousemove', (e) => this.onMapMouseMove(e));
     canvas.addEventListener('mousedown', (e) => this.onMapMouseDown(e));
@@ -409,6 +108,12 @@ class TileEditor {
     }
   }
 
+  public async refresh() {
+    if (!this.isActive) return;
+    await this.closeEditor();
+    await this.openEditor();
+  }
+
   private async openEditor() {
     this.isActive = true;
     this.modifiedChunkKeys.clear();
@@ -418,19 +123,47 @@ class TileEditor {
 
     this.showSyncNotification();
     sendRequest({ type: 'EDITOR_OPEN', data: null });
+
+    // Open external editor window
+    const url = window.location.origin + '/map-editor';
+    this.editorWindow = window.open(url, 'MapEditor',
+      'width=1350,height=900,left=100,top=100,location=no,toolbar=no,menubar=no,status=no');
+
+    if (!this.editorWindow) {
+      this.showNotification('Popup blocked! Please allow popups for this site.', 'error', 5000);
+      this.isActive = false;
+      this.hideSyncNotification();
+      return;
+    }
+
+    this.windowCloseInterval = setInterval(() => {
+      if (this.editorWindow && this.editorWindow.closed) {
+        this.onWindowClosed();
+      }
+    }, 500);
+
     await this.waitForSyncReady();
     this.hideSyncNotification();
 
-    this.panels.forEach(panelState => {
-      panelState.panel.style.display = 'flex';
-    });
     this.initialize();
+    this.syncEditorState();
+    this.sendTilesetImages();
   }
 
   private async closeEditor() {
     this.isActive = false;
-    this.container.style.display = 'none';
     this.hideSyncNotification();
+
+    if (this.editorWindow && !this.editorWindow.closed) {
+      this.sendToEditor({ type: 'close' });
+      this.editorWindow.close();
+    }
+    this.editorWindow = null;
+    this.bridgeReady = false;
+    if (this.windowCloseInterval) {
+      clearInterval(this.windowCloseInterval);
+      this.windowCloseInterval = null;
+    }
 
     sendRequest({ type: 'EDITOR_CLOSE', data: null });
 
@@ -443,7 +176,29 @@ class TileEditor {
     if (gridCheckbox) {
       gridCheckbox.checked = false;
     }
-    this.toggleGridBtn.classList.remove('active');
+  }
+
+  private onWindowClosed() {
+    if (this.windowCloseInterval) {
+      clearInterval(this.windowCloseInterval);
+      this.windowCloseInterval = null;
+    }
+    this.editorWindow = null;
+    this.bridgeReady = false;
+    this.isActive = false;
+    this.hideSyncNotification();
+
+    sendRequest({ type: 'EDITOR_CLOSE', data: null });
+
+    this.restoreLayerSnapshot();
+
+    collisionTilesDebugCheckbox.checked = false;
+    noPvpDebugCheckbox.checked = false;
+
+    const gridCheckbox = document.getElementById('show-grid-checkbox') as HTMLInputElement;
+    if (gridCheckbox) {
+      gridCheckbox.checked = false;
+    }
   }
 
   private saveLayerSnapshot() {
@@ -506,11 +261,6 @@ class TileEditor {
   }
 
   private showSyncNotification() {
-    this.container.style.display = 'block';
-    // Hide panels during sync by pausing their display until sync completes
-    this.panels.forEach(panelState => {
-      panelState.panel.style.display = 'none';
-    });
     // Create a DOM notification overlay
     const existing = document.getElementById('te-sync-notification');
     if (!existing) {
@@ -530,6 +280,195 @@ class TileEditor {
     if (el) el.remove();
   }
 
+  private sendToEditor(msg: any) {
+    if (this.bridgeReady && this.editorWindow) {
+      this.editorWindow.postMessage(msg, '*');
+    } else {
+      this.messageQueue.push(msg);
+    }
+  }
+
+  private flushMessageQueue() {
+    if (this.editorWindow && this.bridgeReady) {
+      while (this.messageQueue.length > 0) {
+        this.editorWindow.postMessage(this.messageQueue.shift()!, '*');
+      }
+    }
+  }
+
+  private setupMessageListener() {
+    window.addEventListener('message', (e) => {
+      if (this.editorWindow && e.source !== this.editorWindow) return;
+
+      const msg = e.data;
+
+      if (!this.bridgeReady) {
+        this.bridgeReady = true;
+        this.flushMessageQueue();
+      }
+
+      if (msg.type === 'bridgeReady') {
+        this.syncEditorState();
+        this.sendTilesetImages();
+        return;
+      }
+
+      switch (msg.type) {
+        case 'toolChange':
+          this.setTool(msg.tool);
+          break;
+        case 'layerSelect':
+          this.selectLayer(msg.layerName);
+          break;
+        case 'layerToggle':
+          this.layerVisibility.set(msg.layerName, msg.visible);
+          if (msg.visible) {
+            rebakeAllChunks();
+          }
+          break;
+        case 'layerLock': {
+          this.layerLocked.set(msg.layerName, msg.locked);
+          this.propagateLayerLockToChunks(msg.layerName, msg.locked);
+          this.sendLayerLockChange(msg.layerName, msg.locked);
+          break;
+        }
+        case 'objectSelect':
+          if (msg.objectType) {
+            this.selectObject(msg.objectType);
+          } else {
+            this.deselectObject();
+          }
+          break;
+        case 'objectToggle':
+          this.objectLayerVisibility.set(msg.objectType, msg.visible);
+          break;
+        case 'tileSelect':
+          this.selectedTile = msg.tileId;
+          this.selectedTiles = msg.selectedTiles || [];
+          this.selectedTilesFromMap = msg.selectedTilesFromMap || false;
+          break;
+        case 'tilesetSelect':
+          this.currentTilesetIndex = msg.index;
+          break;
+        case 'command':
+          switch (msg.name) {
+            case 'undo': this.undo(); break;
+            case 'redo': this.redo(); break;
+            case 'save': this.save(); break;
+            case 'resetView': resetEditorCamera(); break;
+            case 'toggleGrid': this.toggleGrid(); break;
+            case 'clear': this.clearAllEdits(); break;
+            case 'toggle': this.toggle(); break;
+          }
+          break;
+        case 'editorClosed': {
+          if (this.windowCloseInterval) {
+            clearInterval(this.windowCloseInterval);
+            this.windowCloseInterval = null;
+          }
+          this.editorWindow = null;
+          this.bridgeReady = false;
+          this.isActive = false;
+          this.hideSyncNotification();
+          sendRequest({ type: 'EDITOR_CLOSE', data: null });
+          this.restoreLayerSnapshot();
+          collisionTilesDebugCheckbox.checked = false;
+          noPvpDebugCheckbox.checked = false;
+          const gc = document.getElementById('show-grid-checkbox') as HTMLInputElement;
+          if (gc) gc.checked = false;
+          break;
+        }
+      }
+    });
+  }
+
+  private syncEditorState() {
+    if (!window.mapData || !this.editorWindow) return;
+
+    this.sendToEditor({
+      type: 'init',
+      tilesets: window.mapData.tilesets.map((t: any, i: number) => ({
+        name: t.name,
+        firstgid: t.firstgid,
+        tilecount: t.tilecount,
+        tilewidth: t.tilewidth,
+        tileheight: t.tileheight,
+        imagewidth: t.imagewidth,
+        imageheight: t.imageheight,
+        tiles: t.tiles
+      })),
+      tool: this.currentTool,
+      selectedLayer: this.selectedLayer,
+      selectedObject: this.selectedObject,
+      selectedTile: this.selectedTile,
+      selectedTiles: this.selectedTiles,
+      selectedTilesFromMap: this.selectedTilesFromMap,
+      layerVisibility: [...this.layerVisibility],
+      layerLocked: [...this.layerLocked],
+      objectVisibility: {
+        Graveyards: this.objectLayerVisibility.get('Graveyards') ?? true,
+        Warps: this.objectLayerVisibility.get('Warps') ?? true
+      },
+      unsavedLayers: [...this.unsavedLayers]
+    });
+
+    this.sendLayersToEditor();
+  }
+
+  private sendLayersToEditor() {
+    if (!window.mapData || !this.editorWindow) return;
+
+    const firstChunk = window.mapData.loadedChunks.values().next().value;
+    if (!firstChunk) return;
+
+    const layers = firstChunk.layers.sort((a: any, b: any) => a.zIndex - b.zIndex);
+
+    const layerData: any[] = [];
+    layers.forEach((layer: any) => {
+      const isCollision = layer.name.toLowerCase().includes('collision');
+      const isNoPvp = layer.name.toLowerCase().includes('nopvp') || layer.name.toLowerCase().includes('no-pvp');
+      layerData.push({
+        name: layer.name,
+        zIndex: layer.zIndex,
+        locked: this.layerLocked.get(layer.name) ?? (layer.locked ?? false),
+        isCollision,
+        isNoPvp
+      });
+    });
+
+    this.sendToEditor({
+      type: 'layerUpdate',
+      layers: layerData,
+      unsavedLayers: [...this.unsavedLayers]
+    });
+  }
+
+  private sendTilesetImages() {
+    if (!window.mapData || !this.editorWindow) return;
+
+    window.mapData.tilesets.forEach((tileset: any, index: number) => {
+      const image = window.mapData.images[index];
+      if (!image || !image.complete) return;
+
+      try {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = tileset.imagewidth;
+        tempCanvas.height = tileset.imageheight;
+        const tempCtx = tempCanvas.getContext('2d')!;
+        tempCtx.drawImage(image, 0, 0);
+        const dataUrl = tempCanvas.toDataURL('image/png');
+
+        this.sendToEditor({
+          type: 'tilesetImage',
+          index,
+          dataUrl
+        });
+      } catch (e) {
+        console.error('Error converting tileset image:', e);
+      }
+    });
+  }
+
   private initialize() {
     if (!window.mapData) return;
 
@@ -539,8 +478,6 @@ class TileEditor {
     this.loadLayers();
     this.loadObjectLayers();
     this.loadTilesets();
-
-    this.updatePasteButtonState();
 
   }
 
@@ -579,8 +516,6 @@ class TileEditor {
   private loadLayers() {
     if (!window.mapData) return;
 
-    this.layersList.innerHTML = '';
-
     const firstChunk = window.mapData.loadedChunks.values().next().value;
     if (!firstChunk) return;
 
@@ -588,9 +523,6 @@ class TileEditor {
       .sort((a: any, b: any) => a.zIndex - b.zIndex);
 
     layers.forEach((layer: any) => {
-      const isCollision = layer.name.toLowerCase().includes('collision');
-      const isNoPvp = layer.name.toLowerCase().includes('nopvp') || layer.name.toLowerCase().includes('no-pvp');
-
       // Initialize visibility if not set
       if (!this.layerVisibility.has(layer.name)) {
         this.layerVisibility.set(layer.name, true);
@@ -603,71 +535,10 @@ class TileEditor {
       } else if (!this.layerLocked.has(layer.name)) {
         this.layerLocked.set(layer.name, false);
       }
-
-      const layerItem = document.createElement('div');
-      layerItem.className = 'te-layer-item ui';
-
-      let colorStyle = '';
-      if (isCollision) {
-        colorStyle = 'color: #ff9999;';
-      } else if (isNoPvp) {
-        colorStyle = 'color: #99ff99;';
-      }
-
-      const isVisible = this.layerVisibility.get(layer.name) ?? true;
-      const eyeEmoji = isVisible ? '👁️' : '🚫';
-      const isLocked = this.layerLocked.get(layer.name) ?? false;
-      const lockEmoji = isLocked ? '🔒' : '🔓';
-
-      if (isLocked) {
-        layerItem.classList.add('locked');
-      }
-
-      layerItem.innerHTML = `<span class="te-layer-label" style="${colorStyle}">${layer.name}</span><span class="te-layer-lock">${lockEmoji}</span><span class="te-layer-eye">${eyeEmoji}</span>`;
-
-      layerItem.addEventListener('click', (e) => {
-        // If clicking on the lock emoji, toggle lock state
-        if ((e.target as HTMLElement).classList.contains('te-layer-lock')) {
-          const newLocked = !(this.layerLocked.get(layer.name) ?? false);
-          this.layerLocked.set(layer.name, newLocked);
-          this.propagateLayerLockToChunks(layer.name, newLocked);
-          this.sendLayerLockChange(layer.name, newLocked);
-
-          const lockSpan = layerItem.querySelector('.te-layer-lock') as HTMLElement;
-          if (lockSpan) {
-            lockSpan.textContent = newLocked ? '🔒' : '🔓';
-          }
-          if (newLocked) {
-            layerItem.classList.add('locked');
-          } else {
-            layerItem.classList.remove('locked');
-          }
-
-          // If the currently selected layer is now locked, update toolbar state
-          if (layer.name === this.selectedLayer) {
-            this.updateToolbarForLayerLock(layer.name);
-          }
-        } else if ((e.target as HTMLElement).classList.contains('te-layer-eye')) {
-          // If clicking on the eye emoji area, toggle visibility
-          const isCurrentlyVisible = this.layerVisibility.get(layer.name) ?? true;
-          const newVisibility = !isCurrentlyVisible;
-          this.layerVisibility.set(layer.name, newVisibility);
-
-          // Update the eye emoji
-          const eyeSpan = layerItem.querySelector('.te-layer-eye') as HTMLElement;
-          if (eyeSpan) {
-            eyeSpan.textContent = newVisibility ? '👁️' : '🚫';
-          }
-
-          rebakeAllChunks();
-        } else {
-          // Otherwise select the layer
-          this.selectLayer(layer.name);
-        }
-      });
-
-      this.layersList.appendChild(layerItem);
     });
+
+    // Send layers data to external editor
+    this.sendLayersToEditor();
 
     if (layers.length > 0) {
       const firstNonSpecial = layers.find((l: any) => {
@@ -684,23 +555,6 @@ class TileEditor {
     this.selectedObjectName = null;
     this.deleteButtonCoords = null;
 
-    // Clear object selection highlighting
-    const objectItems = this.objectsList.querySelectorAll('.te-object-layer-item');
-    objectItems.forEach((item) => {
-      item.classList.remove('active');
-    });
-
-    const layerItems = this.layersList.querySelectorAll('.te-layer-item');
-    layerItems.forEach((item) => {
-      const labelSpan = item.querySelector('.te-layer-label');
-      const labelText = labelSpan?.textContent?.replace(' *', '') || '';
-      if (labelText === layerName) {
-        item.classList.add('active');
-      } else {
-        item.classList.remove('active');
-      }
-    });
-
     const lowerName = layerName.toLowerCase();
     const isCollision = lowerName.includes('collision');
     const isNoPvp = lowerName.includes('nopvp') || lowerName.includes('no-pvp');
@@ -709,127 +563,14 @@ class TileEditor {
 
     noPvpDebugCheckbox.checked = isNoPvp;
 
-    this.updateToolbarForLayerLock(layerName);
-  }
-
-  private updateToolbarForLayerLock(layerName: string) {
-    const isLocked = this.isLayerLocked(layerName);
-
-    if (isLocked) {
-      this.paintBtn.classList.add('disabled');
-      this.eraseBtn.classList.add('disabled');
-      this.copyBtn.classList.add('disabled');
-      this.pasteBtn.classList.add('disabled');
-      (this.paintBtn as HTMLButtonElement).disabled = true;
-      (this.eraseBtn as HTMLButtonElement).disabled = true;
-      (this.copyBtn as HTMLButtonElement).disabled = true;
-      (this.pasteBtn as HTMLButtonElement).disabled = true;
-    } else {
-      this.paintBtn.classList.remove('disabled');
-      this.eraseBtn.classList.remove('disabled');
-      this.copyBtn.classList.remove('disabled');
-      (this.paintBtn as HTMLButtonElement).disabled = false;
-      (this.eraseBtn as HTMLButtonElement).disabled = false;
-      (this.copyBtn as HTMLButtonElement).disabled = false;
-      this.updatePasteButtonState();
-    }
-  }
-
-  private hasObjectLayerChanges(objectType: 'Graveyards' | 'Warps'): boolean {
-    // Track all objects that have been created, deleted, or modified
-    const objectStates = new Map<string, { created: boolean, deleted: boolean }>();
-
-    // Process all mutations for this object type
-    this.undoStack.forEach(item => {
-      if ('type' in item && (item.type === 'graveyard' || item.type === 'warp')) {
-        const mutation = item as ObjectMutation;
-        const isGraveyard = mutation.type === 'graveyard';
-        const isWarp = mutation.type === 'warp';
-
-        // Only care about this object type
-        if ((objectType === 'Graveyards' && !isGraveyard) || (objectType === 'Warps' && !isWarp)) {
-          return;
-        }
-
-        if (!objectStates.has(mutation.name)) {
-          objectStates.set(mutation.name, { created: false, deleted: false });
-        }
-
-        const state = objectStates.get(mutation.name)!;
-
-        // Check if this is a creation (oldState is null) or deletion (newState is null)
-        const isCreation = mutation.oldState === null && mutation.newState !== null;
-        const isDeletion = mutation.oldState !== null && mutation.newState === null;
-
-        if (isCreation) {
-          state.created = true;
-        } else if (isDeletion) {
-          state.deleted = true;
-        }
-      }
-    });
-
-    // Check if there are any net changes
-    // If an object was created and then deleted, it cancels out
-    // Otherwise, if it was created, deleted, renamed, or modified, it's a change
-    for (const [, state] of objectStates) {
-      if (state.created && state.deleted) {
-        // Created and deleted = net zero change, skip
-        continue;
-      }
-      // Any other state means there's an actual change
-      return true;
-    }
-
-    return false;
+    this.sendToEditor({ type: 'layerSelectUpdate', layerName });
   }
 
   private updateLayerList() {
-    // Update regular tile layers
-    const layerItems = this.layersList.querySelectorAll('.te-layer-item');
-    layerItems.forEach((item) => {
-      const labelSpan = item.querySelector('.te-layer-label') as HTMLElement;
-      if (labelSpan) {
-        const layerName = labelSpan.textContent?.replace(' *', '') || '';
-        if (this.unsavedLayers.has(layerName)) {
-          // Add star if not already present
-          if (!labelSpan.textContent?.includes('*')) {
-            labelSpan.textContent = `${layerName} *`;
-          }
-        } else {
-          // Remove star if present
-          labelSpan.textContent = layerName;
-        }
-      }
-    });
-
-    // Update object layers - clean up unsaved status if no actual changes exist
-    const objectItems = this.objectsList.querySelectorAll('.te-object-layer-item');
-    objectItems.forEach((item) => {
-      const labelSpan = item.querySelector('.te-object-label') as HTMLElement;
-      if (labelSpan) {
-        const objectType = labelSpan.textContent?.replace(' *', '') || '';
-
-        // Check if object layer actually has changes in undo stack
-        const hasChanges = objectType === 'Graveyards' || objectType === 'Warps'
-          ? this.hasObjectLayerChanges(objectType as 'Graveyards' | 'Warps')
-          : false;
-
-        if (hasChanges || this.unsavedLayers.has(objectType)) {
-          // Add star if not already present
-          if (!labelSpan.textContent?.includes('*')) {
-            labelSpan.textContent = `${objectType} *`;
-          }
-        } else {
-          // Remove star if present
-          labelSpan.textContent = objectType;
-        }
-      }
-    });
+    this.sendLayersToEditor();
   }
 
   private loadObjectLayers() {
-    // Create buttons for Graveyards and Warps
     const objectTypes = ['Graveyards', 'Warps'];
 
     // Initialize visibility map - all visible by default
@@ -837,39 +578,6 @@ class TileEditor {
       if (!this.objectLayerVisibility.has(type)) {
         this.objectLayerVisibility.set(type, true);
       }
-    });
-
-    this.objectsList.innerHTML = '';
-
-    // Create label items for each object type with eye emoji
-    objectTypes.forEach(type => {
-      const item = document.createElement('div');
-      item.className = 'te-object-layer-item ui';
-
-      const isVisible = this.objectLayerVisibility.get(type) ?? true;
-      const eyeEmoji = isVisible ? '👁️' : '🚫';
-
-      item.innerHTML = `<span class="te-object-label">${type}</span><span class="te-object-eye">${eyeEmoji}</span>`;
-
-      item.addEventListener('click', (e) => {
-        // If clicking on the eye emoji area, toggle visibility
-        if ((e.target as HTMLElement).classList.contains('te-object-eye')) {
-          const isCurrentlyVisible = this.objectLayerVisibility.get(type) ?? true;
-          const newVisibility = !isCurrentlyVisible;
-          this.objectLayerVisibility.set(type, newVisibility);
-
-          // Update the eye emoji
-          const eyeSpan = item.querySelector('.te-object-eye') as HTMLElement;
-          if (eyeSpan) {
-            eyeSpan.textContent = newVisibility ? '👁️' : '🚫';
-          }
-        } else {
-          // Otherwise select the object
-          this.selectObject(type);
-        }
-      });
-
-      this.objectsList.appendChild(item);
     });
   }
 
@@ -1131,76 +839,15 @@ class TileEditor {
     this.selectedLayer = null;
     this.selectedObjectName = null;
     this.deleteButtonCoords = null;
-
-    // Clear layer selection highlighting
-    const layerItems = this.layersList.querySelectorAll('.te-layer-item');
-    layerItems.forEach((item) => {
-      item.classList.remove('active');
-    });
-
-    // Update object layer highlighting
-    const objectItems = this.objectsList.querySelectorAll('.te-object-layer-item');
-    objectItems.forEach((item) => {
-      const labelSpan = item.querySelector('.te-object-label');
-      if (labelSpan?.textContent === objectType) {
-        item.classList.add('active');
-      } else {
-        item.classList.remove('active');
-      }
-    });
-
-    // Disable Map Tools buttons when object layer is selected
-    this.paintBtn.classList.add('disabled');
-    this.eraseBtn.classList.add('disabled');
-    this.copyBtn.classList.add('disabled');
-    this.pasteBtn.classList.add('disabled');
-    (this.paintBtn as HTMLButtonElement).disabled = true;
-    (this.eraseBtn as HTMLButtonElement).disabled = true;
-    (this.copyBtn as HTMLButtonElement).disabled = true;
-    (this.pasteBtn as HTMLButtonElement).disabled = true;
   }
 
   private deselectObject() {
     this.selectedObject = null;
     this.selectedObjectName = null;
     this.deleteButtonCoords = null;
-
-    // Clear object layer highlighting
-    const objectItems = this.objectsList.querySelectorAll('.te-object-layer-item');
-    objectItems.forEach((item) => {
-      item.classList.remove('active');
-    });
-
-    // Re-enable Map Tools buttons (respect lock state)
-    if (this.selectedLayer) {
-      this.updateToolbarForLayerLock(this.selectedLayer);
-    } else {
-      this.paintBtn.classList.remove('disabled');
-      this.eraseBtn.classList.remove('disabled');
-      this.copyBtn.classList.remove('disabled');
-      this.pasteBtn.classList.remove('disabled');
-      (this.paintBtn as HTMLButtonElement).disabled = false;
-      (this.eraseBtn as HTMLButtonElement).disabled = false;
-      (this.copyBtn as HTMLButtonElement).disabled = false;
-      (this.pasteBtn as HTMLButtonElement).disabled = false;
-    }
   }
 
   private loadTilesets() {
-    if (!window.mapData) return;
-
-    this.tilesetTabs.innerHTML = '';
-
-    window.mapData.tilesets.forEach((tileset: any, index: number) => {
-      const tab = document.createElement('div');
-      const tabName = tileset.name || `Tileset ${index + 1}`;
-      tab.className = 'te-tileset-tab ui';
-      tab.textContent = tabName;
-      tab.title = tabName;
-      tab.addEventListener('click', () => this.selectTileset(index));
-      this.tilesetTabs.appendChild(tab);
-    });
-
     if (window.mapData.tilesets.length > 0) {
       this.selectTileset(0);
     }
@@ -1208,337 +855,7 @@ class TileEditor {
 
   private selectTileset(index: number) {
     this.currentTilesetIndex = index;
-
-    const tabs = this.tilesetTabs.querySelectorAll('.te-tileset-tab');
-    tabs.forEach((tab, i) => {
-      if (i === index) {
-        tab.classList.add('active');
-      } else {
-        tab.classList.remove('active');
-      }
-    });
-
-    this.drawTileset();
-  }
-
-  // Build a lookup of animated tiles for a tileset: localTileId -> {animation, totalDuration}.
-  private getAnimatedTilesForTileset(tileset: any): Map<number, { animation: Array<{ tileid: number; duration: number }>; totalDuration: number }> {
-    const lookup = new Map<number, { animation: Array<{ tileid: number; duration: number }>; totalDuration: number }>();
-    if (!tileset || !Array.isArray(tileset.tiles)) return lookup;
-    for (const tile of tileset.tiles) {
-      if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
-      const totalDuration = tile.animation.reduce((sum: number, frame: any) => sum + (frame.duration || 0), 0);
-      lookup.set(tile.id, { animation: tile.animation, totalDuration });
-    }
-    return lookup;
-  }
-
-  // Resolve the active local tile id for a Tiled animation at the given time (ms).
-  private getCurrentAnimationTileId(animation: Array<{ tileid: number; duration: number }>, totalDuration: number, now: number): number {
-    if (!animation || animation.length === 0) return 0;
-    if (totalDuration <= 0) return animation[0].tileid;
-    let t = now % totalDuration;
-    for (let i = 0; i < animation.length; i++) {
-      if (t < animation[i].duration) return animation[i].tileid;
-      t -= animation[i].duration;
-    }
-    return animation[animation.length - 1].tileid;
-  }
-
-  // Signature of the current animation frames for the active tileset. Changes only
-  // when a frame advances, so the palette is redrawn no more than necessary.
-  private computePaletteAnimSignature(): string {
-    if (!window.mapData) return '';
-    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
-    const animated = this.getAnimatedTilesForTileset(tileset);
-    if (animated.size === 0) return '';
-    const now = performance.now();
-    let sig = '';
-    animated.forEach((info, localId) => {
-      sig += `${localId}:${this.getCurrentAnimationTileId(info.animation, info.totalDuration, now)};`;
-    });
-    return sig;
-  }
-
-  // Redraw the palette whenever an animated tile advances a frame, while the editor
-  // is active. No-op (aside from a cheap signature check) when there are no animations.
-  private startPaletteAnimation() {
-    if (this.paletteAnimRunning) return;
-    this.paletteAnimRunning = true;
-    const tick = () => {
-      if (this.isActive && this.tilesetCtx && window.mapData) {
-        const sig = this.computePaletteAnimSignature();
-        if (sig !== this.lastPaletteAnimSignature) {
-          this.lastPaletteAnimSignature = sig;
-          this.drawTileset();
-        }
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
-  private drawTileset() {
-    if (!window.mapData) return;
-
-    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
-    const image = window.mapData.images[this.currentTilesetIndex];
-
-    if (!image || !tileset) return;
-
-    const scale = 1;
-    this.tilesetCanvas.width = tileset.imagewidth * scale;
-    this.tilesetCanvas.height = tileset.imageheight * scale;
-
-    this.tilesetCtx.imageSmoothingEnabled = false;
-    this.tilesetCtx.drawImage(image, 0, 0, tileset.imagewidth * scale, tileset.imageheight * scale);
-
-    // Overdraw animated tiles with their current frame and mark them with a badge,
-    // so the palette shows animations live instead of the static base tile.
-    const animatedTiles = this.getAnimatedTilesForTileset(tileset);
-    if (animatedTiles.size > 0) {
-      const animTilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-      const animTw = tileset.tilewidth * scale;
-      const animTh = tileset.tileheight * scale;
-      const animNow = performance.now();
-      animatedTiles.forEach((info, localId) => {
-        const col = localId % animTilesPerRow;
-        const rowIdx = Math.floor(localId / animTilesPerRow);
-        const destX = col * animTw;
-        const destY = rowIdx * animTh;
-        const frameTileId = this.getCurrentAnimationTileId(info.animation, info.totalDuration, animNow);
-        const srcX = (frameTileId % animTilesPerRow) * tileset.tilewidth;
-        const srcY = Math.floor(frameTileId / animTilesPerRow) * tileset.tileheight;
-
-        this.tilesetCtx.clearRect(destX, destY, animTw, animTh);
-        this.tilesetCtx.drawImage(
-          image,
-          srcX, srcY, tileset.tilewidth, tileset.tileheight,
-          destX, destY, animTw, animTh
-        );
-
-        const badge = Math.max(4, Math.min(animTw, animTh) * 0.28);
-        this.tilesetCtx.fillStyle = 'rgba(255, 210, 40, 0.9)';
-        this.tilesetCtx.beginPath();
-        this.tilesetCtx.moveTo(destX, destY);
-        this.tilesetCtx.lineTo(destX + badge, destY);
-        this.tilesetCtx.lineTo(destX, destY + badge);
-        this.tilesetCtx.closePath();
-        this.tilesetCtx.fill();
-      });
-    }
-
-    this.tilesetCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    this.tilesetCtx.lineWidth = 1;
-
-    const tileWidth = tileset.tilewidth * scale;
-    const tileHeight = tileset.tileheight * scale;
-    const cols = Math.floor(tileset.imagewidth / tileset.tilewidth);
-    const rows = Math.floor(tileset.imageheight / tileset.tileheight);
-
-    for (let x = 0; x <= cols; x++) {
-      this.tilesetCtx.beginPath();
-      this.tilesetCtx.moveTo(x * tileWidth, 0);
-      this.tilesetCtx.lineTo(x * tileWidth, rows * tileHeight);
-      this.tilesetCtx.stroke();
-    }
-
-    for (let y = 0; y <= rows; y++) {
-      this.tilesetCtx.beginPath();
-      this.tilesetCtx.moveTo(0, y * tileHeight);
-      this.tilesetCtx.lineTo(cols * tileWidth, y * tileHeight);
-      this.tilesetCtx.stroke();
-    }
-
-    if (this.isSelectingTiles && this.selectionStartTile && this.selectionEndTile) {
-      const minX = Math.min(this.selectionStartTile.x, this.selectionEndTile.x);
-      const maxX = Math.max(this.selectionStartTile.x, this.selectionEndTile.x);
-      const minY = Math.min(this.selectionStartTile.y, this.selectionEndTile.y);
-      const maxY = Math.max(this.selectionStartTile.y, this.selectionEndTile.y);
-
-      this.tilesetCtx.fillStyle = 'rgba(0, 150, 255, 0.3)';
-      this.tilesetCtx.fillRect(
-        minX * tileWidth,
-        minY * tileHeight,
-        (maxX - minX + 1) * tileWidth,
-        (maxY - minY + 1) * tileHeight
-      );
-
-      this.tilesetCtx.strokeStyle = 'rgba(0, 150, 255, 1)';
-      this.tilesetCtx.lineWidth = 2;
-      this.tilesetCtx.strokeRect(
-        minX * tileWidth,
-        minY * tileHeight,
-        (maxX - minX + 1) * tileWidth,
-        (maxY - minY + 1) * tileHeight
-      );
-    }
-
-    else if (this.selectedTiles.length > 0 && !this.selectedTilesFromMap) {
-      const height = this.selectedTiles.length;
-      const width = this.selectedTiles[0].length;
-
-      const firstTileId = this.selectedTiles[0][0];
-      if (firstTileId >= tileset.firstgid && firstTileId < tileset.firstgid + tileset.tilecount) {
-        const localTileId = firstTileId - tileset.firstgid;
-        const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-        const startX = (localTileId % tilesPerRow);
-        const startY = Math.floor(localTileId / tilesPerRow);
-
-        this.tilesetCtx.fillStyle = 'rgba(0, 150, 255, 0.3)';
-        this.tilesetCtx.fillRect(
-          startX * tileWidth,
-          startY * tileHeight,
-          width * tileWidth,
-          height * tileHeight
-        );
-
-        this.tilesetCtx.strokeStyle = 'rgba(0, 150, 255, 1)';
-        this.tilesetCtx.lineWidth = 3;
-        this.tilesetCtx.strokeRect(
-          startX * tileWidth,
-          startY * tileHeight,
-          width * tileWidth,
-          height * tileHeight
-        );
-      }
-    }
-
-    else if (this.selectedTile && this.selectedTile >= tileset.firstgid && this.selectedTile < tileset.firstgid + tileset.tilecount) {
-      const localTileId = this.selectedTile - tileset.firstgid;
-      const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-      const selectedX = (localTileId % tilesPerRow);
-      const selectedY = Math.floor(localTileId / tilesPerRow);
-
-      this.tilesetCtx.strokeStyle = 'rgba(0, 150, 255, 1)';
-      this.tilesetCtx.lineWidth = 3;
-      this.tilesetCtx.strokeRect(
-        selectedX * tileWidth,
-        selectedY * tileHeight,
-        tileWidth,
-        tileHeight
-      );
-    }
-
-    if (this.hoveredTilesetPos && !this.isSelectingTiles) {
-      this.tilesetCtx.fillStyle = 'rgba(0, 150, 255, 0.4)';
-      this.tilesetCtx.fillRect(
-        this.hoveredTilesetPos.x * tileWidth,
-        this.hoveredTilesetPos.y * tileHeight,
-        tileWidth,
-        tileHeight
-      );
-    }
-  }
-
-  private onTilesetMouseDown(e: MouseEvent) {
-    if (!window.mapData || e.button !== 0) return;
-
-    // Prevent any tileset interaction when an object layer is selected
-    if (this.selectedObject) {
-      return;
-    }
-
-    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
-    if (!tileset) return;
-
-    const rect = this.tilesetCanvas.getBoundingClientRect();
-    const containerRect = this.tilesetContainer.getBoundingClientRect();
-
-    if (e.clientX < containerRect.left || e.clientX > containerRect.right ||
-        e.clientY < containerRect.top || e.clientY > containerRect.bottom) {
-      return;
-    }
-
-    const scale = 1;
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
-
-    const tileX = Math.floor(x / tileset.tilewidth);
-    const tileY = Math.floor(y / tileset.tileheight);
-
-    this.isSelectingTiles = true;
-    this.selectionStartTile = { x: tileX, y: tileY };
-    this.selectionEndTile = { x: tileX, y: tileY };
-
-    this.drawTileset();
-  }
-
-  private onTilesetMouseUp(e: MouseEvent) {
-    if (!window.mapData || !this.isSelectingTiles) return;
-
-    this.isSelectingTiles = false;
-    this.selectedTilesFromMap = false;
-
-    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
-    if (!tileset || !this.selectionStartTile || !this.selectionEndTile) return;
-
-    const minX = Math.min(this.selectionStartTile.x, this.selectionEndTile.x);
-    const maxX = Math.max(this.selectionStartTile.x, this.selectionEndTile.x);
-    const minY = Math.min(this.selectionStartTile.y, this.selectionEndTile.y);
-    const maxY = Math.max(this.selectionStartTile.y, this.selectionEndTile.y);
-
-    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-
-    this.selectedTiles = [];
-    for (let y = minY; y <= maxY; y++) {
-      const row: number[] = [];
-      for (let x = minX; x <= maxX; x++) {
-        const localTileId = y * tilesPerRow + x;
-        const globalTileId = tileset.firstgid + localTileId;
-        row.push(globalTileId);
-      }
-      this.selectedTiles.push(row);
-    }
-
-    if (this.selectedTiles.length === 1 && this.selectedTiles[0].length === 1) {
-      this.selectedTile = this.selectedTiles[0][0];
-    } else {
-      this.selectedTile = null;
-    }
-
-    this.setTool('paint');
-
-    this.drawTileset();
-  }
-
-  private onTilesetMouseMove(e: MouseEvent) {
-    if (!window.mapData) return;
-
-    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
-    if (!tileset) return;
-
-    const rect = this.tilesetCanvas.getBoundingClientRect();
-    const scale = 1;
-    const x = (e.clientX - rect.left) / scale;
-    const y = (e.clientY - rect.top) / scale;
-
-    const tileX = Math.floor(x / tileset.tilewidth);
-    const tileY = Math.floor(y / tileset.tileheight);
-
-    if (this.isSelectingTiles) {
-      this.selectionEndTile = { x: tileX, y: tileY };
-      this.drawTileset();
-      return;
-    }
-
-    if (!this.hoveredTilesetPos || this.hoveredTilesetPos.x !== tileX || this.hoveredTilesetPos.y !== tileY) {
-      this.hoveredTilesetPos = { x: tileX, y: tileY };
-      this.drawTileset();
-    }
-  }
-
-  private onTilesetMouseLeave() {
-
-    if (this.isSelectingTiles) {
-      this.isSelectingTiles = false;
-      this.drawTileset();
-    }
-
-    if (this.hoveredTilesetPos) {
-      this.hoveredTilesetPos = null;
-      this.drawTileset();
-    }
+    this.sendToEditor({ type: 'tileSelectUpdate', tileId: this.selectedTile, tilesetIndex: index, selectedTiles: this.selectedTiles, selectedTilesFromMap: this.selectedTilesFromMap });
   }
 
   private onMapMouseMove(e: MouseEvent) {
@@ -1785,10 +1102,6 @@ class TileEditor {
 
   private onMapMouseDown(e: MouseEvent) {
     if (!this.isActive || !window.mapData) return;
-
-    if ((e.target as HTMLElement).closest('#tile-editor-container')) {
-      return;
-    }
 
     // Middle-mouse drag pans the free-pan editor camera (Tiled-style navigation).
     if (e.button === 1) {
@@ -2260,257 +1573,10 @@ class TileEditor {
     canvas.style.cursor = 'default';
   }
 
-  private onPanelDragStart(panelId: string, e: MouseEvent) {
-    const panelState = this.panels.get(panelId);
-    if (!panelState) return;
-
-    const target = e.target as HTMLElement;
-
-    if (target.classList.contains('te-panel-close')) return;
-
-    if (panelId === 'toolbar' && target.tagName === 'BUTTON') return;
-
-    if (panelId === 'layers' && (target.classList.contains('te-layer-item') || target.closest('.te-layer-item'))) return;
-
-    panelState.isDragging = true;
-    panelState.startX = e.clientX;
-    panelState.startY = e.clientY;
-
-    const rect = panelState.panel.getBoundingClientRect();
-    panelState.offsetX = rect.left;
-    panelState.offsetY = rect.top;
-
-    panelState.header.style.cursor = 'grabbing';
-    panelState.panel.style.zIndex = '1001';
-  }
-
-  private onPanelDrag(e: MouseEvent) {
-    this.panels.forEach(panelState => {
-      if (!panelState.isDragging) return;
-
-      const deltaX = e.clientX - panelState.startX;
-      const deltaY = e.clientY - panelState.startY;
-
-      let newX = panelState.offsetX + deltaX;
-      let newY = panelState.offsetY + deltaY;
-
-      const panelRect = panelState.panel.getBoundingClientRect();
-      const maxX = window.innerWidth - panelRect.width;
-      const maxY = window.innerHeight - panelRect.height;
-
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-
-      panelState.panel.style.transform = 'none';
-      panelState.panel.style.left = `${newX}px`;
-      panelState.panel.style.top = `${newY}px`;
-      panelState.panel.style.right = 'auto';
-      panelState.panel.style.bottom = 'auto';
-    });
-  }
-
-  private onPanelDragEnd() {
-    this.panels.forEach((panelState, id) => {
-      if (!panelState.isDragging) return;
-
-      panelState.isDragging = false;
-
-      if (id === 'toolbar' || id === 'layers') {
-        panelState.panel.style.cursor = 'grab';
-      } else {
-        panelState.header.style.cursor = 'grab';
-      }
-      panelState.panel.style.zIndex = '1000';
-
-      this.savePanelPosition(id, panelState.panel);
-    });
-  }
-
-  private tePrevViewportWidth = window.innerWidth;
-  private tePrevViewportHeight = window.innerHeight;
-
-  private repositionPanelsToViewport() {
-    const newW = window.innerWidth;
-    const newH = window.innerHeight;
-    const oldW = this.tePrevViewportWidth;
-    const oldH = this.tePrevViewportHeight;
-    this.tePrevViewportWidth = newW;
-    this.tePrevViewportHeight = newH;
-    if (newW === oldW && newH === oldH) return;
-
-    this.panels.forEach((panelState, id) => {
-      if (panelState.isDragging) return;
-
-      const panel = panelState.panel;
-      if (!panel.style.left && !panel.style.top) return;
-
-      const rect = panel.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) return;
-
-      const availOldX = oldW - rect.width;
-      const availOldY = oldH - rect.height;
-      const availNewX = newW - rect.width;
-      const availNewY = newH - rect.height;
-
-      const fracX = availOldX > 0 ? Math.min(Math.max(rect.left / availOldX, 0), 1) : 0;
-      const fracY = availOldY > 0 ? Math.min(Math.max(rect.top / availOldY, 0), 1) : 0;
-
-      const newX = availNewX > 0 ? Math.round(fracX * availNewX) : 0;
-      const newY = availNewY > 0 ? Math.round(fracY * availNewY) : 0;
-
-      panel.style.transform = 'none';
-      panel.style.left = `${newX}px`;
-      panel.style.top = `${newY}px`;
-      panel.style.right = 'auto';
-      panel.style.bottom = 'auto';
-
-      this.savePanelPosition(id, panel);
-    });
-  }
-
-  private onTilesetPanStart(e: MouseEvent) {
-
-    if (e.button !== 1) return;
-
-    e.preventDefault();
-    this.isPanningTileset = true;
-    this.tilesetPanStartX = e.clientX;
-    this.tilesetPanStartY = e.clientY;
-    this.tilesetScrollStartX = this.tilesetContainer.scrollLeft;
-    this.tilesetScrollStartY = this.tilesetContainer.scrollTop;
-
-    this.tilesetContainer.style.cursor = 'grabbing';
-  }
-
-  private onTilesetPan(e: MouseEvent) {
-    if (!this.isPanningTileset) return;
-
-    e.preventDefault();
-
-    const deltaX = e.clientX - this.tilesetPanStartX;
-    const deltaY = e.clientY - this.tilesetPanStartY;
-
-    this.tilesetContainer.scrollLeft = this.tilesetScrollStartX - deltaX;
-    this.tilesetContainer.scrollTop = this.tilesetScrollStartY - deltaY;
-  }
-
-  private onTilesetPanEnd(e: MouseEvent) {
-    if (!this.isPanningTileset) return;
-
-    this.isPanningTileset = false;
-    this.tilesetContainer.style.cursor = '';
-  }
-
-  private onResizeStart(e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    this.isResizing = true;
-    this.resizeStartX = e.clientX;
-    this.resizeStartY = e.clientY;
-    this.resizeStartWidth = this.tilesetPanel.offsetWidth;
-    this.resizeStartHeight = this.tilesetPanel.offsetHeight;
-
-    this.tilesetPanel.style.transition = 'none';
-  }
-
-  private onResize(e: MouseEvent) {
-    if (!this.isResizing) return;
-
-    e.preventDefault();
-
-    const deltaX = e.clientX - this.resizeStartX;
-    const deltaY = e.clientY - this.resizeStartY;
-
-    let newWidth = this.resizeStartWidth + deltaX;
-    let newHeight = this.resizeStartHeight + deltaY;
-
-    const minWidth = 400;
-    const minHeight = 300;
-    const maxWidth = window.innerWidth * 0.9;
-    const maxHeight = window.innerHeight * 0.9;
-
-    newWidth = Math.max(minWidth, Math.min(newWidth, maxWidth));
-    newHeight = Math.max(minHeight, Math.min(newHeight, maxHeight));
-
-    this.tilesetPanel.style.width = `${newWidth}px`;
-    this.tilesetPanel.style.height = `${newHeight}px`;
-  }
-
-  private onResizeEnd() {
-    if (!this.isResizing) return;
-
-    this.isResizing = false;
-
-    this.tilesetPanel.style.transition = '';
-  }
-
-  private loadPanelPositions() {
-    try {
-      const saved = localStorage.getItem('tile-editor-panel-positions');
-      if (!saved) return;
-
-      const positions = JSON.parse(saved);
-      this.panels.forEach((panelState, id) => {
-        const position = positions[id];
-        if (position) {
-          panelState.panel.style.transform = 'none';
-          panelState.panel.style.left = `${position.x}px`;
-          panelState.panel.style.top = `${position.y}px`;
-          panelState.panel.style.right = 'auto';
-          panelState.panel.style.bottom = 'auto';
-        }
-      });
-    } catch (e) {
-      console.error('Error loading panel positions:', e);
-    }
-  }
-
-  private savePanelPosition(panelId: string, panel: HTMLElement) {
-    try {
-      const saved = localStorage.getItem('tile-editor-panel-positions');
-      const positions = saved ? JSON.parse(saved) : {};
-
-      const rect = panel.getBoundingClientRect();
-      positions[panelId] = {
-        x: rect.left,
-        y: rect.top
-      };
-
-      localStorage.setItem('tile-editor-panel-positions', JSON.stringify(positions));
-    } catch (e) {
-      console.error('Error saving panel position:', e);
-    }
-  }
-
-  private resetPanelPositions() {
-
-    localStorage.removeItem('tile-editor-panel-positions');
-
-    this.panels.forEach(panelState => {
-      panelState.panel.style.left = '';
-      panelState.panel.style.top = '';
-      panelState.panel.style.right = '';
-      panelState.panel.style.bottom = '';
-      panelState.panel.style.transform = '';
-    });
-
-    this.tilesetPanel.style.width = '';
-    this.tilesetPanel.style.height = '';
-
-  }
-
   private toggleGrid() {
     const gridCheckbox = document.getElementById('show-grid-checkbox') as HTMLInputElement;
     if (gridCheckbox) {
       gridCheckbox.checked = !gridCheckbox.checked;
-
-      if (gridCheckbox.checked) {
-        this.toggleGridBtn.classList.add('active');
-      } else {
-        this.toggleGridBtn.classList.remove('active');
-      }
-
     }
   }
 
@@ -2798,14 +1864,10 @@ class TileEditor {
 
       if (tilesetIndex !== -1 && tilesetIndex !== this.currentTilesetIndex) {
         this.selectTileset(tilesetIndex);
-      } else if (tilesetIndex !== -1) {
-
-        this.drawTileset();
       }
 
-      this.scrollToSelectedTile();
       this.setTool('paste');
-      this.updatePasteButtonState();
+      this.sendToEditor({ type: 'tileSelectUpdate', tileId: this.selectedTile, selectedTiles: this.selectedTiles, selectedTilesFromMap: this.selectedTilesFromMap, tilesetIndex: this.currentTilesetIndex });
       // Clear preview position to avoid rendering artifacts
       this.previewTilePos = null;
     }
@@ -2862,13 +1924,9 @@ class TileEditor {
 
         if (tilesetIndex !== -1 && tilesetIndex !== this.currentTilesetIndex) {
           this.selectTileset(tilesetIndex);
-        } else if (tilesetIndex !== -1) {
-          this.drawTileset();
         }
 
-        this.scrollToSelectedTile();
         this.setTool('paste');
-        this.updatePasteButtonState();
       }
     } else {
       this.selectedTile = null;
@@ -2876,8 +1934,7 @@ class TileEditor {
       this.selectedTilesFromMap = true;
       this.copiedTile = null;
       this.setTool('paint');
-      this.updatePasteButtonState();
-      this.drawTileset();
+      this.sendToEditor({ type: 'tileSelectUpdate', tileId: this.selectedTile, selectedTiles: this.selectedTiles, selectedTilesFromMap: this.selectedTilesFromMap, tilesetIndex: this.currentTilesetIndex });
     }
   }
 
@@ -3137,28 +2194,7 @@ class TileEditor {
     this.layerLocked.set(data.layerName, data.locked);
     this.propagateLayerLockToChunks(data.layerName, data.locked);
 
-    // Update UI if the layer is visible in the list
-    const layerItems = this.layersList.querySelectorAll('.te-layer-item');
-    layerItems.forEach((item) => {
-      const labelSpan = item.querySelector('.te-layer-label');
-      const labelText = labelSpan?.textContent?.replace(' *', '') || '';
-      if (labelText === data.layerName) {
-        const lockSpan = item.querySelector('.te-layer-lock') as HTMLElement;
-        if (lockSpan) {
-          lockSpan.textContent = data.locked ? '🔒' : '🔓';
-        }
-        if (data.locked) {
-          item.classList.add('locked');
-        } else {
-          item.classList.remove('locked');
-        }
-      }
-    });
-
-    // Update toolbar if this layer is currently selected
-    if (this.selectedLayer === data.layerName) {
-      this.updateToolbarForLayerLock(data.layerName);
-    }
+    this.sendToEditor({ type: 'layerLockUpdate', layerName: data.layerName, locked: data.locked });
   }
 
   private propagateLayerLockToChunks(layerName: string, locked: boolean) {
@@ -3735,7 +2771,7 @@ class TileEditor {
 
         const deleteBtn = document.createElement("button");
         deleteBtn.className = "ui";
-        deleteBtn.innerText = '−';
+        deleteBtn.innerText = 'âˆ’';
         deleteBtn.style.background = 'rgba(255, 100, 100, 0.3)';
         deleteBtn.style.color = 'rgba(255, 100, 100, 0.8)';
         deleteBtn.style.border = '1px solid rgba(255, 100, 100, 0.5)';
@@ -4011,11 +3047,6 @@ class TileEditor {
     this.currentTool = tool;
     this.lastPlacedTilePos = null;
 
-    this.paintBtn.classList.toggle('active', tool === 'paint');
-    this.eraseBtn.classList.toggle('active', tool === 'erase');
-    this.copyBtn.classList.toggle('active', tool === 'copy');
-    this.pasteBtn.classList.toggle('active', tool === 'paste');
-
     // Deselect object layer when switching to a tile tool
     if (this.selectedObject) {
       this.deselectObject();
@@ -4096,11 +3127,6 @@ class TileEditor {
 
   private onMapContextMenu(e: MouseEvent) {
     if (!this.isActive || !window.mapData) {
-      return;
-    }
-
-    // Check if clicking on tile editor container
-    if ((e.target as HTMLElement).closest('#tile-editor-container')) {
       return;
     }
 
@@ -4437,7 +3463,7 @@ class TileEditor {
 
     const closeButton = document.createElement("button");
     closeButton.className = 'te-panel-close ui';
-    closeButton.innerText = '×';
+    closeButton.innerText = 'Ã—';
     closeButton.style.cursor = 'pointer';
     closeButton.onclick = () => {
       if (this.propertiesPanel && this.propertiesPanel.parentNode) {
@@ -4603,7 +3629,7 @@ class TileEditor {
           });
 
           const deleteBtn = document.createElement("button");
-          deleteBtn.innerText = '−';
+          deleteBtn.innerText = 'âˆ’';
           deleteBtn.style.background = 'rgba(255, 100, 100, 0.3)';
           deleteBtn.style.color = 'rgba(255, 100, 100, 0.8)';
           deleteBtn.style.border = '1px solid rgba(255, 100, 100, 0.5)';
@@ -4673,13 +3699,9 @@ class TileEditor {
     this.propertiesPanel.appendChild(content);
 
     // Add to tile editor container
-    const container = document.getElementById('tile-editor-container');
-    if (container) {
-      container.appendChild(this.propertiesPanel);
-    } else {
       document.body.appendChild(this.propertiesPanel);
-    }
   }
+
 
   private openAddPropertyModal(objectData: any, excludedKeys: Set<string>, onComplete: () => void) {
     // Create modal overlay
@@ -4930,52 +3952,6 @@ class TileEditor {
     nameInput.focus();
   }
 
-  private updatePasteButtonState() {
-
-    const isLayerLocked = this.selectedLayer ? this.isLayerLocked(this.selectedLayer) : false;
-
-    if (this.copiedTile === null || isLayerLocked) {
-      (this.pasteBtn as HTMLButtonElement).disabled = true;
-      this.pasteBtn.style.opacity = '0.5';
-      this.pasteBtn.style.cursor = 'not-allowed';
-    } else {
-      (this.pasteBtn as HTMLButtonElement).disabled = false;
-      this.pasteBtn.style.opacity = '1';
-      this.pasteBtn.style.cursor = 'pointer';
-    }
-  }
-
-  private scrollToSelectedTile() {
-    if (!this.selectedTile || !window.mapData) return;
-
-    const tileset = window.mapData.tilesets[this.currentTilesetIndex];
-    if (!tileset) return;
-
-    if (this.selectedTile < tileset.firstgid || this.selectedTile >= tileset.firstgid + tileset.tilecount) {
-      return;
-    }
-
-    const localTileId = this.selectedTile - tileset.firstgid;
-    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-    const tileX = (localTileId % tilesPerRow);
-    const tileY = Math.floor(localTileId / tilesPerRow);
-
-    const tilePixelX = tileX * tileset.tilewidth;
-    const tilePixelY = tileY * tileset.tileheight;
-
-    const containerWidth = this.tilesetContainer.clientWidth;
-    const containerHeight = this.tilesetContainer.clientHeight;
-
-    const scrollLeft = tilePixelX - (containerWidth / 2) + (tileset.tilewidth / 2);
-    const scrollTop = tilePixelY - (containerHeight / 2) + (tileset.tileheight / 2);
-
-    this.tilesetContainer.scrollTo({
-      left: Math.max(0, scrollLeft),
-      top: Math.max(0, scrollTop),
-      behavior: 'smooth'
-    });
-  }
-
   public renderPreview() {
     if (!this.isActive || !window.mapData || !ctx) return;
 
@@ -5034,7 +4010,7 @@ class TileEditor {
             const srcX = (localId % tilesPerRow) * tileset.tilewidth;
             const srcY = Math.floor(localId / tilesPerRow) * tileset.tileheight;
 
-            ctx.globalAlpha = 0.6;
+            ctx.globalAlpha = 0.75;
             ctx.imageSmoothingEnabled = false;
 
             for (const pos of lineTiles) {
@@ -5059,7 +4035,7 @@ class TileEditor {
       return;
     }
 
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = 0.75;
     ctx.imageSmoothingEnabled = false;
 
     if (this.currentTool === 'paint' && this.selectedTiles.length > 0) {

@@ -2207,6 +2207,9 @@ socket.onmessage = async (event) => {
           _hideScreenTimer = null;
         }
 
+        const te = (window as any).tileEditor;
+        const teWasActive = te?.isActive;
+
         if (isTransition) {
           (window as any).__pendingWeather = null;
 
@@ -2281,9 +2284,12 @@ socket.onmessage = async (event) => {
 
           const { resetCameraInitialized } = await import('./renderer.js');
           resetCameraInitialized();
+          (window as any).__resetEditorCamera = true;
 
           (window as any).__suppressLoadingScreen = useBlackFade;
           (window as any).__firstFrameRendered = false;
+
+          if (teWasActive) await te!.toggle();
         }
 
         loaded = await loadMap(data);
@@ -2298,6 +2304,11 @@ socket.onmessage = async (event) => {
 
         if (loaded) {
           updateAdminMapInput();
+
+          if (teWasActive) await te.toggle();
+
+          const ne = (window as any).npcEditor;
+          if (ne?.isActive) ne.refresh();
         }
       }
       break;
@@ -4213,6 +4224,12 @@ document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && loaded) {
     await requestWakeLock();
   }
+});
+
+window.addEventListener('beforeunload', () => {
+  (window as any).tileEditor?.toggle();
+  (window as any).particleEditor?.toggle();
+  (window as any).npcEditor?.toggle();
 });
 
 (window as any).__socketModule = {
