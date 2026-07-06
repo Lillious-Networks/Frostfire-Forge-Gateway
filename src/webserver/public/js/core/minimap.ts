@@ -78,13 +78,40 @@ function drawChunkAnimatedFirstFrames(chunkData: any, bufX: number, bufY: number
     const srcX = (firstTileId % tilesPerRow) * tileset.tilewidth;
     const srcY = Math.floor(firstTileId / tilesPerRow) * tileset.tileheight;
 
-    bufferCtx.drawImage(
-      image,
-      srcX, srcY,
-      tileset.tilewidth, tileset.tileheight,
-      bufX + at.destX * scale, bufY + at.destY * scale,
-      destW, destH,
-    );
+    const destBX = bufX + at.destX * scale;
+    const destBY = bufY + at.destY * scale;
+    const flipH = at.flipH || false;
+    const flipV = at.flipV || false;
+    const flipD = at.flipD || false;
+
+    if (flipH || flipV || flipD) {
+      const cx = destBX + destW / 2;
+      const cy = destBY + destH / 2;
+      let rot = 0;
+      let effH = flipH;
+      let effV = flipV;
+      if (flipD) { rot = Math.PI / 2; effH = flipV; effV = !flipH; }
+      bufferCtx.save();
+      bufferCtx.translate(cx, cy);
+      if (rot !== 0) bufferCtx.rotate(rot);
+      bufferCtx.scale(effH ? -1 : 1, effV ? -1 : 1);
+      bufferCtx.drawImage(
+        image,
+        srcX, srcY,
+        tileset.tilewidth, tileset.tileheight,
+        -destW / 2, -destH / 2,
+        destW, destH,
+      );
+      bufferCtx.restore();
+    } else {
+      bufferCtx.drawImage(
+        image,
+        srcX, srcY,
+        tileset.tilewidth, tileset.tileheight,
+        destBX, destBY,
+        destW, destH,
+      );
+    }
   }
 }
 

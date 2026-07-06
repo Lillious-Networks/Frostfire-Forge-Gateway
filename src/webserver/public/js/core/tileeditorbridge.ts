@@ -6,7 +6,6 @@ class TileEditorBridge {
   private undoBtn: HTMLElement;
   private redoBtn: HTMLElement;
   private saveBtn: HTMLElement;
-  private resetViewBtn: HTMLElement;
   private toggleGridBtn: HTMLElement;
   private clearBtn: HTMLElement;
   private layersList: HTMLElement;
@@ -55,7 +54,6 @@ class TileEditorBridge {
     this.undoBtn = document.getElementById('te-undo') as HTMLElement;
     this.redoBtn = document.getElementById('te-redo') as HTMLElement;
     this.saveBtn = document.getElementById('te-save') as HTMLElement;
-    this.resetViewBtn = document.getElementById('te-reset-view') as HTMLElement;
     this.toggleGridBtn = document.getElementById('te-toggle-grid') as HTMLElement;
     this.clearBtn = document.getElementById('te-clear') as HTMLElement;
     this.layersList = document.getElementById('editor-layers-list') as HTMLElement;
@@ -277,7 +275,6 @@ class TileEditorBridge {
     this.undoBtn.addEventListener('click', () => this.send({ type: 'command', name: 'undo' }));
     this.redoBtn.addEventListener('click', () => this.send({ type: 'command', name: 'redo' }));
     this.saveBtn.addEventListener('click', () => this.send({ type: 'command', name: 'save' }));
-    this.resetViewBtn.addEventListener('click', () => this.send({ type: 'command', name: 'resetView' }));
     this.toggleGridBtn.addEventListener('click', () => this.send({ type: 'command', name: 'toggleGrid' }));
     this.clearBtn.addEventListener('click', () => this.send({ type: 'command', name: 'clear' }));
 
@@ -307,6 +304,11 @@ class TileEditorBridge {
     if (e.key === 'e') this.setTool('erase');
     if (e.key === 'c') this.setTool('copy');
     if (e.key === 'v' && this.selectedTile !== null) this.setTool('paste');
+
+    if (e.key === 'z' && !e.ctrlKey) {
+      e.preventDefault();
+      this.send({ type: 'command', name: 'rotateTile' });
+    }
 
     if (e.ctrlKey && e.key === 'z') {
       e.preventDefault();
@@ -618,15 +620,18 @@ class TileEditorBridge {
         this.tilesetCtx.lineWidth = 3;
         this.tilesetCtx.strokeRect(startX * tileWidth, startY * tileHeight, width * tileWidth, height * tileHeight);
       }
-    } else if (this.selectedTile && this.selectedTile >= tileset.firstgid && this.selectedTile < tileset.firstgid + tileset.tilecount) {
-      const localTileId = this.selectedTile - tileset.firstgid;
-      const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-      const selectedX = (localTileId % tilesPerRow);
-      const selectedY = Math.floor(localTileId / tilesPerRow);
+    } else if (this.selectedTile) {
+      const baseGID = this.selectedTile & 0x0FFFFFFF;
+      if (baseGID >= tileset.firstgid && baseGID < tileset.firstgid + tileset.tilecount) {
+        const localTileId = baseGID - tileset.firstgid;
+        const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+        const selectedX = (localTileId % tilesPerRow);
+        const selectedY = Math.floor(localTileId / tilesPerRow);
 
-      this.tilesetCtx.strokeStyle = 'rgba(0, 150, 255, 1)';
-      this.tilesetCtx.lineWidth = 3;
-      this.tilesetCtx.strokeRect(selectedX * tileWidth, selectedY * tileHeight, tileWidth, tileHeight);
+        this.tilesetCtx.strokeStyle = 'rgba(0, 150, 255, 1)';
+        this.tilesetCtx.lineWidth = 3;
+        this.tilesetCtx.strokeRect(selectedX * tileWidth, selectedY * tileHeight, tileWidth, tileHeight);
+      }
     }
 
     if (this.hoveredTilesetPos && !this.isSelectingTiles) {

@@ -10,6 +10,55 @@ declare global {
   }
 }
 
+function getBaseGID(gid: number): number { return gid & 0x0FFFFFFF; }
+
+function getTileFlags(gid: number): { flipH: boolean; flipV: boolean; flipD: boolean } {
+  return {
+    flipH: (gid & 0x80000000) !== 0,
+    flipV: (gid & 0x40000000) !== 0,
+    flipD: (gid & 0x20000000) !== 0,
+  };
+}
+
+function drawRotatedTile(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  srcX: number, srcY: number, srcW: number, srcH: number,
+  destX: number, destY: number, destW: number, destH: number,
+  flipH: boolean, flipV: boolean, flipD: boolean
+): void {
+  const hasFlags = flipH || flipV || flipD;
+  if (!hasFlags) {
+    ctx.drawImage(image, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+    return;
+  }
+
+  const cx = destX + destW / 2;
+  const cy = destY + destH / 2;
+
+  // Tiled's exact approach:
+  // 1. If anti-diagonal: set rotation=90°, swap H↔V and invert H flag
+  // 2. Translate to center, rotate, scale (negatives for flips)
+  let rot = 0;
+  let effH = flipH;
+  let effV = flipV;
+
+  if (flipD) {
+    rot = Math.PI / 2;
+    effH = flipV;           // original V becomes horizontal after 90° rotation
+    effV = !flipH;          // original H becomes vertical, inverted
+  }
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (rot !== 0) ctx.rotate(rot);
+  ctx.scale(effH ? -1 : 1, effV ? -1 : 1);
+  ctx.drawImage(image, srcX, srcY, srcW, srcH, -destW / 2, -destH / 2, destW, destH);
+  ctx.restore();
+}
+
+export { getBaseGID, getTileFlags };
+
 interface AnimationFrame {
   tileid: number;
   duration: number;
@@ -24,6 +73,10 @@ interface AnimatedTile {
   tileset: any;
   animation: AnimationFrame[];
   totalDuration: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  flipD: boolean;
 }
 
 interface ChunkData {
@@ -791,9 +844,12 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
         const tileIndex = layer.data[y * chunkData.width + x];
         if (tileIndex === 0) continue;
 
+        const baseGID = getBaseGID(tileIndex);
+        const { flipH, flipV, flipD } = getTileFlags(tileIndex);
+
         // Animated tiles are not baked into the static chunk canvas; they are
         // recorded here and drawn per-frame by the renderer on top of this layer group.
-        const animInfo = animatedTileLookup.get(tileIndex);
+        const animInfo = animatedTileLookup.get(baseGID);
         if (animInfo) {
           animatedTiles.push({
             layerGroup: layer.zIndex < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper',
@@ -804,31 +860,31 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
             tileset: animInfo.tileset,
             animation: animInfo.animation,
             totalDuration: animInfo.totalDuration,
+            rotation: flipD ? 1 : flipH && flipV ? 2 : 0,
+            flipH, flipV, flipD,
           });
           continue;
         }
 
         // Use fast O(1) tileset lookup
-        const tilesetInfo = tilesetLookupMap.get(tileIndex);
+        const tilesetInfo = tilesetLookupMap.get(baseGID);
         if (!tilesetInfo) continue;
 
         const tileset = tilesetInfo.tileset;
         const image = tilesetInfo.image;
 
-        const localTileIndex = tileIndex - tileset.firstgid;
+        const localTileIndex = baseGID - tileset.firstgid;
         const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-        const tileX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
-        const tileY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
+        const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
+        const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
+
+        const destX = x * window.mapData.tilewidth;
+        const destY = y * window.mapData.tileheight;
+        const tileW = window.mapData.tilewidth;
+        const tileH = window.mapData.tileheight;
 
         try {
-          ctx.drawImage(
-            image,
-            tileX, tileY,
-            tileset.tilewidth, tileset.tileheight,
-            x * window.mapData.tilewidth,
-            y * window.mapData.tileheight,
-            window.mapData.tilewidth, window.mapData.tileheight
-          );
+          drawRotatedTile(ctx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, destX, destY, tileW, tileH, flipH, flipV, flipD);
         } catch (drawError) {
             console.error(`Error drawing tile at (${x}, ${y}) in layer "${layer.name}":`, drawError);
         }
@@ -915,9 +971,12 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
       const tileIndex = layer.data[y * chunkData.width + x];
       if (tileIndex === 0) continue;
 
+      const baseGID = getBaseGID(tileIndex);
+      const { flipH, flipV, flipD } = getTileFlags(tileIndex);
+
       const layerGroup: 'lower' | 'upper' = layer.zIndex < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper';
 
-      const animInfo = animatedTileLookup.get(tileIndex);
+      const animInfo = animatedTileLookup.get(baseGID);
       if (animInfo) {
         chunkData.animatedTiles.push({
           layerGroup,
@@ -928,29 +987,25 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
           tileset: animInfo.tileset,
           animation: animInfo.animation,
           totalDuration: animInfo.totalDuration,
+          rotation: flipD ? 1 : flipH && flipV ? 2 : 0,
+          flipH, flipV, flipD,
         });
         continue;
       }
 
-      const tilesetInfo = tilesetLookupMap.get(tileIndex);
+      const tilesetInfo = tilesetLookupMap.get(baseGID);
       if (!tilesetInfo) continue;
 
       const tileset = tilesetInfo.tileset;
       const image = tilesetInfo.image;
-      const localTileIndex = tileIndex - tileset.firstgid;
+      const localTileIndex = baseGID - tileset.firstgid;
       const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
       const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
       const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
 
       const targetCtx = layerGroup === 'lower' ? lowerCtx : upperCtx;
       try {
-        targetCtx.drawImage(
-          image,
-          srcX, srcY,
-          tileset.tilewidth, tileset.tileheight,
-          px, py,
-          tilewidth, tileheight
-        );
+        drawRotatedTile(targetCtx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, px, py, tilewidth, tileheight, flipH, flipV, flipD);
       } catch (drawError) {
         console.error(`Error drawing tile at (${x}, ${y}) in layer "${layer.name}":`, drawError);
       }

@@ -1,13 +1,50 @@
 import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox } from "./ui.js";
 import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, clearChunkFromCache, rebakeAllChunks } from "./map.js";
-import { panEditorCamera, resetEditorCamera } from "./renderer.js";
+import { panEditorCamera } from "./renderer.js";
 
 declare global {
   interface Window {
     mapData?: any;
   }
 }
+
+function drawTileWithFlags(
+  renderCtx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  srcX: number, srcY: number, srcW: number, srcH: number,
+  destX: number, destY: number, destW: number, destH: number,
+  tileGid: number
+): void {
+  const flipH = (tileGid & 0x80000000) !== 0;
+  const flipV = (tileGid & 0x40000000) !== 0;
+  const flipD = (tileGid & 0x20000000) !== 0;
+
+  const cx = destX + destW / 2;
+  const cy = destY + destH / 2;
+
+  if (flipH || flipV || flipD) {
+    let rot = 0;
+    let effH = flipH;
+    let effV = flipV;
+    if (flipD) {
+      rot = Math.PI / 2;
+      effH = flipV;
+      effV = !flipH;
+    }
+    renderCtx.save();
+    renderCtx.translate(cx, cy);
+    if (rot !== 0) renderCtx.rotate(rot);
+    renderCtx.scale(effH ? -1 : 1, effV ? -1 : 1);
+    renderCtx.drawImage(image, srcX, srcY, srcW, srcH, -destW / 2, -destH / 2, destW, destH);
+    renderCtx.restore();
+  } else {
+    renderCtx.drawImage(image, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+  }
+}
+
+function getTileBaseGid(gid: number): number { return gid & 0x0FFFFFFF; }
+
 
 interface TileChange {
   chunkX: number;
@@ -355,10 +392,10 @@ class TileEditor {
             case 'undo': this.undo(); break;
             case 'redo': this.redo(); break;
             case 'save': this.save(); break;
-            case 'resetView': resetEditorCamera(); break;
             case 'toggleGrid': this.toggleGrid(); break;
             case 'clear': this.clearAllEdits(); break;
             case 'toggle': this.toggle(); break;
+            case 'rotateTile': this.rotateSelectedTile(); break;
           }
           break;
         case 'editorClosed': {
@@ -1280,6 +1317,8 @@ class TileEditor {
         this.eraseTile(tileX, tileY);
       } else if (this.currentTool === 'paste') {
         this.pasteTile(tileX, tileY);
+      } else if (this.currentTool === 'copy') {
+        this.copyTileFromWorld(tileX, tileY);
       }
     }
   }
@@ -1601,6 +1640,70 @@ class TileEditor {
     };
   }
 
+  public rotateSelectedTile() {
+    // Pure rotation flag combos: 0° = none, 90°CW = D+H, 180° = H+V, 270°CW = D+V
+    const seq = [0x00000000, 0xA0000000, 0xC0000000, 0x60000000];
+
+    const nextFlags = (flags: number): number => {
+      const f = (flags >>> 0); // unsigned 32-bit, so comparisons match JS hex literals
+      const result = f === 0x00000000 ? seq[1]
+        : f === 0xA0000000 ? seq[2]
+        : f === 0xC0000000 ? seq[3]
+        : f === 0x60000000 ? seq[0]
+        : (f & 0x20000000) ? seq[2]
+        : f === 0x80000000 ? seq[1]
+        : f === 0x40000000 ? seq[3]
+        : f === 0xE0000000 ? seq[0]
+        : seq[1];
+      return result;
+    };
+
+    // Rotate multi-tile selection: rearrange grid 90° CW + advance each tile one step
+    if (this.selectedTiles.length > 0 && (this.selectedTiles.length > 1 || this.selectedTiles[0].length > 1)) {
+      const rows = this.selectedTiles.length;
+      const cols = this.selectedTiles[0].length;
+      const rotated: number[][] = [];
+      for (let c = 0; c < cols; c++) {
+        const newRow: number[] = [];
+        for (let r = rows - 1; r >= 0; r--) {
+          const tileId = this.selectedTiles[r][c];
+          if (tileId === 0) {
+            newRow.push(0);
+          } else {
+            newRow.push((tileId & 0x0FFFFFFF) | nextFlags(tileId & 0xE0000000));
+          }
+        }
+        rotated.push(newRow);
+      }
+      this.selectedTiles = rotated;
+      this.selectedTile = null;
+      this.selectedTilesFromMap = true;
+      this.sendToEditor({ type: 'tileSelectUpdate', tileId: this.selectedTile, selectedTiles: this.selectedTiles, selectedTilesFromMap: this.selectedTilesFromMap, tilesetIndex: this.currentTilesetIndex });
+      return;
+    }
+
+    // Rotate single tile
+    if (!this.selectedTile) return;
+    const currentFlags = this.selectedTile & 0xE0000000;
+    const newFlags = nextFlags(currentFlags);
+    const baseGID = this.selectedTile & 0x0FFFFFFF;
+    const newTile = baseGID | newFlags;
+    this.selectedTile = newTile;
+
+    if (this.selectedTiles.length === 1 && this.selectedTiles[0].length === 1) {
+      this.selectedTiles[0][0] = newTile;
+    }
+
+    if (this.copiedTile !== null) {
+      const copyBase = this.copiedTile & 0x0FFFFFFF;
+      if (copyBase === baseGID) {
+        this.copiedTile = newTile;
+      }
+    }
+
+    this.sendToEditor({ type: 'tileSelectUpdate', tileId: this.selectedTile, selectedTiles: this.selectedTiles, selectedTilesFromMap: this.selectedTilesFromMap, tilesetIndex: this.currentTilesetIndex });
+  }
+
   private placeTile(tileX: number, tileY: number) {
     if (!this.selectedLayer || !window.mapData) return;
 
@@ -1857,9 +1960,12 @@ class TileEditor {
     if (tileId > 0) {
       this.copiedTile = tileId;
       this.selectedTile = tileId;
+      this.selectedTiles = [];
+      this.selectedTilesFromMap = false;
 
+      const baseGID = tileId & 0x0FFFFFFF;
       const tilesetIndex = window.mapData.tilesets.findIndex((t: any) =>
-        t.firstgid <= tileId && tileId < t.firstgid + t.tilecount
+        t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
       );
 
       if (tilesetIndex !== -1 && tilesetIndex !== this.currentTilesetIndex) {
@@ -1918,8 +2024,9 @@ class TileEditor {
       if (tiles[0][0] > 0) {
         this.copiedTile = tiles[0][0];
 
+        const baseGID = tiles[0][0] & 0x0FFFFFFF;
         const tilesetIndex = window.mapData.tilesets.findIndex((t: any) =>
-          t.firstgid <= tiles[0][0] && tiles[0][0] < t.firstgid + t.tilecount
+          t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
         );
 
         if (tilesetIndex !== -1 && tilesetIndex !== this.currentTilesetIndex) {
@@ -3056,6 +3163,13 @@ class TileEditor {
   private onKeyDown(e: KeyboardEvent) {
     if (!this.isActive) return;
 
+    if ((e.keyCode === 90 || e.code === 'KeyZ' || e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      this.rotateSelectedTile();
+      return;
+    }
+
     if (e.key === 'Shift' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
       this.isShiftHeld = true;
       return;
@@ -3089,6 +3203,7 @@ class TileEditor {
 
     if (e.ctrlKey && e.key === 'z') {
       e.preventDefault();
+      e.stopPropagation();
       // If properties panel is open, undo property changes instead of tiles
       if (this.propertiesPanel && this.propertiesPanel.parentNode) {
         this.propertyUndo();
@@ -3098,6 +3213,7 @@ class TileEditor {
     }
     if (e.ctrlKey && e.key === 'y') {
       e.preventDefault();
+      e.stopPropagation();
       // If properties panel is open, redo property changes instead of tiles
       if (this.propertiesPanel && this.propertiesPanel.parentNode) {
         this.propertyRedo();
@@ -3999,30 +4115,28 @@ class TileEditor {
 
       const tileToUse = this.currentTool === 'paste' ? this.copiedTile : this.selectedTile;
       if (tileToUse) {
+        const baseGID = getTileBaseGid(tileToUse);
         const tileset = window.mapData.tilesets.find((t: any) =>
-          t.firstgid <= tileToUse && tileToUse < t.firstgid + t.tilecount
+          t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
         );
         if (tileset) {
           const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
           if (image && image.complete) {
-            const localId = tileToUse - tileset.firstgid;
+            const localId = baseGID - tileset.firstgid;
             const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
             const srcX = (localId % tilesPerRow) * tileset.tilewidth;
             const srcY = Math.floor(localId / tilesPerRow) * tileset.tileheight;
+            const tw = window.mapData.tilewidth;
+            const th = window.mapData.tileheight;
 
             ctx.globalAlpha = 0.75;
             ctx.imageSmoothingEnabled = false;
 
             for (const pos of lineTiles) {
-              const wx = pos.x * window.mapData.tilewidth;
-              const wy = pos.y * window.mapData.tileheight;
+              const wx = pos.x * tw;
+              const wy = pos.y * th;
 
-              ctx.drawImage(
-                image, srcX, srcY,
-                tileset.tilewidth, tileset.tileheight,
-                wx, wy,
-                window.mapData.tilewidth, window.mapData.tileheight
-              );
+              drawTileWithFlags(ctx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, wx, wy, tw, th, tileToUse);
 
               ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
               ctx.lineWidth = 2;
@@ -4053,8 +4167,9 @@ class TileEditor {
               continue;
             }
 
+            const baseGID = getTileBaseGid(tileId);
             const tileset = window.mapData.tilesets.find((t: any) =>
-              t.firstgid <= tileId && tileId < t.firstgid + t.tilecount
+              t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
             );
 
             if (!tileset) continue;
@@ -4062,18 +4177,14 @@ class TileEditor {
             const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
             if (!image || !image.complete) continue;
 
-            const localTileId = tileId - tileset.firstgid;
+            const localTileId = baseGID - tileset.firstgid;
             const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
             const srcX = (localTileId % tilesPerRow) * tileset.tilewidth;
             const srcY = Math.floor(localTileId / tilesPerRow) * tileset.tileheight;
+            const tw = window.mapData.tilewidth;
+            const th = window.mapData.tileheight;
 
-            ctx.drawImage(
-              image,
-              srcX, srcY,
-              tileset.tilewidth, tileset.tileheight,
-              worldX, worldY,
-              window.mapData.tilewidth, window.mapData.tileheight
-            );
+            drawTileWithFlags(ctx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, worldX, worldY, tw, th, tileId);
 
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
             ctx.lineWidth = 2;
@@ -4174,8 +4285,9 @@ class TileEditor {
       return;
     }
 
+    const baseGID = getTileBaseGid(tileToPreview);
     const tileset = window.mapData.tilesets.find((t: any) =>
-      t.firstgid <= tileToPreview! && tileToPreview! < t.firstgid + t.tilecount
+      t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
     );
 
     if (!tileset) {
@@ -4189,7 +4301,7 @@ class TileEditor {
       return;
     }
 
-    const localTileId = tileToPreview - tileset.firstgid;
+    const localTileId = baseGID - tileset.firstgid;
     const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
     const srcX = (localTileId % tilesPerRow) * tileset.tilewidth;
     const srcY = Math.floor(localTileId / tilesPerRow) * tileset.tileheight;
@@ -4198,13 +4310,7 @@ class TileEditor {
     const worldY = this.previewTilePos.y * window.mapData.tileheight;
 
     try {
-      ctx.drawImage(
-        image,
-        srcX, srcY,
-        tileset.tilewidth, tileset.tileheight,
-        worldX, worldY,
-        window.mapData.tilewidth, window.mapData.tileheight
-      );
+      drawTileWithFlags(ctx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, worldX, worldY, window.mapData.tilewidth, window.mapData.tileheight, tileToPreview);
     } catch (e) {
       console.error('Error drawing preview tile:', e);
     }

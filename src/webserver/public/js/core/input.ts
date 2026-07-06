@@ -74,6 +74,12 @@ export const keyHandlers = {
   },
   KeyZ: () => {
     if (isKeyOnCooldown("KeyZ")) return;
+    const tileEditor = (window as any).tileEditor;
+    if (tileEditor?.isActive) {
+      putKeyOnCooldown("KeyZ");
+      tileEditor.rotateSelectedTile();
+      return;
+    }
     putKeyOnCooldown("KeyZ");
     sendRequest({ type: "NOCLIP", data: null });
   },

@@ -759,13 +759,39 @@ function drawChunkAnimatedTiles(chunkData: any, layerGroup: 'lower' | 'upper', s
     const srcY = Math.floor(frameTileId / tilesPerRow) * tileset.tileheight;
 
     try {
-      ctx.drawImage(
-        image,
-        srcX, srcY,
-        tileset.tilewidth, tileset.tileheight,
-        screenX + at.destX, screenY + at.destY,
-        mapTileW, mapTileH
-      );
+      const destX = screenX + at.destX;
+      const destY = screenY + at.destY;
+      const flipH = at.flipH || false;
+      const flipV = at.flipV || false;
+      const flipD = at.flipD || false;
+
+      if (flipH || flipV || flipD) {
+        const cx = destX + mapTileW / 2;
+        const cy = destY + mapTileH / 2;
+        let rot = 0;
+        let effH = flipH;
+        let effV = flipV;
+        if (flipD) { rot = Math.PI / 2; effH = flipV; effV = !flipH; }
+        ctx.save();
+        ctx.translate(cx, cy);
+        if (rot !== 0) ctx.rotate(rot);
+        ctx.scale(effH ? -1 : 1, effV ? -1 : 1);
+        ctx.drawImage(
+          image, srcX, srcY,
+          tileset.tilewidth, tileset.tileheight,
+          -mapTileW / 2, -mapTileH / 2,
+          mapTileW, mapTileH
+        );
+        ctx.restore();
+      } else {
+        ctx.drawImage(
+          image,
+          srcX, srcY,
+          tileset.tilewidth, tileset.tileheight,
+          destX, destY,
+          mapTileW, mapTileH
+        );
+      }
     } catch {
       // Ignore individual animated tile draw errors
     }
