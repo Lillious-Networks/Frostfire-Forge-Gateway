@@ -1,10 +1,32 @@
-import { serverTime, ambience } from "./ui.ts";
+import { serverTime, ambience, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn } from "./ui.ts";
 
 let timeOfDay: string | null = null;
 let lastMinute: number | null = null;
 let hasWeather: boolean = false;
+let overrideHour: number | null = null;
 
-// Get server time (in 24-hour HH:MM format)
+timeOverrideSlider.addEventListener("input", () => {
+  overrideHour = parseFloat(timeOverrideSlider.value);
+  const h = Math.floor(overrideHour);
+  const m = Math.floor((overrideHour - h) * 60 + 0.5);
+  timeOverrideLabel.textContent = `${h}:${m.toString().padStart(2, "0")}`;
+  updateAmbience();
+});
+
+timeOverrideCheckbox.addEventListener("change", () => {
+  updateAmbience();
+});
+
+// Get effective time-of-day — slider overrides server time if touched
+function getEffectiveTime(): { hours: number; minutes: number } {
+  if (overrideHour !== null && timeOverrideCheckbox.checked) {
+    const h = Math.floor(overrideHour);
+    const m = Math.floor((overrideHour - h) * 60 + 0.5);
+    return { hours: h, minutes: m };
+  }
+  return getServerTime();
+}
+
 function getServerTime(): { hours: number; minutes: number } {
   if (!timeOfDay) {
     return { hours: 0, minutes: 0 };
@@ -42,18 +64,17 @@ function updateTime(time: string) {
 }
 
 function updateAmbience() {
-  // Only apply ambience if the map has a defined weather/world
-  if (!timeOfDay || !hasWeather) {
-    // Clear the ambience overlay if no weather is defined for this map
+  // Allow slider override to work even without server time or weather
+  const effective = getEffectiveTime();
+  const effectiveHasTime = (overrideHour !== null && timeOverrideCheckbox.checked) || timeOfDay;
+
+  if (!effectiveHasTime || !hasWeather) {
     ambience.style.backgroundColor = "transparent";
     ambience.style.opacity = "0";
     return;
   }
 
-  const date = new Date(timeOfDay);
-  if (isNaN(date.getTime())) return;
-
-  const hour24 = date.getHours() + date.getMinutes() / 60;
+  const hour24 = effective.hours + effective.minutes / 60;
 
   function smoothstep(t: number) {
     return 0.5 - 0.5 * Math.cos(Math.PI * t);
@@ -109,4 +130,68 @@ function setHasWeather(weather: boolean) {
   updateAmbience();
 }
 
-export { updateTime, getServerTime, setHasWeather };
+let timelapseRaf: number | null = null;
+let timelapseLastTick = 0;
+let timelapseTime = 0; // continuous hour value, avoids slider stepping
+
+function startTimelapse() {
+  if (timelapseRaf) return;
+
+  timeOverrideCheckbox.checked = true;
+  document.body.classList.add("timelapse-active");
+
+  document.querySelectorAll(".ui").forEach((el) => {
+    if (el.id !== "ambience-overlay") {
+      el.classList.add("ui-hidden-in-timelapse");
+    }
+  });
+
+  timelapseBtn.textContent = "Timelapse (ESC to stop)";
+  timelapseLastTick = performance.now();
+  timelapseTime = parseFloat(timeOverrideSlider.value);
+
+  function tick(now: number) {
+    const dt = now - timelapseLastTick;
+    timelapseLastTick = now;
+    // 50 in-game minutes per real second
+    timelapseTime += (50 / 60) * (dt / 1000);
+    if (timelapseTime >= 24) timelapseTime -= 24;
+
+    overrideHour = timelapseTime;
+    timeOverrideSlider.value = timelapseTime.toFixed(4);
+    const h = Math.floor(timelapseTime);
+    const m = Math.floor((timelapseTime - h) * 60 + 0.5);
+    timeOverrideLabel.textContent = `${h}:${m.toString().padStart(2, "0")}`;
+    updateAmbience();
+    timelapseRaf = requestAnimationFrame(tick);
+  }
+
+  timelapseRaf = requestAnimationFrame(tick);
+}
+
+function stopTimelapse() {
+  if (!timelapseRaf) return;
+  cancelAnimationFrame(timelapseRaf);
+  timelapseRaf = null;
+  document.body.classList.remove("timelapse-active");
+  document.querySelectorAll(".ui-hidden-in-timelapse").forEach((el) => {
+    el.classList.remove("ui-hidden-in-timelapse");
+  });
+  timelapseBtn.textContent = "Timelapse";
+}
+
+timelapseBtn.addEventListener("click", () => {
+  if (timelapseRaf) {
+    stopTimelapse();
+  } else {
+    startTimelapse();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && timelapseRaf) {
+    stopTimelapse();
+  }
+});
+
+export { updateTime, getServerTime, getEffectiveTime, setHasWeather };

@@ -74,6 +74,11 @@ const noPvpDebugCheckbox = document.getElementById("nopvp-debug-checkbox") as HT
 const wireframeDebugCheckbox = document.getElementById("wireframe-debug-checkbox") as HTMLInputElement;
 const showGridCheckbox = document.getElementById("show-grid-checkbox") as HTMLInputElement;
 const astarDebugCheckbox = document.getElementById("astar-debug-checkbox") as HTMLInputElement;
+const shadowsDebugCheckbox = document.getElementById("shadow-edges-debug-checkbox") as HTMLInputElement;
+const timeOverrideSlider = document.getElementById("time-override-slider") as HTMLInputElement;
+const timeOverrideCheckbox = document.getElementById("time-override-checkbox") as HTMLInputElement;
+const timeOverrideLabel = document.getElementById("time-override-label") as HTMLSpanElement;
+const timelapseBtn = document.getElementById("timelapse-btn") as HTMLButtonElement;
 const loadedChunksText = document.getElementById("loaded-chunks") as HTMLDivElement;
 const hotbar = document.getElementById("hotbar") as HTMLDivElement;
 const hotbarGrid = hotbar.querySelector("#grid") as HTMLDivElement;
@@ -2063,7 +2068,7 @@ export {
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
     serverTime, ambience, weatherCanvas, weatherCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
-    collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText, collectablesUI,
+    collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,
     saveInventoryConfiguration, loadInventoryConfiguration, setupInventorySlotHandlers, updateCurrencyDisplay, adminPanelContainer,
     updateAdminMapInput, updateAdminPlayerListWithData,

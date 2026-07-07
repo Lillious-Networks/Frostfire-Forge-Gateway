@@ -8,6 +8,7 @@ let currentWeatherData = null as any; // Store full weather object for wind spee
 const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
+import { renderShadows } from './shadows.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
@@ -29,7 +30,7 @@ const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
 // Tileset lookup cache for fast tile->tileset resolution
 let tilesetLookupCache: Map<number, {tileset: any, index: number}> = new Map();
 
-import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, loadedChunksText } from "./ui.js";
+import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
 
 const SERVER_TICK_RATE = 30;
 const SERVER_FRAME_TIME = 1000 / SERVER_TICK_RATE;
@@ -402,7 +403,7 @@ function drawAllLayersWithOpacity(layer: 'lower' | 'upper', visibleChunks: any[]
 
       const layerNameLower = chunkLayer.name.toLowerCase();
       const isCollisionOrNoPvp = layerNameLower.includes('collision') ||
-        layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp');
+        layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp') || layerNameLower.includes('shadow');
 
       if (isCollisionOrNoPvp && chunkLayer.name !== selectedLayerName) continue;
 
@@ -862,7 +863,33 @@ function renderInfiniteZone() {
   ctx.restore();
 }
 
-function renderMap(layer: 'lower' | 'upper' = 'lower', playerTileX?: number, playerTileY?: number) {
+function renderMap(layer: 'ground' | 'lower' | 'upper' = 'lower', playerTileX?: number, playerTileY?: number) {
+
+  if (layer === 'ground') {
+    if (!ctx || !window.mapData) return;
+    const vpw = window.innerWidth;
+    const vph = window.innerHeight;
+    const mw = window.mapData.width * window.mapData.tilewidth;
+    let mco = 0;
+    if (mw < vpw) mco = (vpw - mw) / 2;
+    const ox = Math.round(vpw / 2 - smoothMapX + mco);
+    const oy = Math.round(vph / 2 - smoothMapY);
+    const visibleChunks = getVisibleChunks();
+    ctx.save();
+    ctx.beginPath();
+    const clipMinTileX = window.mapData.minTileX ?? 0;
+    const clipMinTileY = window.mapData.minTileY ?? 0;
+    ctx.rect(ox + clipMinTileX * window.mapData.tilewidth, oy + clipMinTileY * window.mapData.tileheight, mw - clipMinTileX * window.mapData.tilewidth, (window.mapData.height * window.mapData.tileheight) - clipMinTileY * window.mapData.tileheight);
+    ctx.clip();
+    for (const chunk of visibleChunks) {
+      const chunkData = window.mapData.loadedChunks.get(`${chunk.x}-${chunk.y}`);
+      if (!chunkData || !chunkData.groundCanvas) continue;
+      const cps = window.mapData.chunkSize * window.mapData.tilewidth;
+      ctx.drawImage(chunkData.groundCanvas, chunk.x * cps + ox, chunk.y * cps + oy);
+    }
+    ctx.restore();
+    return;
+  }
   if (!ctx || !window.mapData) return;
 
   const now = performance.now();
@@ -1189,6 +1216,15 @@ function animationLoop() {
     if ((window as any).tileEditor?.isActive && window.mapData?.infinite) {
       renderInfiniteZone();
     }
+    renderMap('ground');
+
+    const vpOX = Math.round(window.innerWidth / 2 - smoothMapX);
+    const vpOY = Math.round(window.innerHeight / 2 - smoothMapY);
+    ctx.save();
+    ctx.translate(vpOX, vpOY);
+    renderShadows(ctx, getVisibleChunks());
+    ctx.restore();
+
     renderMap('lower');
   }
 
@@ -1337,9 +1373,9 @@ function animationLoop() {
             iconSize,
             iconSize
           );
-        }
+  }
 
-        ctx.restore();
+  ctx.restore();
       }
 
       if (progress >= 1) {
@@ -1378,10 +1414,10 @@ function animationLoop() {
           source.updateParticle(particle, source, ctx, deltaTime);
         }
       }
-    }
 
-    ctx.restore();
+  }
 
+  ctx.restore();
     // Render graveyards and warps on top of all tile layers when tile editor is active
     const tileEditor = (window as any).tileEditor;
     if (tileEditor?.isActive) {
@@ -1591,6 +1627,146 @@ function animationLoop() {
           }
         }
       }
+    }
+  }
+
+  if (shadowsDebugCheckbox && shadowsDebugCheckbox.checked && window.mapData) {
+    const shadowLayerNames = window.mapData.shadowLayerNames;
+    if (!shadowLayerNames || shadowLayerNames.length === 0) return;
+
+    // Camera-position cache key (recompute every tile-width of movement)
+    const tw = window.mapData.tilewidth;
+    const th = window.mapData.tileheight;
+    const worldOX = -offsetX;
+    const worldOY = -offsetY;
+    const camKey = `${Math.floor(worldOX / tw)},${Math.floor(worldOY / th)}`;
+
+    const silCacheRoot = '__shadowSilCache';
+    const silCache = (window as any)[silCacheRoot] as Record<string, [number,number,number,number][]> || {};
+    (window as any)[silCacheRoot] = silCache;
+
+    let allEdges = silCache[camKey];
+    if (!allEdges) {
+      // --- Always-cached tileset lookup (built once) ---
+      const tsKey = '__shadowTsAll';
+      let tsAll = (window as any)[tsKey] as Map<number, { tileset: any; image: HTMLImageElement }> | undefined;
+      if (!tsAll) {
+        tsAll = new Map();
+        for (let i = 0; i < window.mapData.tilesets.length; i++) {
+          const ts = window.mapData.tilesets[i];
+          const img = window.mapData.images[i];
+          if (img && img.complete && img.naturalWidth > 0) {
+            for (let gid = ts.firstgid; gid < ts.firstgid + ts.tilecount; gid++) {
+              tsAll.set(gid, { tileset: ts, image: img });
+            }
+          }
+        }
+        (window as any)[tsKey] = tsAll;
+      }
+
+      // --- Offscreen silhouette canvas (viewport-sized) ---
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let silCanvas = (window as any).__shadowSilCanvas as HTMLCanvasElement | undefined;
+      if (!silCanvas || silCanvas.width !== vw || silCanvas.height !== vh) {
+        silCanvas = document.createElement('canvas');
+        silCanvas.width = vw;
+        silCanvas.height = vh;
+        (window as any).__shadowSilCanvas = silCanvas;
+      }
+      const sctx = silCanvas.getContext('2d')!;
+      sctx.clearRect(0, 0, vw, vh);
+      sctx.imageSmoothingEnabled = false;
+      sctx.save();
+      sctx.translate(offsetX, offsetY);
+
+      // Draw every shadow tile into the silhouette canvas
+      const shadowNameSet = new Set(shadowLayerNames.map((n: string) => n.toLowerCase()));
+      const visibleChunks = getVisibleChunks();
+
+      for (const chunk of visibleChunks) {
+        const chunkData = window.mapData.loadedChunks.get(`${chunk.x}-${chunk.y}`);
+        if (!chunkData) continue;
+        const layers = chunkData.layers.filter((l: any) =>
+          l.name && shadowNameSet.has(l.name.toLowerCase())
+        );
+        if (layers.length === 0) continue;
+        const bcx = chunk.x * window.mapData.chunkSize;
+        const bcy = chunk.y * window.mapData.chunkSize;
+
+        for (const sl of layers) {
+          if (!sl.data) continue;
+          for (let y = 0; y < chunkData.height; y++) {
+            for (let x = 0; x < chunkData.width; x++) {
+              const gid = sl.data[y * chunkData.width + x];
+              if (gid === 0) continue;
+              const info = tsAll.get(gid & 0x0FFFFFFF);
+              if (!info) continue;
+              const ts = info.tileset; const img = info.image;
+              const li = (gid & 0x0FFFFFFF) - ts.firstgid;
+              const tpr = Math.floor(ts.imagewidth / ts.tilewidth);
+              const sx = (li % tpr) * ts.tilewidth;
+              const sy = Math.floor(li / tpr) * ts.tileheight;
+              const dx = (bcx + x) * tw;
+              const dy = (bcy + y) * th;
+              sctx.drawImage(img, sx, sy, ts.tilewidth, ts.tileheight, dx, dy, tw, th);
+            }
+          }
+        }
+      }
+      sctx.restore();
+
+      // Edge-detect: horizontal edges (bottom-facing) + vertical edges (right-facing)
+      const imgData = sctx.getImageData(0, 0, vw, vh);
+      const d = imgData.data;
+
+      const hedges: [number,number,number,number][] = []; // horizontal runs
+      const vedges: [number,number,number,number][] = []; // vertical runs
+
+      // Bottom-facing edges: scan each row for a>=64 && below<64
+      for (let py = 0; py < vh; py++) {
+        let runStart = -1;
+        for (let px = 0; px < vw; px++) {
+          const a = d[(py * vw + px) * 4 + 3];
+          const below = py + 1 < vh ? d[((py + 1) * vw + px) * 4 + 3] : 0;
+          if (a >= 64 && below < 64) {
+            if (runStart === -1) runStart = px;
+          } else {
+            if (runStart !== -1) { hedges.push([runStart - offsetX, py - offsetY, px - offsetX, py - offsetY]); runStart = -1; }
+          }
+        }
+        if (runStart !== -1) hedges.push([runStart - offsetX, py - offsetY, vw - offsetX, py - offsetY]);
+      }
+
+      // Right-facing edges: scan each column for a>=64 && right<64
+      for (let px = 0; px < vw; px++) {
+        let runStart = -1;
+        for (let py = 0; py < vh; py++) {
+          const a = d[(py * vw + px) * 4 + 3];
+          const right = px + 1 < vw ? d[(py * vw + (px + 1)) * 4 + 3] : 0;
+          if (a >= 64 && right < 64) {
+            if (runStart === -1) runStart = py;
+          } else {
+            if (runStart !== -1) { vedges.push([px - offsetX, runStart - offsetY, px - offsetX, py - offsetY]); runStart = -1; }
+          }
+        }
+        if (runStart !== -1) vedges.push([px - offsetX, runStart - offsetY, px - offsetX, vh - offsetY]);
+      }
+
+      allEdges = hedges.concat(vedges);
+      silCache[camKey] = allEdges;
+    }
+
+    // Draw cached edges (already in world-space, ctx is translated)
+    if (allEdges.length > 0) {
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of allEdges) {
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+      }
+      ctx.stroke();
     }
   }
 

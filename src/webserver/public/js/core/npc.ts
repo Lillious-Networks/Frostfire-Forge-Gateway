@@ -4,7 +4,7 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getIsLoaded } from "./socket.js";
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
-import { getServerTime } from "./ambience.js";
+import { getEffectiveTime } from "./ambience.js";
 import {
   windBurst,
   calculateWindSpeed,
@@ -271,7 +271,7 @@ function createNPC(data: any) {
 
       // Check if particle should be visible based on time (using server time)
       if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
-        const serverTimeObj = getServerTime();
+        const serverTimeObj = getEffectiveTime();
         const currentTimeMinutes = serverTimeObj.hours * 60 + serverTimeObj.minutes;
 
         const timeOnParts = ((particle as any).time_on as string).split(':');
@@ -353,7 +353,7 @@ function createNPC(data: any) {
 
       // Check if we should render particles based on time window (using server time)
       if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
-        const serverTimeObj = getServerTime();
+        const serverTimeObj = getEffectiveTime();
         const currentTimeMinutes = serverTimeObj.hours * 60 + serverTimeObj.minutes;
 
         const timeOnParts = ((particle as any).time_on as string).split(':');

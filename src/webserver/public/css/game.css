@@ -1645,6 +1645,73 @@ input::placeholder(:not(#chat-container input)) {
   text-align: right;
 }
 
+#time-override-container {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.debug-separator {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 2px 0;
+}
+
+#timelapse-toggle {
+  margin-top: 4px;
+  text-align: right;
+}
+
+body.timelapse-active .ui-hidden-in-timelapse {
+  display: none !important;
+}
+
+#time-override-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(2px);
+  outline: none;
+  cursor: pointer;
+  width: 160px;
+}
+
+#time-override-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+#time-override-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+#time-override-label {
+  color: #fff;
+  font-size: 0.8em;
+  text-shadow: 0 0 5px #000000;
+  min-width: 42px;
+  text-align: right;
+}
+
 /* Settings Menu Container */
 #options-menu-container {
   position: fixed;

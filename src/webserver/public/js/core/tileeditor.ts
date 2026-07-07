@@ -1,5 +1,5 @@
 import { sendRequest } from "./socket.js";
-import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox } from "./ui.js";
+import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox, shadowsDebugCheckbox } from "./ui.js";
 import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, clearChunkFromCache, rebakeAllChunks } from "./map.js";
 import { panEditorCamera } from "./renderer.js";
 
@@ -464,12 +464,14 @@ class TileEditor {
     layers.forEach((layer: any) => {
       const isCollision = layer.name.toLowerCase().includes('collision');
       const isNoPvp = layer.name.toLowerCase().includes('nopvp') || layer.name.toLowerCase().includes('no-pvp');
+      const isShadow = layer.name.toLowerCase().includes('shadow');
       layerData.push({
         name: layer.name,
         zIndex: layer.zIndex,
         locked: this.layerLocked.get(layer.name) ?? (layer.locked ?? false),
         isCollision,
-        isNoPvp
+        isNoPvp,
+        isShadow
       });
     });
 
@@ -580,7 +582,7 @@ class TileEditor {
     if (layers.length > 0) {
       const firstNonSpecial = layers.find((l: any) => {
         const name = l.name.toLowerCase();
-        return !name.includes('collision') && !name.includes('nopvp') && !name.includes('no-pvp');
+        return !name.includes('collision') && !name.includes('nopvp') && !name.includes('no-pvp') && !name.includes('shadow');
       });
       this.selectLayer(firstNonSpecial ? firstNonSpecial.name : layers[0].name);
     }
@@ -595,10 +597,13 @@ class TileEditor {
     const lowerName = layerName.toLowerCase();
     const isCollision = lowerName.includes('collision');
     const isNoPvp = lowerName.includes('nopvp') || lowerName.includes('no-pvp');
+    const isShadow = lowerName.includes('shadow');
 
     collisionTilesDebugCheckbox.checked = isCollision;
 
     noPvpDebugCheckbox.checked = isNoPvp;
+
+    shadowsDebugCheckbox.checked = isShadow;
 
     this.sendToEditor({ type: 'layerSelectUpdate', layerName });
   }

@@ -4,6 +4,7 @@ import pako from "../libs/pako.js";
 import { config } from "../web/global.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
+const SHADOW_Z_INDEX = 2;
 declare global {
   interface Window {
     mapData?: any;
@@ -57,7 +58,7 @@ function drawRotatedTile(
   ctx.restore();
 }
 
-export { getBaseGID, getTileFlags };
+export { getBaseGID, getTileFlags, drawRotatedTile };
 
 interface AnimationFrame {
   tileid: number;
@@ -97,9 +98,12 @@ interface ChunkData {
     locked?: boolean;
   }>;
   canvas?: HTMLCanvasElement;
+  groundCanvas?: HTMLCanvasElement;
   lowerCanvas?: HTMLCanvasElement;
   upperCanvas?: HTMLCanvasElement;
   animatedTiles?: AnimatedTile[];
+  shadowCanvas?: HTMLCanvasElement;
+  shadowLayers?: HTMLCanvasElement[];
 }
 
 export default async function loadMap(metadata: any): Promise<boolean> {
@@ -221,6 +225,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       spawnY: spawnY,
       warps: metadata?.warps || null,
       graveyards: metadata?.graveyards || null,
+      shadowLayerNames: metadata?.shadowLayerNames || null,
       objectLayers: objectLayers,
       requestChunk: async (chunkX: number, chunkY: number) => {
         return await requestChunk(chunkX, chunkY);
@@ -703,11 +708,13 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
       }
     }
 
-    const { lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
+    const { groundCanvas, lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
+    chunkData.groundCanvas = groundCanvas;
     chunkData.lowerCanvas = lowerCanvas;
     chunkData.upperCanvas = upperCanvas;
     chunkData.canvas = lowerCanvas;
 
+    bakeChunkShadowEdges(chunkData);
     window.mapData.loadedChunks.set(chunkKey, chunkData);
 
     // Keep persisted out-of-border content visible on reload even if the LOAD_MAP
@@ -762,27 +769,33 @@ async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunk
   }
 }
 
-async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = false): Promise<{lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {
+async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = false): Promise<{groundCanvas: HTMLCanvasElement, lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {
   if (!window.mapData) throw new Error("Map data not initialized");
 
   const pixelWidth = chunkData.width * window.mapData.tilewidth;
   const pixelHeight = chunkData.height * window.mapData.tileheight;
 
+  const groundCanvas = document.createElement("canvas");
   const lowerCanvas = document.createElement("canvas");
   const upperCanvas = document.createElement("canvas");
 
+  groundCanvas.width = pixelWidth;
+  groundCanvas.height = pixelHeight;
   lowerCanvas.width = pixelWidth;
   lowerCanvas.height = pixelHeight;
   upperCanvas.width = pixelWidth;
   upperCanvas.height = pixelHeight;
 
+  const groundCtx = groundCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
   const lowerCtx = lowerCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
   const upperCtx = upperCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
 
-  if (!lowerCtx || !upperCtx) throw new Error("Failed to get canvas context");
+  if (!groundCtx || !lowerCtx || !upperCtx) throw new Error("Failed to get canvas context");
 
+  groundCtx.imageSmoothingEnabled = false;
   lowerCtx.imageSmoothingEnabled = false;
   upperCtx.imageSmoothingEnabled = false;
+  groundCtx.clearRect(0, 0, pixelWidth, pixelHeight);
   lowerCtx.clearRect(0, 0, pixelWidth, pixelHeight);
   upperCtx.clearRect(0, 0, pixelWidth, pixelHeight);
 
@@ -826,7 +839,7 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
     const layer = sortedLayers[layerIdx];
 
     const layerName = layer.name ? layer.name.toLowerCase() : '';
-    if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp')) {
+    if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp') || layerName.includes('shadow')) {
       continue;
     }
 
@@ -835,7 +848,15 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
       continue;
     }
 
-    const ctx = layer.zIndex < Number(PLAYER_Z_INDEX) ? lowerCtx : upperCtx;
+    const layerZ = Number(layer.zIndex);
+    let ctx: CanvasRenderingContext2D;
+    if (layerZ < SHADOW_Z_INDEX) {
+      ctx = groundCtx;
+    } else if (layerZ < Number(PLAYER_Z_INDEX)) {
+      ctx = lowerCtx;
+    } else {
+      ctx = upperCtx;
+    }
 
     let tileCount = 0;
 
@@ -852,7 +873,7 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
         const animInfo = animatedTileLookup.get(baseGID);
         if (animInfo) {
           animatedTiles.push({
-            layerGroup: layer.zIndex < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper',
+            layerGroup: layerZ < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper',
             zIndex: layer.zIndex,
             destX: x * window.mapData.tilewidth,
             destY: y * window.mapData.tileheight,
@@ -903,7 +924,7 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
   animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
   chunkData.animatedTiles = animatedTiles;
 
-  return { lowerCanvas, upperCanvas };
+  return { groundCanvas, lowerCanvas, upperCanvas };
 }
 
 // Incrementally re-composite specific cells of an already-baked chunk. Used by the
@@ -963,7 +984,7 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
 
     for (const layer of sortedLayers) {
       const layerName = layer.name ? layer.name.toLowerCase() : '';
-      if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp')) continue;
+      if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp') || layerName.includes('shadow')) continue;
 
       const tileEditor = (window as any).tileEditor;
       if (tileEditor?.isActive && !tileEditor.isLayerVisible(layer.name)) continue;
@@ -1013,6 +1034,7 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
   }
 
   chunkData.animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
+  bakeChunkShadowEdges(chunkData);
 }
 
 // Create an empty in-memory chunk, used by the editor when painting into the
@@ -1150,13 +1172,103 @@ async function rebakeAllChunks() {
   const chunks = [...window.mapData.loadedChunks.values()];
   for (const chunkData of chunks) {
     try {
-      const { lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
+      const { groundCanvas, lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
+      chunkData.groundCanvas = groundCanvas;
       chunkData.lowerCanvas = lowerCanvas;
       chunkData.upperCanvas = upperCanvas;
+      bakeChunkShadowEdges(chunkData);
     } catch (error) {
       console.error('Error rebaking chunk:', error);
     }
   }
 }
 
-export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached, rebakeAllChunks };
+function bakeChunkShadowEdges(chunkData: ChunkData): void {
+  if (!window.mapData) return;
+  const shadowLayerNames = window.mapData.shadowLayerNames;
+  if (!shadowLayerNames || shadowLayerNames.length === 0) {
+    chunkData.shadowCanvas = undefined;
+    chunkData.shadowLayers = undefined;
+    return;
+  }
+
+  const shadowNameSet = new Set(shadowLayerNames.map((n: string) => n.toLowerCase()));
+  const shadowLayers = chunkData.layers.filter((l: any) =>
+    l.name && shadowNameSet.has(l.name.toLowerCase())
+  );
+  if (shadowLayers.length === 0) {
+    chunkData.shadowCanvas = undefined;
+    chunkData.shadowLayers = undefined;
+    return;
+  }
+
+  const tw = window.mapData.tilewidth;
+  const th = window.mapData.tileheight;
+  const pw = chunkData.width * tw;
+  const ph = chunkData.height * th;
+
+  // Build O(1) tileset lookup
+  const tsInfo = new Map<number, { tileset: any; image: HTMLImageElement }>();
+  for (let i = 0; i < window.mapData.tilesets.length; i++) {
+    const ts = window.mapData.tilesets[i];
+    const img = window.mapData.images[i];
+    if (!img || !img.complete || img.naturalWidth === 0) continue;
+    for (let gid = ts.firstgid; gid < ts.firstgid + ts.tilecount; gid++) {
+      tsInfo.set(gid, { tileset: ts, image: img });
+    }
+  }
+
+  const canvases: HTMLCanvasElement[] = [];
+
+  // Produce one silhouette canvas per shadow layer
+  for (const sl of shadowLayers) {
+    if (!sl.data) continue;
+
+    let hasTiles = false;
+    for (let i = 0; i < sl.data.length; i++) {
+      if (sl.data[i] !== 0) { hasTiles = true; break; }
+    }
+    if (!hasTiles) continue;
+
+    const sil = document.createElement('canvas');
+    sil.width = pw; sil.height = ph;
+    const sctx = sil.getContext('2d')!;
+    sctx.imageSmoothingEnabled = false;
+
+    for (let y = 0; y < chunkData.height; y++) {
+      for (let x = 0; x < chunkData.width; x++) {
+        const gid = sl.data[y * chunkData.width + x];
+        if (gid === 0) continue;
+        const info = tsInfo.get(gid & 0x0FFFFFFF);
+        if (!info) continue;
+        const ts = info.tileset; const img = info.image;
+        const li = (gid & 0x0FFFFFFF) - ts.firstgid;
+        const tpr = Math.floor(ts.imagewidth / ts.tilewidth);
+        sctx.drawImage(img,
+          (li % tpr) * ts.tilewidth,
+          Math.floor(li / tpr) * ts.tileheight,
+          ts.tilewidth, ts.tileheight,
+          x * tw, y * th, tw, th);
+      }
+    }
+
+    // Convert colored tiles to solid black silhouette
+    sctx.globalCompositeOperation = 'source-in';
+    sctx.fillStyle = '#000000';
+    sctx.fillRect(0, 0, pw, ph);
+
+    // Blur for soft shadow edges
+    const blurred = document.createElement('canvas');
+    blurred.width = pw; blurred.height = ph;
+    const bctx = blurred.getContext('2d')!;
+    bctx.filter = 'blur(2px)';
+    bctx.drawImage(sil, 0, 0);
+
+    canvases.push(blurred);
+  }
+
+  chunkData.shadowCanvas = undefined;
+  chunkData.shadowLayers = canvases.length > 0 ? canvases : undefined;
+}
+
+export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached, rebakeAllChunks, bakeChunkShadowEdges };

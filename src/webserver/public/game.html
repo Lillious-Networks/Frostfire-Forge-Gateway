@@ -101,6 +101,20 @@
           <label for="show-grid-checkbox" class="ui">Show Grid:</label>
           <input type="checkbox" id="show-grid-checkbox" class="ui">
         </div>
+        <div id="shadow-edges-debug-toggle" class="ui">
+          <label for="shadow-edges-debug-checkbox" class="ui">Shadow Edges:</label>
+          <input type="checkbox" id="shadow-edges-debug-checkbox" class="ui">
+        </div>
+        <hr class="ui debug-separator">
+        <div id="time-override-container" class="ui debug-subpanel">
+          <label for="time-override-checkbox" class="ui">Time Override:</label>
+          <input type="checkbox" id="time-override-checkbox" class="ui">
+          <input type="range" id="time-override-slider" class="ui" min="0" max="23.983" value="12" step="0.0167">
+          <span id="time-override-label" class="ui">12:00</span>
+        </div>
+        <div id="timelapse-toggle" class="ui">
+          <button id="timelapse-btn" class="ui" style="font-size:0.75em;padding:2px 6px;margin-top:3px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;border-radius:2px;cursor:pointer;">Timelapse</button>
+        </div>
       </div>
       <!--
       <div id="map-container" class="ui">

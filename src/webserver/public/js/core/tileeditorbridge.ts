@@ -352,6 +352,7 @@ class TileEditorBridge {
     this.layerData.forEach((layer: any) => {
       const isCollision = layer.name.toLowerCase().includes('collision');
       const isNoPvp = layer.name.toLowerCase().includes('nopvp') || layer.name.toLowerCase().includes('no-pvp');
+      const isShadow = layer.name.toLowerCase().includes('shadow');
 
       if (!this.layerVisibility.has(layer.name)) {
         this.layerVisibility.set(layer.name, true);
@@ -366,6 +367,7 @@ class TileEditorBridge {
       let colorStyle = '';
       if (isCollision) colorStyle = 'color: #ff9999;';
       else if (isNoPvp) colorStyle = 'color: #99ff99;';
+      else if (isShadow) colorStyle = 'color: #dda0dd;';
 
       const isVisible = this.layerVisibility.get(layer.name) ?? true;
       const eyeEmoji = isVisible ? '👁️' : '🚫';

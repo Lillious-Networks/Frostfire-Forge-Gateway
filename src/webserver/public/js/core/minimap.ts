@@ -177,6 +177,15 @@ function renderMinimap() {
     const bufW = actualW * scale;
     const bufH = actualH * scale;
 
+    const groundCanvas = chunkData.groundCanvas;
+    if (groundCanvas) {
+      bufferCtx.drawImage(
+        groundCanvas,
+        0, 0, groundCanvas.width, groundCanvas.height,
+        bufX, bufY, bufW, bufH,
+      );
+    }
+
     const lowerCanvas = chunkData.lowerCanvas;
     if (lowerCanvas) {
       bufferCtx.drawImage(
