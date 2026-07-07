@@ -4,8 +4,9 @@ import "./events.ts";
 import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
-import { updateTime, setHasWeather } from "./ambience.ts";
+import { updateTime, setHasWeather, setStormAmbience } from "./ambience.ts";
 import { setWeatherType, setWeatherData } from "./renderer.ts";
+import { addLightningStrike } from "./weather.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 const cache = Cache.getInstance();
 
@@ -782,13 +783,45 @@ socket.onmessage = async (event) => {
         (window as any).__pendingWeather = data;
         break;
       }
-      // Set flag that this map has weather/ambience
       setHasWeather(true);
       setWeatherType(data.weather);
-      // Store the full weather data object if provided
+      setStormAmbience(data.weather === "thunderstorm");
       if (data.weatherData) {
         setWeatherData(data.weatherData);
       }
+      break;
+    }
+    case "CHANGE_WEATHER": {
+      if (!data || !data.weather) return;
+      const weatherEl = document.getElementById('weather') as HTMLCanvasElement;
+      if (weatherEl) {
+        weatherEl.style.transition = 'opacity 0.8s';
+        weatherEl.style.opacity = '0';
+        setTimeout(() => {
+          setHasWeather(true);
+          setWeatherType(data.weather);
+          setStormAmbience(data.weather === "thunderstorm");
+          if (data.weatherData) {
+            setWeatherData(data.weatherData);
+          }
+          weatherEl.style.opacity = '1';
+          setTimeout(() => {
+            weatherEl.style.transition = '';
+          }, 800);
+        }, 800);
+      } else {
+        setHasWeather(true);
+        setWeatherType(data.weather);
+        setStormAmbience(data.weather === "thunderstorm");
+        if (data.weatherData) {
+          setWeatherData(data.weatherData);
+        }
+      }
+      break;
+    }
+    case "LIGHTNING": {
+      if (!data || data.x == null || data.y == null) return;
+      addLightningStrike(data.x, data.y);
       break;
     }
     case "CONSOLE_MESSAGE": {
@@ -1591,6 +1624,7 @@ socket.onmessage = async (event) => {
             if (pendingWeather) {
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
+              setStormAmbience(pendingWeather.weather === "thunderstorm");
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
               }
@@ -1652,6 +1686,7 @@ socket.onmessage = async (event) => {
             if (pendingWeather) {
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
+              setStormAmbience(pendingWeather.weather === "thunderstorm");
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
               }
@@ -2276,6 +2311,7 @@ socket.onmessage = async (event) => {
           setWeatherType(null);
           setWeatherData(null);
           setHasWeather(false);
+          setStormAmbience(false);
 
           if (cache?.pendingPlayers) cache.pendingPlayers.clear();
           if (cache?.entities) cache.entities = [];

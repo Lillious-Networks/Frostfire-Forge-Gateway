@@ -325,6 +325,162 @@ for (let i = 0; i < splashPoolSize; i++) {
   splashPool.push(new SplashParticle());
 }
 
+let lightningOverlay: HTMLDivElement | null = null;
+let lightningFlashIntensity = 0;
+let lightningTriggered = false;
+let lightningFlickerCount = 0;
+
+interface LightningBolt {
+  worldX: number;
+  worldY: number;
+  alpha: number;
+  age: number;
+  segments: Array<{ x: number; y: number }>;
+}
+
+const activeBolts: LightningBolt[] = [];
+
+function ensureLightningOverlay() {
+  if (!lightningOverlay) {
+    lightningOverlay = document.createElement('div');
+    lightningOverlay.id = 'lightning-flash';
+    lightningOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#aaccff;z-index:51;pointer-events:none;opacity:0;';
+    document.body.appendChild(lightningOverlay);
+  }
+}
+
+function triggerLightning() {
+  ensureLightningOverlay();
+  lightningFlashIntensity = 1;
+  lightningTriggered = true;
+  lightningFlickerCount = 0;
+}
+
+function updateLightning(deltaTime: number) {
+  if (lightningFlashIntensity > 0) {
+    lightningFlashIntensity -= deltaTime * 0.08;
+    if (lightningFlashIntensity < 0) lightningFlashIntensity = 0;
+
+    if (lightningFlashIntensity < 0.3 && lightningFlickerCount < 2) {
+      lightningFlashIntensity = 1;
+      lightningFlickerCount++;
+    }
+
+    if (lightningOverlay) {
+      lightningOverlay.style.opacity = (lightningFlashIntensity * 0.15).toFixed(3);
+    }
+  }
+
+  if (lightningTriggered && lightningFlashIntensity <= 0.01) {
+    lightningFlashIntensity = 0;
+    lightningTriggered = false;
+    if (lightningOverlay) {
+      lightningOverlay.style.opacity = '0';
+    }
+  }
+
+  for (let i = activeBolts.length - 1; i >= 0; i--) {
+    const bolt = activeBolts[i];
+    bolt.age += deltaTime;
+    bolt.alpha -= deltaTime * 0.06;
+    if (bolt.alpha <= 0) {
+      activeBolts.splice(i, 1);
+    }
+  }
+}
+
+function generateBoltSegments(x: number, y: number): Array<{ x: number; y: number }> {
+  const segments: Array<{ x: number; y: number }> = [];
+  const boltLength = 250 + Math.random() * 200;
+  const numSegments = 8 + Math.floor(Math.random() * 6);
+  const stepY = boltLength / numSegments;
+
+  let cx = x;
+  let cy = y - boltLength;
+  segments.push({ x: cx, y: cy });
+
+  for (let i = 1; i < numSegments; i++) {
+    cx += (Math.random() - 0.5) * 60;
+    cy += stepY;
+    segments.push({ x: cx, y: cy });
+  }
+
+  segments.push({ x: cx + (Math.random() - 0.5) * 20, y: y });
+  return segments;
+}
+
+function addLightningStrike(worldX: number, worldY: number) {
+  triggerLightning();
+  activeBolts.push({
+    worldX,
+    worldY,
+    alpha: 1,
+    age: 0,
+    segments: generateBoltSegments(worldX, worldY),
+  });
+}
+
+function drawBolts() {
+  if (activeBolts.length === 0 || !weatherCtx) return;
+
+  for (const bolt of activeBolts) {
+    const STRIKE_DURATION = 0.2;
+    const progress = Math.min(bolt.age / STRIKE_DURATION, 1);
+    const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+    const maxIdx = bolt.segments.length - 1;
+    const visibleIdx = easedProgress * maxIdx;
+    const floorIdx = Math.floor(visibleIdx);
+    const frac = visibleIdx - floorIdx;
+
+    const ctx = weatherCtx;
+    ctx.save();
+    ctx.globalAlpha = bolt.alpha;
+
+    ctx.strokeStyle = '#aaccff';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(bolt.segments[0].x - cameraOffsetX, bolt.segments[0].y - cameraOffsetY);
+    for (let i = 1; i <= floorIdx; i++) {
+      ctx.lineTo(bolt.segments[i].x - cameraOffsetX, bolt.segments[i].y - cameraOffsetY);
+    }
+    if (frac > 0 && floorIdx < maxIdx) {
+      const seg = bolt.segments[floorIdx];
+      const next = bolt.segments[floorIdx + 1];
+      ctx.lineTo(
+        (seg.x + (next.x - seg.x) * frac) - cameraOffsetX,
+        (seg.y + (next.y - seg.y) * frac) - cameraOffsetY
+      );
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(bolt.segments[0].x - cameraOffsetX, bolt.segments[0].y - cameraOffsetY);
+    for (let i = 1; i <= floorIdx; i++) {
+      ctx.lineTo(bolt.segments[i].x - cameraOffsetX, bolt.segments[i].y - cameraOffsetY);
+    }
+    if (frac > 0 && floorIdx < maxIdx) {
+      const seg = bolt.segments[floorIdx];
+      const next = bolt.segments[floorIdx + 1];
+      ctx.lineTo(
+        (seg.x + (next.x - seg.x) * frac) - cameraOffsetX,
+        (seg.y + (next.y - seg.y) * frac) - cameraOffsetY
+      );
+    }
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
 function weather(type: string, weatherData?: any): void {
   if (!weatherCtx) return;
 
@@ -334,18 +490,17 @@ function weather(type: string, weatherData?: any): void {
 
   const deltaTime = deltaMs / FRAME_TIME;
 
-  // Update wind burst cycle - creates pulsating wind effect
   windBurst.update(deltaMs);
 
-  // Extract wind parameters from weather data
-  // Wind is always applied at base speed, burst adds extra intensity on top
   const baseWindSpeed = weatherData?.wind_speed || 0;
   const windSpeed = calculateWindSpeed(baseWindSpeed, windBurst.getIntensity());
   const windDirection = weatherData?.wind_direction || null;
 
   weatherCtx.clearRect(0, 0, width, height);
 
-  if (type === "rainy") {
+  updateLightning(deltaTime);
+
+  if (type === "rainy" || type === "thunderstorm") {
 
     for (const p of rainParticles) {
       p.update(deltaTime, windSpeed, windDirection);
@@ -355,6 +510,10 @@ function weather(type: string, weatherData?: any): void {
     for (const s of splashPool) {
       s.update(deltaTime);
       s.draw(weatherCtx);
+    }
+
+    if (type === "thunderstorm") {
+      drawBolts();
     }
   } else if (type === "snowy") {
 
@@ -379,4 +538,4 @@ function updateWeatherCanvas(cameraX: number, cameraY: number): void {
   cameraOffsetY = cameraY - halfViewportHeight - buffer;
 }
 
-export { weather, updateWeatherCanvas };
+export { weather, updateWeatherCanvas, addLightningStrike };

@@ -4,6 +4,7 @@ let timeOfDay: string | null = null;
 let lastMinute: number | null = null;
 let hasWeather: boolean = false;
 let overrideHour: number | null = null;
+let stormActive: boolean = false;
 
 timeOverrideSlider.addEventListener("input", () => {
   overrideHour = parseFloat(timeOverrideSlider.value);
@@ -64,13 +65,18 @@ function updateTime(time: string) {
 }
 
 function updateAmbience() {
-  // Allow slider override to work even without server time or weather
   const effective = getEffectiveTime();
   const effectiveHasTime = (overrideHour !== null && timeOverrideCheckbox.checked) || timeOfDay;
 
   if (!effectiveHasTime || !hasWeather) {
     ambience.style.backgroundColor = "transparent";
     ambience.style.opacity = "0";
+    return;
+  }
+
+  if (stormActive) {
+    ambience.style.backgroundColor = "#2a3045";
+    ambience.style.opacity = "0.65";
     return;
   }
 
@@ -126,7 +132,11 @@ function updateAmbience() {
 
 function setHasWeather(weather: boolean) {
   hasWeather = weather;
-  // Immediately update ambience when weather status changes
+  updateAmbience();
+}
+
+function setStormAmbience(active: boolean) {
+  stormActive = active;
   updateAmbience();
 }
 
@@ -194,4 +204,4 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-export { updateTime, getServerTime, getEffectiveTime, setHasWeather };
+export { updateTime, getServerTime, getEffectiveTime, setHasWeather, setStormAmbience };

@@ -3021,6 +3021,7 @@ input[type=range]:disabled {
   bottom: 0;
   z-index: 50;
   pointer-events: none;
+  transition: background-color 1s ease, opacity 1s ease;
 }
 
 #weather {
