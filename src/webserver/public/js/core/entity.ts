@@ -3,6 +3,7 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
 import { particlePool, getParticleSprite } from "./npc.js";
+import { getWeatherType } from "./renderer.js";
 import {
   windBurst,
   calculateWindSpeed,
@@ -126,6 +127,7 @@ function createEntity(data: any) {
       const isTargeted = (cache as any).targetId === this.id;
 
       // Draw shadow (changes color when targeted, just like players)
+      const shadowsDisabled = getWeatherType() === "thunderstorm";
       let shadow: { width: number; height: number; fillStyle: string; borderColor: string };
       if (isTargeted) {
         shadow = {
@@ -143,6 +145,7 @@ function createEntity(data: any) {
         };
       }
 
+      if (!shadowsDisabled) {
       context.save();
       context.beginPath();
       context.ellipse(
@@ -172,6 +175,7 @@ function createEntity(data: any) {
       context.fill();
       context.closePath();
       context.restore();
+      }
 
       // Render sprite
       if (this.layeredAnimation) {
@@ -366,8 +370,8 @@ function createEntity(data: any) {
         newParticle.zIndex = particle.zIndex || 0;
         newParticle.gravity = particle.gravity ? { ...particle.gravity } : { x: 0, y: 0 };
         newParticle.weather = typeof particle.weather === 'object' ? { ...particle.weather } : 'none';
-        newParticle.localposition.x = Number(particle.localposition?.x || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread?.x || 0);
-        newParticle.localposition.y = Number(particle.localposition?.y || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread?.y || 0);
+        newParticle.localposition.x = Number(particle.localposition?.x || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread?.x || 0) * 0.5;
+        newParticle.localposition.y = Number(particle.localposition?.y || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread?.y || 0) * 0.5;
         newParticle.velocity.x = Number(particle.velocity?.x || 0) + windBias.x;
         newParticle.velocity.y = Number(particle.velocity?.y || 0) + windBias.y;
 

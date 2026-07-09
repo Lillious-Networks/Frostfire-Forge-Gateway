@@ -1,4 +1,5 @@
 import { getEffectiveTime } from "./ambience.js";
+import { getWeatherType } from "./renderer.js";
 
 const MAX_OFFSET = 14;
 
@@ -36,8 +37,8 @@ export function getShadowParams(): ShadowParams {
   const fade = smoothWindow(hour24);
 
   return {
-    offsetX: MAX_OFFSET * Math.sin(sunAng) * fade,
-    offsetY: MAX_OFFSET * len * fade,
+    offsetX: -MAX_OFFSET * Math.sin(sunAng),
+    offsetY: MAX_OFFSET * len,
     alpha: 0.35 * len * fade,
   };
 }
@@ -47,6 +48,8 @@ export function renderShadows(
   visibleChunks: Array<{ x: number; y: number }>
 ): void {
   if (!window.mapData) return;
+
+  if (getWeatherType() === "thunderstorm") return;
 
   const params = getShadowParams();
   if (params.alpha < 0.005) return;

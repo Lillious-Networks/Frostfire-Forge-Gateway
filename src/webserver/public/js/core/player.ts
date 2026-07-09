@@ -2,7 +2,7 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { cachedPlayerId, setSelfPlayerSpriteLoaded } from "./socket.js";
 import { updateFriendOnlineStatus, updateFriendsList } from "./friends.js";
-import { getCameraX, getCameraY, setCameraX, setCameraY } from "./renderer.js";
+import { getCameraX, getCameraY, setCameraX, setCameraY, getWeatherType } from "./renderer.js";
 import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, positionText } from "./ui.js";
 import { updateXp } from "./xp.js";
 import  { typingImage } from "./images.js";
@@ -428,6 +428,8 @@ async function createPlayer(data: any) {
 
       const uiOffset = 10;
 
+      const shadowsDisabled = getWeatherType() === "thunderstorm";
+
       let shadow: { width: number; height: number; fillStyle: string; borderColor: string };
       if (this.targeted) {
         shadow = {
@@ -445,6 +447,7 @@ async function createPlayer(data: any) {
         };
       }
 
+      if (!shadowsDisabled) {
       context.save();
       context.beginPath();
       context.ellipse(
@@ -474,6 +477,7 @@ async function createPlayer(data: any) {
       context.fill();
       context.closePath();
       context.restore();
+      }
 
       context.globalAlpha = 1;
       context.font = "14px 'Comic Relief'";

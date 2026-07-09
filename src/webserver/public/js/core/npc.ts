@@ -70,6 +70,37 @@ const particlePool = new ParticlePool();
 // costly per-frame createRadialGradient / shadowBlur work that tanks FPS on iOS.
 const particleSpriteCache = new Map<string, { canvas: HTMLCanvasElement; half: number }>();
 
+// Convert a hex/named color to rgba() at a given alpha so we can build a
+// feathered gradient that fades smoothly instead of ending on a hard edge.
+function colorToRgba(color: string, alpha: number): string {
+  let r = 255, g = 255, b = 255;
+  if (color && color[0] === "#") {
+    let hex = color.slice(1);
+    if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+    const n = parseInt(hex, 16);
+    if (!isNaN(n)) { r = (n >> 16) & 0xff; g = (n >> 8) & 0xff; b = n & 0xff; }
+  } else if (color) {
+    const probe = document.createElement("canvas").getContext("2d")!;
+    probe.fillStyle = color;
+    const resolved = probe.fillStyle;
+    if (resolved[0] === "#") {
+      const n = parseInt(resolved.slice(1), 16);
+      r = (n >> 16) & 0xff; g = (n >> 8) & 0xff; b = n & 0xff;
+    }
+  }
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Build a soft, feathered radial gradient so the particle core dissolves
+// gradually into the surrounding glow (no visible hard border).
+function addFeatheredStops(gradient: CanvasGradient, color: string): void {
+  gradient.addColorStop(0, colorToRgba(color, 0.55));
+  gradient.addColorStop(0.15, colorToRgba(color, 0.4));
+  gradient.addColorStop(0.35, colorToRgba(color, 0.2));
+  gradient.addColorStop(0.6, colorToRgba(color, 0.07));
+  gradient.addColorStop(1, colorToRgba(color, 0));
+}
+
 function getParticleSprite(color: string, radius: number, glowIntensity: number): { canvas: HTMLCanvasElement; half: number } {
   const key = `${color}|${radius}|${glowIntensity}`;
   const cached = particleSpriteCache.get(key);
@@ -106,8 +137,7 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number)
   sctx.scale(scale, scale);
 
   const gradient = sctx.createRadialGradient(half, half, 0, half, half, radius);
-  gradient.addColorStop(0, color);
-  gradient.addColorStop(1, color + "00");
+  addFeatheredStops(gradient, color);
 
   // Accumulate exactly like the live draw so drawing the sprite with globalAlpha
   // reproduces the same additive result.
@@ -336,8 +366,8 @@ function createNPC(data: any) {
         newParticle.gravity.x = particle.gravity.x;
         newParticle.gravity.y = particle.gravity.y;
         newParticle.weather = typeof particle.weather === 'object' ? { ...particle.weather } : 'none';
-        newParticle.localposition.x = Number(particle.localposition?.x || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.x);
-        newParticle.localposition.y = Number(particle.localposition?.y || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.y);
+        newParticle.localposition.x = Number(particle.localposition?.x || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.x) * 0.5;
+        newParticle.localposition.y = Number(particle.localposition?.y || 0) + (Math.random() < 0.5 ? -1 : 1) * Math.random() * Number(particle.spread.y) * 0.5;
         newParticle.velocity.x = Number(particle.velocity.x || 0) + windBias.x;
         newParticle.velocity.y = Number(particle.velocity.y || 0) + windBias.y;
 

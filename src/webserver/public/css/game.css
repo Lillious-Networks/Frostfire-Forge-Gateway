@@ -3021,7 +3021,80 @@ input[type=range]:disabled {
   bottom: 0;
   z-index: 50;
   pointer-events: none;
-  transition: background-color 1s ease, opacity 1s ease;
+  mix-blend-mode: multiply;
+  transition: opacity 0.4s ease;
+}
+
+/* Warm additive dawn/dusk glow layer (multiply can't brighten) */
+#ambience-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
+  opacity: var(--ambience-warm-opacity, 0);
+  background: var(--ambience-warm, transparent);
+  transition: opacity 0.4s ease;
+}
+
+/* Cool additive moonlight tint at night (multiply alone reads as flat black) */
+#ambience-cool-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 51;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: var(--ambience-cool-opacity, 0);
+  background: var(--ambience-cool, transparent);
+  transition: opacity 0.4s ease;
+}
+
+/* Directional god rays from an off-screen sun */
+#sun-flare {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 51;
+  pointer-events: none;
+  opacity: 0;
+  mix-blend-mode: screen;
+  transition: opacity 0.8s ease;
+  overflow: hidden;
+  -webkit-mask-image: radial-gradient(
+    ellipse 65% 95% at var(--sun-x, 50%) var(--sun-y, -20%),
+    rgba(0,0,0,0.95) 0%,
+    rgba(0,0,0,0.5) 35%,
+    transparent 72%
+  );
+  mask-image: radial-gradient(
+    ellipse 65% 95% at var(--sun-x, 50%) var(--sun-y, -20%),
+    rgba(0,0,0,0.95) 0%,
+    rgba(0,0,0,0.5) 35%,
+    transparent 72%
+  );
+}
+
+#sun-flare-rays {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 400vmax;
+  height: 400vmax;
+  transform: translate(-50%, -50%) rotate(var(--rays-angle, 0deg));
+  opacity: var(--rays-opacity, 0.3);
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 40px,
+    var(--rays-color, rgba(255, 236, 190, 0.5)) 64px,
+    transparent 88px,
+    transparent 160px
+  );
+  filter: blur(7px);
 }
 
 #weather {
@@ -3033,6 +3106,21 @@ input[type=range]:disabled {
   pointer-events: none;
   z-index: 10;
   overflow: hidden;
+}
+
+/* Additive light map: brightens the scene where glowing emitters are, so glow
+   punches back through the ambience darkening overlay at night. */
+#light-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+  z-index: 52;
+  mix-blend-mode: screen;
 }
 /* Map Editor Floating Panels */
 #tile-editor-container {

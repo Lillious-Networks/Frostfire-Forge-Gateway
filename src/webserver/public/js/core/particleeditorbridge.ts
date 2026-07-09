@@ -131,11 +131,12 @@ class ParticleEditorBridge {
 
   private loadParticle(p: any): void {
     this.updatePreview();
-    const v = (key: string, val: any) => { const el = this.inputs[key] as HTMLInputElement | null; if (el) { if (el.type === "checkbox") el.checked = !!val; else el.value = val != null ? String(val) : ""; } };
+    const toBool = (val: any) => val === true || val === 1 || val === "true" || val === "1";
+    const v = (key: string, val: any) => { const el = this.inputs[key] as HTMLInputElement | null; if (el) { if (el.type === "checkbox") el.checked = toBool(val); else el.value = val != null ? String(val) : ""; } };
     v("inp-size", p.size != null ? p.size : 5);
     v("inp-opacity", p.opacity != null ? p.opacity : 0.8);
     v("inp-color", p.color || "#ffffff");
-    v("inp-zindex", p.zindex != null ? p.zindex : 0);
+    v("inp-zindex", p.zIndex != null ? p.zIndex : (p.zindex != null ? p.zindex : 0));
     v("inp-glow", p.glow_intensity != null ? p.glow_intensity : 0);
     v("inp-visible", p.visible != null ? p.visible : true);
     v("inp-vel-x", p.velocity ? p.velocity.x : 0); v("inp-vel-y", p.velocity ? p.velocity.y : 0);
@@ -149,7 +150,6 @@ class ParticleEditorBridge {
     v("inp-stagger", p.staggertime != null ? p.staggertime : 0);
     v("inp-time", p.affected_by_time || false);
     v("inp-timeon", p.time_on || ""); v("inp-timeoff", p.time_off || "");
-    this.updateVisibleStateBasedOnTime();
     this.syncValueLabel("inp-size");
     this.syncValueLabel("inp-opacity");
     this.syncValueLabel("inp-glow");
@@ -160,7 +160,7 @@ class ParticleEditorBridge {
     const gs = (key: string) => { const el = this.inputs[key] as HTMLInputElement | null; return el ? el.value : ""; };
     return {
       name: this.selectedParticleName || "", size: gv("inp-size"), opacity: gv("inp-opacity", true), color: gs("inp-color"),
-      zindex: gv("inp-zindex"), glow_intensity: gv("inp-glow", true), visible: (this.inputs["inp-visible"] as HTMLInputElement)?.checked ?? true,
+      zIndex: gv("inp-zindex"), glow_intensity: gv("inp-glow", true), visible: (this.inputs["inp-visible"] as HTMLInputElement)?.checked ?? true,
       velocity: { x: gv("inp-vel-x", true), y: gv("inp-vel-y", true) }, gravity: { x: gv("inp-grav-x", true), y: gv("inp-grav-y", true) },
       spread: { x: gv("inp-spread-x", true), y: gv("inp-spread-y", true) }, localposition: { x: gv("inp-lpos-x", true), y: gv("inp-lpos-y", true) },
       affected_by_weather: (this.inputs["inp-weather"] as HTMLInputElement)?.checked ?? false,
@@ -170,7 +170,12 @@ class ParticleEditorBridge {
     };
   }
 
-  private onFormChange(): void { this.updatePreview(); }
+  private onFormChange(): void {
+    this.syncValueLabel("inp-size");
+    this.syncValueLabel("inp-opacity");
+    this.syncValueLabel("inp-glow");
+    this.updatePreview();
+  }
   private syncValueLabel(id: string): void {
     const el = this.inputs[id] as HTMLInputElement | null; if (!el || el.type !== "range") return;
     const label = document.getElementById("val-" + id.replace("inp-", "")); if (label) label.textContent = parseFloat(el.value).toString();
@@ -210,18 +215,26 @@ class ParticleEditorBridge {
     document.querySelectorAll(".editor-tab-panel").forEach((p) => { p.classList.toggle("active", p.getAttribute("data-tab") === tabName); });
   }
 
-  private updateVisibleStateBasedOnTime(): void {
-    if (!(this.inputs["inp-time"] as HTMLInputElement)?.checked) return;
-    const tOn = (this.inputs["inp-timeon"] as HTMLInputElement)?.value || "";
-    const tOff = (this.inputs["inp-timeoff"] as HTMLInputElement)?.value || "";
-    if (!tOn || !tOff) return;
-    const now = new Date(), cur = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0');
-    let vis = true;
-    if (tOn < tOff) vis = cur >= tOn && cur < tOff; else if (tOn > tOff) vis = cur >= tOn || cur < tOff;
-    if (this.inputs["inp-visible"]) (this.inputs["inp-visible"] as HTMLInputElement).checked = vis;
+  private updatePreview(): void { this.previewParticles = []; this.lastEmitInterval = 0; }
+
+  private colorToRgba(color: string, alpha: number): string {
+    let r = 255, g = 255, b = 255;
+    if (color && color[0] === "#") {
+      let hex = color.slice(1);
+      if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+      const n = parseInt(hex, 16);
+      if (!isNaN(n)) { r = (n >> 16) & 0xff; g = (n >> 8) & 0xff; b = n & 0xff; }
+    }
+    return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  private updatePreview(): void { this.previewParticles = []; this.lastEmitInterval = 0; }
+  private addFeatheredStops(gradient: CanvasGradient, color: string): void {
+    gradient.addColorStop(0, this.colorToRgba(color, 0.55));
+    gradient.addColorStop(0.15, this.colorToRgba(color, 0.4));
+    gradient.addColorStop(0.35, this.colorToRgba(color, 0.2));
+    gradient.addColorStop(0.6, this.colorToRgba(color, 0.07));
+    gradient.addColorStop(1, this.colorToRgba(color, 0));
+  }
 
   private startPreviewLoop(): void {
     if (this.animFrameId) return;
@@ -269,7 +282,7 @@ class ParticleEditorBridge {
       if (pp.lifetime - pp.currentLife < fIn) alpha = ((pp.lifetime - pp.currentLife) / fIn) * pData.opacity;
       else if (pp.currentLife < fOut) alpha = (pp.currentLife / fOut) * pData.opacity; else alpha = pData.opacity;
       ctx.globalAlpha = alpha;
-      const radius = pp.size / 2, grad = ctx.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, radius); grad.addColorStop(0, pp.color); grad.addColorStop(1, pp.color + "00");
+      const radius = pp.size / 2, grad = ctx.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, radius); this.addFeatheredStops(grad, pp.color);
       if (pp.glow_intensity > 0) {
         ctx.shadowColor = pp.color; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
         const baseBlur = Math.max(4, radius * 0.8), glowLayers = Math.ceil(pp.glow_intensity), glowFrac = pp.glow_intensity - Math.floor(pp.glow_intensity);

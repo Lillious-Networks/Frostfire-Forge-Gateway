@@ -5,7 +5,7 @@ interface Particle {
   size?: number;
   opacity?: number;
   color?: string;
-  zindex?: number;
+  zIndex?: number;
   glow_intensity?: number;
   visible?: boolean;
   velocity?: { x: number; y: number };
@@ -166,7 +166,7 @@ class ParticleEditor {
       size: 5,
       opacity: 0.8,
       color: '#ffffff',
-      zindex: 0,
+      zIndex: 0,
       glow_intensity: 0,
       visible: true,
       velocity: { x: 0, y: 0 },

@@ -23,6 +23,8 @@ let isMoving = false;
 const pressedKeys = new Set();
 const movementKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
 let lastTypingPacket = 0;
+const messageHistory: string[] = [];
+let historyIndex = -1;
 const cooldowns: { [key: string]: number } = {};
 const COOLDOWN_DURATION = 100;
 const KEY_COOLDOWN_DURATION = 500;
@@ -299,6 +301,50 @@ function handleEscapeKey() {
     }
   });
 }
+function recordSentMessage(message: string) {
+  if (!message) return;
+  if (messageHistory[messageHistory.length - 1] !== message) {
+    messageHistory.push(message);
+  }
+  historyIndex = messageHistory.length;
+}
+
+chatInput.addEventListener("input", () => {
+  historyIndex = messageHistory.length;
+});
+
+chatInput.addEventListener("keydown", (event: KeyboardEvent) => {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  if (messageHistory.length === 0) return;
+
+  const atHistoryEnd = historyIndex >= messageHistory.length;
+
+  if (event.key === "ArrowUp") {
+    // Don't overwrite text the user has typed that isn't from history
+    if (atHistoryEnd && chatInput.value.trim() !== "") return;
+    event.preventDefault();
+    if (historyIndex > 0) historyIndex--;
+    chatInput.value = messageHistory[historyIndex];
+    chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+  } else {
+    // ArrowDown
+    if (atHistoryEnd) {
+      // Only clear if the field is showing a history message, not user-typed text
+      return;
+    }
+    event.preventDefault();
+    if (historyIndex < messageHistory.length - 1) {
+      historyIndex++;
+      chatInput.value = messageHistory[historyIndex];
+    } else {
+      // One more down past the last message clears the input
+      historyIndex = messageHistory.length;
+      chatInput.value = "";
+    }
+    chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+  }
+});
+
 addEventListener("keypress", (event: KeyboardEvent) => {
 
   if (chatInput === document.activeElement) {
@@ -388,10 +434,12 @@ async function handleEnterKey() {
 
   if (chatInput.dataset.mode) {
     const _message = `/${chatInput.dataset.mode} ${message}`;
+    recordSentMessage(_message);
     await handleCommand(_message);
     return;
   }
 
+  recordSentMessage(message);
   if (message.startsWith("/")) {
     await handleCommand(message);
   } else {

@@ -9,6 +9,7 @@ const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { renderShadows } from './shadows.js';
+import { renderLightMap } from './lightmap.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
@@ -1927,6 +1928,9 @@ function animationLoop() {
   if (window.mapData && window.mapData.loadedChunks) {
     loadedChunksText.innerText = `Loaded Chunks: ${window.mapData.loadedChunks.size}`;
   }
+
+  // Additive light map: glowing emitters brighten the darkened night scene.
+  renderLightMap(smoothMapX, smoothMapY);
 
   if (times.length > 60) times.shift();
   times.push(now);

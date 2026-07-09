@@ -52,8 +52,12 @@ const notificationContainer = document.getElementById("game-notification-contain
 const notificationMessage = document.getElementById("game-notification-message");
 const serverTime = document.getElementById("server-time-value") as HTMLDivElement;
 const ambience = document.getElementById("ambience-overlay") as HTMLDivElement;
+const ambienceCool = document.getElementById("ambience-cool-overlay") as HTMLDivElement;
+const sunFlare = document.getElementById("sun-flare") as HTMLDivElement;
 const weatherCanvas = document.getElementById("weather") as HTMLCanvasElement;
 const weatherCtx = weatherCanvas.getContext("2d");
+const lightCanvas = document.getElementById("light-overlay") as HTMLCanvasElement;
+const lightCtx = lightCanvas.getContext("2d");
 const guildContainer = document.getElementById("guild-container") as HTMLDivElement;
 const guildName = document.getElementById("guild-name") as HTMLDivElement;
 const guildRank = document.getElementById("guild-rank") as HTMLDivElement;
@@ -2066,7 +2070,7 @@ export {
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
-    serverTime, ambience, weatherCanvas, weatherCtx, guildContainer, guildName, guildRank, guildMembersList,
+    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,

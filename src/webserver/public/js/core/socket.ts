@@ -875,7 +875,16 @@ socket.onmessage = async (event) => {
       const updatedNpc = data.data ?? data;
       // Update live game world NPC
       const cachedNpcs = cache.npcs || [];
-      const existingIdx = cachedNpcs.findIndex((n: any) => n.id === updatedNpc.id);
+      let existingIdx = cachedNpcs.findIndex((n: any) => n.id === updatedNpc.id);
+      // If this is a freshly created NPC, adopt the temporary placeholder
+      // (id === null) instead of spawning a duplicate live NPC.
+      if (existingIdx < 0) {
+        const placeholderIdx = cachedNpcs.findIndex((n: any) => n.id === null);
+        if (placeholderIdx >= 0) {
+          cachedNpcs[placeholderIdx].id = updatedNpc.id;
+          existingIdx = placeholderIdx;
+        }
+      }
       if (existingIdx >= 0) {
         // Update position and properties on the existing live NPC object
         const liveNpc = cachedNpcs[existingIdx];

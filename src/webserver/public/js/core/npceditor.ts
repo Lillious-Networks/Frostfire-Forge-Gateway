@@ -15,6 +15,7 @@ class NpcEditor {
   private selectedParticles: string[] = [];
   private isDirty: boolean = false;
   private hasPendingNew: boolean = false;
+  private createInFlight: boolean = false;
   private pendingSelectId: number | null = null;
 
   // Drag state
@@ -242,6 +243,9 @@ class NpcEditor {
 
     const sendRequest = (window as any).sendRequest;
     if (npcData.id === null) {
+      // Prevent duplicate ADD_NPC requests while the server assigns an id
+      if (this.createInFlight) return;
+      this.createInFlight = true;
       sendRequest({ type: "ADD_NPC", data: npcData });
     } else {
       sendRequest({ type: "SAVE_NPC", data: npcData });
@@ -269,6 +273,7 @@ class NpcEditor {
         deleteNPC(this.selectedNpc);
         this.selectedNpc = null;
         this.hasPendingNew = false;
+        this.createInFlight = false;
       }
     } else {
       const sendRequest = (window as any).sendRequest;
@@ -538,6 +543,14 @@ class NpcEditor {
 
   // ===== Public methods called from socket =====
 
+  private sortNpcs() {
+    this.npcs.sort(function (a, b) {
+      if (a.id === null) return -1;
+      if (b.id === null) return 1;
+      return a.id - b.id;
+    });
+  }
+
   public setNpcs(npcs: any[]) {
     // Merge with existing to preserve unsaved position changes
     for (const newNpc of npcs) {
@@ -554,6 +567,7 @@ class NpcEditor {
       }
     }
 
+    this.sortNpcs();
     this.sendToEditor({ type: 'npcListUpdate', npcs: this.npcs });
 
     if (this.pendingSelectId !== null) {
@@ -573,16 +587,31 @@ class NpcEditor {
   public handleNpcUpdated(npc: any) {
     if (!npc || npc.id == null) return;
 
+    // If this update is the server confirming a newly-created NPC, reconcile the
+    // temporary (id === null) entry with the real server-assigned id.
+    if (this.hasPendingNew && this.lastSavedNpcId === null) {
+      const tempIdx = this.npcs.findIndex(function (n) { return n.id === null; });
+      if (tempIdx >= 0) {
+        this.npcs[tempIdx] = Object.assign({}, this.npcs[tempIdx], npc);
+      }
+      if (this.selectedNpc && this.selectedNpc.id === null) {
+        Object.assign(this.selectedNpc, npc);
+        this.selectNpc(this.selectedNpc);
+      }
+      this.hasPendingNew = false;
+      this.createInFlight = false;
+      this.lastSavedNpcId = npc.id;
+      this.sortNpcs();
+      this.sendToEditor({ type: 'npcListUpdate', npcs: this.npcs });
+      return;
+    }
+
     const existingIdx = this.npcs.findIndex(function (n) { return n.id === npc.id; });
     if (existingIdx >= 0) {
       this.npcs[existingIdx] = Object.assign({}, this.npcs[existingIdx], npc);
     }
 
-    // If this was a newly created NPC (id was null), update the reference
-    if (this.hasPendingNew && this.lastSavedNpcId === null) {
-      this.hasPendingNew = false;
-    }
-
+    this.sortNpcs();
     this.sendToEditor({ type: 'npcListUpdate', npcs: this.npcs });
   }
 

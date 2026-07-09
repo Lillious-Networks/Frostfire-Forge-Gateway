@@ -78,7 +78,7 @@ class NpcEditorBridge {
   private handleInit(msg: any): void {
     this.npcs = msg.npcs || [];
     this.availableParticles = msg.particles || [];
-    this.selectedParticles = msg.selectedParticles || [];
+    this.selectedParticles = this.normalizeParticleNames(msg.selectedParticles);
     this.renderNpcList();
     this.renderParticleOptions();
     if (msg.selectedNpc) {
@@ -143,10 +143,17 @@ class NpcEditorBridge {
     v("inp-name", npc.name || "");
     v("inp-dialog", npc.dialog || "");
     v("inp-script", npc.script || "");
-    this.selectedParticles = npc.particles || [];
+    this.selectedParticles = this.normalizeParticleNames(npc.particles);
     this.renderParticleOptions();
     this.updateSpriteVisibility();
     this.switchTab("general");
+  }
+
+  private normalizeParticleNames(particles: any): string[] {
+    if (!Array.isArray(particles)) return [];
+    return particles
+      .map((p) => (typeof p === "string" ? p : (p && p.name ? p.name : null)))
+      .filter((p): p is string => !!p);
   }
 
   private updateSpriteVisibility(): void {
