@@ -245,7 +245,6 @@ if (_https) {
 }
 
 async function authenticate(req: Request, server: any) {
-
   const ip = server.requestIP(req)?.address;
   if (b_ips.includes(ip) && !w_ips.includes(ip)) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
@@ -254,15 +253,18 @@ async function authenticate(req: Request, server: any) {
   if (!url) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
   }
-  const email = url.searchParams.get("email");
-  const token = url.searchParams.get("token");
-  const code = url.searchParams.get("code");
 
-  if (!token || !code || !email) {
+  const username = url.searchParams.get("username")?.toLowerCase();
+  const code = url.searchParams.get("code");
+  const cookies = req.headers.get("cookie") || "";
+  const tokenMatch = cookies.match(/token=([^;]+)/);
+  const token = tokenMatch ? tokenMatch[1] : null;
+
+  if (!code || !username || !token) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
 
-  const result = await query("SELECT * FROM accounts WHERE token = ? AND email = ? AND verification_code = ? LIMIT 1", [token, email.toLowerCase(), code]) as any;
+  const result = await query("SELECT * FROM accounts WHERE token = ? AND username = ? AND verification_code = ? AND ip_address = ? LIMIT 1", [token, username, code, ip]) as any;
   if (result.length === 0) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
@@ -376,7 +378,6 @@ async function register(req: Request, server: any) {
 
 async function login(req: Request, server: any) {
   try {
-
     const ip = server.requestIP(req)?.address;
     if (b_ips.includes(ip) && !w_ips.includes(ip)) {
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
@@ -400,6 +401,8 @@ async function login(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 400 });
     }
 
+    await query("UPDATE accounts SET ip_address = ? WHERE username = ?", [ip, username]);
+
     const useremail = await player.getEmail(username.toLowerCase()) as string;
     if (!useremail) {
       return new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 400 });
@@ -412,8 +415,8 @@ async function login(req: Request, server: any) {
       await query("UPDATE accounts SET verification_code = NULL WHERE token = ?", [token]);
 
       return new Response(JSON.stringify({ message: "Logged in successfully"}), { status: 301, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
-    } else {
-
+    }
+    else {
       const result = await verify(token, useremail.toLowerCase(), username.toLowerCase()) as any;
       if (result instanceof Error) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
