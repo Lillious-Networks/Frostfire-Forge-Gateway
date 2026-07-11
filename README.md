@@ -36,8 +36,9 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 - [Features](#-features)
 - [Requirements](#-requirements)
 - [Architecture](#-architecture)
-  - [Dual-Server Design](#dual-server-design)
+  - [Server Design](#server-design)
   - [Server Responsibilities](#server-responsibilities)
+  - [Reverse Proxy](#reverse-proxy)
 - [Quick Start](#-quick-start)
   - [Development Setup](#development-setup)
   - [Production Setup](#production-setup)
@@ -92,9 +93,9 @@ The gateway works in conjunction with the [Frostfire Forge Game Engine](https://
 
 ## 🏗️ Architecture
 
-### Dual-Server Design
+### Server Design
 
-The gateway consists of two independent servers:
+The gateway consists of three independent processes:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -104,9 +105,21 @@ The gateway consists of two independent servers:
                     HTTP/HTTPS (80/443)
                            │
         ┌──────────────────▼────────────────────┐
-        │    WEBSERVER (80/443)                 │
+        │    REVERSE PROXY (80/443)             │
+        │  - TLS termination                    │
+        │  - IP blacklist / whitelist           │
+        │  - Malicious path filtering           │
+        │  - Domain host validation             │
+        │  - Forwards X-Real-Client-IP          │
+        └──────────────────┬────────────────────┘
+                           │
+                    HTTP (127.0.0.1:8080)
+                           │
+        ┌──────────────────▼────────────────────┐
+        │    WEBSERVER (internal 8080)          │
         │  - User authentication                │
         │  - Connection token generation        │
+        │  - Static asset delivery              │
         └──────────────────┬────────────────────┘
                            │
                     HTTP/HTTPS (9999/9443)
@@ -131,13 +144,25 @@ The gateway consists of two independent servers:
 
 ### Server Responsibilities
 
-**Webserver (port 80/443):**
+**Reverse Proxy (port 80/443):**
+- Owns the public HTTP/HTTPS ports and terminates TLS
+- Enforces all security checks before any request reaches the webserver:
+  - IP blacklist (`b_ips`) and whitelist (`w_ips`) enforcement
+  - Malicious path filtering via `src/webserver/config/security.cfg` (auto-blacklists offending IPs)
+  - HTTP method restrictions (blocks `CONNECT`, `TRACE`, `TRACK`, `OPTIONS`)
+  - Domain host validation against `DOMAIN`
+- Redirects HTTP to HTTPS when SSL is enabled
+- Forwards approved requests to the internal webserver, injecting the real client IP via the `X-Real-Client-IP` header
+
+**Webserver (internal port 8080):**
+- Binds to `127.0.0.1` only (never exposed publicly)
 - User login, registration, email verification
 - Password reset functionality
 - Static asset delivery (HTML, CSS, JS, images, fonts, music)
 - Tileset and map chunk delivery (gzip compressed)
 - HTTP request proxying to registered game servers
 - Realm-based server routing
+- Reads the client IP from the `X-Real-Client-IP` header (set by the reverse proxy) for login/verification
 
 **Gateway Server (port 9999/9443):**
 - Game server registration and management
@@ -147,6 +172,24 @@ The gateway consists of two independent servers:
 - Real-time monitoring dashboard
 - Server status API endpoints
 - Administrative authentication
+
+### Reverse Proxy
+
+The reverse proxy (`src/webserver/proxy.ts`) is the only process bound to the public ports. It centralizes all edge security so that individual route handlers no longer need to perform IP checks, and the webserver is never directly reachable from the internet.
+
+**Request flow:**
+
+1. Client connects to the proxy on `WEBSRV_PORT` / `WEBSRV_PORTSSL` (TLS terminated here when `WEBSRV_USESSL=true`).
+2. The proxy runs the security pipeline: method restrictions → IP blacklist → whitelist-aware malicious path filtering → domain host validation.
+3. Requests that fail any check receive a `403` (and offending IPs matched against `security.cfg` are added to the blacklist automatically).
+4. Approved requests are forwarded to the webserver at `http://127.0.0.1:${WEBSRV_INTERNAL_PORT}` with the real client IP added as the `X-Real-Client-IP` header.
+
+**Notes:**
+
+- The webserver binds to `127.0.0.1` on `WEBSRV_INTERNAL_PORT` (default `8080`) and serves plain HTTP; TLS lives entirely at the proxy.
+- The dynamic IP blacklist is loaded from the database and updated at runtime by the proxy — no restart or config regeneration is required.
+- Malicious path rules are defined one-per-line in `src/webserver/config/security.cfg`.
+- All three processes (proxy, webserver, gateway) are started together by `src/start.ts`.
 
 ---
 
@@ -175,6 +218,7 @@ GATEWAY_GAME_SERVER_SECRET=your-shared-secret
 # Webserver
 WEBSRV_PORT=80
 WEBSRV_PORTSSL=443
+WEBSRV_INTERNAL_PORT=8080
 WEBSRV_USESSL=false
 WEBSRV_CERT_PATH=./src/certs/webserver/cert.pem
 WEBSRV_KEY_PATH=./src/certs/webserver/key.pem
@@ -328,6 +372,14 @@ Access the real-time dashboard at `http://localhost:9999/dashboard`
 ---
 
 ## 🔐 Security
+
+### Edge Filtering (Reverse Proxy)
+
+- **Single choke point:** All public traffic passes through the reverse proxy before reaching the webserver, which is bound to `127.0.0.1` only.
+- **TLS termination:** HTTPS is handled at the proxy; internal traffic to the webserver is plain HTTP over loopback.
+- **IP allow/deny lists:** Blacklisted IPs are rejected with `403`; the list is loaded from the database and updated live at runtime.
+- **Malicious path filtering:** Requests targeting paths listed in `src/webserver/config/security.cfg` (e.g. `.env`, `wp-admin`) are blocked, and the source IP is automatically added to the blacklist.
+- **Method & host validation:** `CONNECT`, `TRACE`, `TRACK`, and `OPTIONS` are rejected, and the request host must match `DOMAIN`.
 
 ### Authentication
 

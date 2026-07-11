@@ -22,6 +22,12 @@ const webserverProc = Bun.spawn(["bun", "src/webserver/server.ts"], {
   stderr: "inherit"
 });
 
+console.log("Starting Gateway Reverse Proxy...");
+const proxyProc = Bun.spawn(["bun", "src/webserver/proxy.ts"], {
+  stdout: "inherit",
+  stderr: "inherit"
+});
+
 console.log("Starting Gateway Server...");
 const gatewayProc = Bun.spawn(["bun", "src/gateway/server.ts"], {
   stdout: "inherit",
@@ -34,8 +40,9 @@ console.log("\nPress Ctrl+C to stop all servers\n");
 process.on("SIGINT", () => {
   console.log("\nShutting down servers...");
   webserverProc.kill();
+  proxyProc.kill();
   gatewayProc.kill();
   process.exit(0);
 });
 
-await Promise.all([webserverProc.exited, gatewayProc.exited]);
+await Promise.all([webserverProc.exited, proxyProc.exited, gatewayProc.exited]);

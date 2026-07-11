@@ -15,8 +15,6 @@ const settings = {
     enabled: process.env.TWO_FA_ENABLED === "true" || process.env.TWO_FA_ENABLED === "1"
   }
 };
-import path from "path";
-import fs from "fs";
 import crypto from "crypto";
 import animator_html from "./public/animator.html";
 import login_html from "./public/index.html";
@@ -29,22 +27,9 @@ import forgotpassword_html from "./public/forgot-password.html";
 import changepassword_html from "./public/change-password.html";
 import realmselection_html from "./public/realm-selection.html";
 
-import { w_ips, b_ips, blacklistAdd } from "../systems/security";
-
-const security = fs.existsSync(path.join(import.meta.dir, "./config/security.cfg"))
-  ? fs.readFileSync(path.join(import.meta.dir, "./config/security.cfg"), "utf8").split("\n").filter(line => line.trim() !== "" && !line.startsWith("#"))
-  : [];
-
-if (security.length > 0) {
-  log.success(`Loaded ${security.length} security rules`);
-} else {
-  log.warn("No security rules found");
+function getClientIP(req: Request): string | undefined {
+  return req.headers.get("X-Real-Client-IP") || undefined;
 }
-
-const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "../certs/webserver/cert.pem");
-const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "../certs/webserver/key.pem");
-const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "../certs/webserver/cert.ca-bundle");
-const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
 
 const routes = {
   "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
@@ -56,9 +41,9 @@ const routes = {
   "/npc-editor": npceditor_html,
   "/animator": animator_html,
   "/login": (req: Request, server: any) => login(req, server),
-  "/verify": (req: Request, server: any) => authenticate(req, server),
+  "/verify": (req: Request) => authenticate(req),
   "/register": (req: Request, server: any) => register(req, server),
-  "/guest-login": async (req: Request, server: any) => createGuestAccount(req, server),
+  "/guest-login": async (req: Request) => createGuestAccount(req),
   "/forgot-password": forgotpassword_html,
   "/change-password": changepassword_html,
   "/reset-password": async (req: Request, server: any) => {
@@ -112,12 +97,19 @@ const routes = {
   "/api/gateway/connection-token": {
     GET: async (req: Request) => {
       try {
-
         const token = crypto.randomBytes(32).toString("hex");
         const timestamp = Date.now();
         const expiresAt = timestamp + (60 * 1000);
 
-        const sharedSecret = process.env.GATEWAY_GAME_SERVER_SECRET || "default-secret-change-me";
+        const sharedSecret = process.env.GATEWAY_GAME_SERVER_SECRET;
+        if (!sharedSecret) {
+          return new Response(JSON.stringify({
+            message: "Failed to generate connection token"
+          }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
         const signature = crypto
           .createHmac("sha256", sharedSecret)
           .update(`${token}:${timestamp}:${expiresAt}`)
@@ -146,10 +138,10 @@ const routes = {
   "/realm-selection": realmselection_html,
 } as Record<string, any>;
 
-const serverPort = _https ? (parseInt(process.env.WEBSRV_PORTSSL || "") || 443) : (parseInt(process.env.WEBSRV_PORT || "") || 80);
+const serverPort = parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080;
 
 Bun.serve({
-    hostname: "0.0.0.0",
+    hostname: "127.0.0.1",
     port: serverPort,
     development: false,
     reusePort: false,
@@ -174,38 +166,10 @@ Bun.serve({
       "/api/gateway/servers": routes["/api/gateway/servers"],
       "/api/gateway/connection-token": routes["/api/gateway/connection-token"],
     },
-  async fetch(req: Request, server: any) {
+  async fetch(req: Request) {
     const url = tryParseURL(req.url);
     if (!url) {
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
-    }
-    const address = server.requestIP(req);
-    if (!address) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
-    }
-    const ip = address.address;
-    log.debug(`Received request: ${req.method} ${req.url} from ${ip}`);
-
-    if (req.method === "CONNECT" || req.method === "TRACE" || req.method === "TRACK" || req.method === "OPTIONS") {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    if (b_ips.includes(ip)) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-    }
-
-    if (!w_ips.includes(ip)) {
-      const path = url.pathname.split("/")[1];
-      if (security.includes(path)) {
-
-        await blacklistAdd(ip);
-        return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-      }
-    }
-
-    if (process.env.DOMAIN && process.env.DOMAIN !== "http://localhost" && process.env.DOMAIN?.replace(/https?:\/\//, "") !== url.host) {
-      log.debug(`Domain mismatch: expected "${process.env.DOMAIN?.replace(/https?:\/\//, "")}", got "${url.host}"`);
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
     }
 
     const route = routes[url.pathname as keyof typeof routes];
@@ -216,39 +180,10 @@ Bun.serve({
 
     return Response.redirect("/", 301);
   },
-  ...(_https ? {
-      tls: {
-        cert: fs.existsSync(_ca)
-          ? fs.readFileSync(_cert) + "\n" + fs.readFileSync(_ca)
-          : fs.readFileSync(_cert),
-        key: fs.readFileSync(_key),
-      }
-    }
-  : {}),
 });
 
-if (_https) {
-  Bun.serve({
-    hostname: "0.0.0.0",
-    port: process.env.WEBSRV_PORT || 80,
-    development: false,
-    fetch(req: Request) {
-      const url = tryParseURL(req.url);
-      if (!url) {
-        return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
-      }
-
-      const port = process.env.WEBSRV_PORTSSL === "443" ? "" : `:${process.env.WEBSRV_PORTSSL || 443}`;
-      return Response.redirect(`https://${url.hostname}${port}${url.pathname}${url.search}`, 301);
-    }
-  });
-}
-
-async function authenticate(req: Request, server: any) {
-  const ip = server.requestIP(req)?.address;
-  if (b_ips.includes(ip) && !w_ips.includes(ip)) {
-    return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-  }
+async function authenticate(req: Request) {
+  const ip = getClientIP(req);
   const url = tryParseURL(req.url);
   if (!url) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
@@ -275,15 +210,12 @@ async function authenticate(req: Request, server: any) {
   return Response.redirect(`${process.env.DOMAIN}/game`, 301);
 }
 
-async function createGuestAccount(req: Request, server: any) {
+async function createGuestAccount(req: Request) {
   try {
     if (!settings.guest_mode?.enabled) {
       return new Response(JSON.stringify({ message: "Guest mode is disabled" }), { status: 403 });
     }
-    const ip = server.requestIP(req)?.address;
-    if (b_ips.includes(ip) && !w_ips.includes(ip)) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-    }
+    const ip = getClientIP(req);
 
     const guest_username = `guest_${randomBytes(12)}`;
     const domain = process.env.DOMAIN?.replace(/^https?:\/\//, "");
@@ -319,10 +251,6 @@ async function createGuestAccount(req: Request, server: any) {
 async function register(req: Request, server: any) {
   try {
 
-    const ip = server.requestIP(req)?.address;
-    if (b_ips.includes(ip) && !w_ips.includes(ip)) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-    }
     const body = await req.json();
     const { username, email, password, password2 } = body;
     if (!username || !password || !email || !password2) {
@@ -378,10 +306,7 @@ async function register(req: Request, server: any) {
 
 async function login(req: Request, server: any) {
   try {
-    const ip = server.requestIP(req)?.address;
-    if (b_ips.includes(ip) && !w_ips.includes(ip)) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-    }
+    const ip = getClientIP(req);
     const body = await req.json();
     const { username, password } = body;
     if (!username || !password) {
@@ -436,10 +361,6 @@ async function resetPassword(req: Request, server: any) {
   }
   const responseMessage = `If the email you provided is registered, you will receive an email with instructions to reset your password.`;
 
-    const ip = server.requestIP(req)?.address;
-    if (b_ips.includes(ip) && !w_ips.includes(ip)) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-    }
   const body = await req.json();
 
   if (!body.email) {
@@ -481,10 +402,6 @@ async function updatePassword(req: Request, server: any) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
   }
 
-  const ip = server.requestIP(req)?.address;
-  if (b_ips.includes(ip) && !w_ips.includes(ip)) {
-    return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
-  }
   const body = await req.json();
 
   if (!body.email || !body.password || !body.password2 || !body.code) {
@@ -560,4 +477,4 @@ function tryParseURL(url: string) : URL | null {
 }
 
 const readyTimeMs = performance.now() - now;
-log.success(`Webserver started on port ${serverPort} (${_https ? "HTTPS" : "HTTP"}) - Ready in ${(readyTimeMs / 1000).toFixed(3)}s (${readyTimeMs.toFixed(0)}ms)`);
+log.success(`Webserver started on internal port ${serverPort} (HTTP, 127.0.0.1) - Ready in ${(readyTimeMs / 1000).toFixed(3)}s (${readyTimeMs.toFixed(0)}ms)`);
