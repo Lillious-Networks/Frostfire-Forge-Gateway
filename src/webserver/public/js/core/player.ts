@@ -5,7 +5,6 @@ import { updateFriendOnlineStatus, updateFriendsList } from "./friends.js";
 import { getCameraX, getCameraY, setCameraX, setCameraY, getWeatherType } from "./renderer.js";
 import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, positionText } from "./ui.js";
 import { updateXp } from "./xp.js";
-import  { typingImage } from "./images.js";
 import { getLines } from "./chat.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
@@ -91,7 +90,6 @@ async function createPlayer(data: any) {
     stats: data.stats,
     typing: false,
     typingTimeout: null as NodeJS.Timeout | null,
-    typingImage: typingImage,
     party: data.party || null,
     guild: data.guild || null,
     guild_name: data.guild_name || null,
@@ -116,30 +114,6 @@ async function createPlayer(data: any) {
     castingInterrupted: false,
     castingInterruptedProgress: undefined as number | undefined,
     showChat: function (context: CanvasRenderingContext2D) {
-
-      if (this.typing && this.typingImage) {
-
-        if (this.isStealth) {
-          context.globalAlpha = 0.8;
-        }
-
-        context.shadowColor = "black";
-        context.shadowBlur = 2;
-        context.shadowOffsetX = 0;
-        context.shadowOffsetY = 0;
-
-        context.drawImage(
-          this.typingImage,
-          this.renderPosition.x - this.typingImage.width / 1.5,
-          this.renderPosition.y - this.typingImage.height - 25,
-          this.typingImage.width / 1.5,
-          this.typingImage.height / 1.5
-        );
-
-        context.globalAlpha = 1;
-        context.shadowColor = "transparent";
-        context.shadowBlur = 0;
-      }
 
       if (this.chat) {
         if (this.chat.trim() !== "") {

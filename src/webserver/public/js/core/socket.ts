@@ -1964,18 +1964,18 @@ socket.onmessage = async (event) => {
     case "MOVEXY": {
       if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-        if (bytes.length < 9) break;
+        if (bytes.length < 11) break;
 
         const DIRECTION_MAP = [
           "up", "down", "left", "right",
           "upleft", "upright", "downleft", "downright"
         ];
 
-        const view = new DataView(bytes.buffer, bytes.byteOffset, 9);
-        const playerId = view.getUint16(1, true);
-        const x = view.getInt16(3, true);
-        const y = view.getInt16(5, true);
-        const dirStealth = bytes[7];
+        const view = new DataView(bytes.buffer, bytes.byteOffset, 11);
+        const playerId = view.getUint32(1, true);
+        const x = view.getInt16(5, true);
+        const y = view.getInt16(7, true);
+        const dirStealth = bytes[9];
         const direction = dirStealth & 0x0F;
         const stealth = (dirStealth >> 4) & 0x0F;
 
@@ -2082,11 +2082,11 @@ socket.onmessage = async (event) => {
           offset += 2;
 
           for (let i = 0; i < count; i++) {
-            if (offset + 2 > bytes.length) break;
+            if (offset + 4 > bytes.length) break;
 
-            const idView = new DataView(bytes.buffer, bytes.byteOffset + offset, 2);
-            const playerId = idView.getUint16(0, true);
-            offset += 2;
+            const idView = new DataView(bytes.buffer, bytes.byteOffset + offset, 4);
+            const playerId = idView.getUint32(0, true);
+            offset += 4;
 
             if (offset + 5 > bytes.length) break;
             const moveView = new DataView(bytes.buffer, bytes.byteOffset + offset, 5);
