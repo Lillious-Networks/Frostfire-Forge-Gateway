@@ -70,7 +70,7 @@ class NpcEditorBridge {
       case "npcListUpdate": this.npcs = msg.npcs || []; this.renderNpcList(); break;
       case "npcSelectUpdate": if (msg.npc) { this.selectedNpcId = msg.npc.id; this.selectedNpcData = msg.npc; this.populateForm(msg.npc); this.renderNpcList(); } break;
       case "particleOptions": this.availableParticles = msg.particles || []; this.renderParticleOptions(); break;
-      case "positionUpdate": if (this.selectedNpcId === msg.id) { const el = document.getElementById("ne-display-pos"); if (el) el.textContent = "(" + msg.x + ", " + msg.y + ")"; } break;
+      case "positionUpdate": if (this.selectedNpcId === msg.id) { const el = document.getElementById("ne-display-pos"); if (el) el.textContent = "(" + msg.x + ", " + msg.y + ")"; if (this.selectedNpcData) { if (!this.selectedNpcData.position) this.selectedNpcData.position = {}; this.selectedNpcData.position.x = msg.x; this.selectedNpcData.position.y = msg.y; } } break;
       case "close": window.close(); break;
     }
   }
