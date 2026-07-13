@@ -247,6 +247,173 @@ const player = {
     )) as any;
     return response[0]?.email;
   },
+  getProfile: async (username: string) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const response = (await query(
+      "SELECT username, email, totp_enabled, webauthn_enabled, webauthn_credentials, last_login, require_webauthn, require_totp, require_email_2fa FROM accounts WHERE username = ?",
+      [username]
+    )) as any[];
+    if (!response || response.length === 0) return null;
+    return response[0];
+  },
+  updateEmail: async (username: string, email: string) => {
+    if (!username || !email) return;
+    username = username.toLowerCase();
+    email = email.toLowerCase();
+    const response = await query(
+      "UPDATE accounts SET email = ? WHERE username = ?",
+      [email, username]
+    );
+    return response;
+  },
+  changePassword: async (username: string, newPasswordHash: string) => {
+    if (!username || !newPasswordHash) return;
+    username = username.toLowerCase();
+    const response = await query(
+      "UPDATE accounts SET password_hash = ? WHERE username = ?",
+      [newPasswordHash, username]
+    );
+    return response;
+  },
+  getTOTPSecret: async (username: string) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const response = (await query(
+      "SELECT totp_secret, totp_enabled FROM accounts WHERE username = ?",
+      [username]
+    )) as any[];
+    if (!response || response.length === 0) return null;
+    return response[0];
+  },
+  setTOTPSecret: async (username: string, secret: string) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const response = await query(
+      "UPDATE accounts SET totp_secret = ?, totp_enabled = 0 WHERE username = ?",
+      [secret, username]
+    );
+    return response;
+  },
+  enableTOTP: async (username: string) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const response = await query(
+      "UPDATE accounts SET totp_enabled = 1 WHERE username = ?",
+      [username]
+    );
+    return response;
+  },
+  disableTOTP: async (username: string) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const response = await query(
+      "UPDATE accounts SET totp_secret = NULL, totp_enabled = 0 WHERE username = ?",
+      [username]
+    );
+    return response;
+  },
+  getWebAuthnCredentials: async (username: string) => {
+    if (!username) return [];
+    username = username.toLowerCase();
+    const response = (await query(
+      "SELECT webauthn_credentials, webauthn_enabled FROM accounts WHERE username = ?",
+      [username]
+    )) as any[];
+    if (!response || response.length === 0) return [];
+    const row = response[0];
+    if (!row.webauthn_credentials) return [];
+    try {
+      const decoded = Buffer.from(row.webauthn_credentials, "base64").toString("utf-8");
+      const parsed = JSON.parse(decoded);
+      return parsed;
+    } catch {
+      return [];
+    }
+  },
+  addWebAuthnCredential: async (username: string, credential: { id: string; publicKey: string; name: string; createdAt: string }) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const existing = await player.getWebAuthnCredentials(username);
+    existing.push(credential);
+    const json = JSON.stringify(existing);
+    const encoded = Buffer.from(json).toString("base64");
+    const response = await query(
+      "UPDATE accounts SET webauthn_credentials = ?, webauthn_enabled = 1 WHERE username = ?",
+      [encoded, username]
+    );
+    if (!response) {
+      log.error(`Failed to store WebAuthn credential for ${username}`);
+    }
+    return response;
+  },
+  removeWebAuthnCredential: async (username: string, credentialId: string) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const existing = await player.getWebAuthnCredentials(username);
+    const filtered = existing.filter((c: any) => c.id !== credentialId);
+    const json = filtered.length > 0 ? JSON.stringify(filtered) : null;
+    const encoded = json ? Buffer.from(json).toString("base64") : null;
+    const enabled = filtered.length > 0 ? 1 : 0;
+    const response = await query(
+      "UPDATE accounts SET webauthn_credentials = ?, webauthn_enabled = ? WHERE username = ?",
+      [encoded, enabled, username]
+    );
+    return response;
+  },
+  hasTwoFactorEnabled: async (username: string) => {
+    if (!username) return false;
+    username = username.toLowerCase();
+    const response = (await query(
+      "SELECT totp_enabled, webauthn_enabled FROM accounts WHERE username = ?",
+      [username]
+    )) as any[];
+    if (!response || response.length === 0) return false;
+    return response[0].totp_enabled === 1 || response[0].webauthn_enabled === 1;
+  },
+  setTwoFactorPending: async (username: string, pending: boolean) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const response = await query(
+      "UPDATE accounts SET twofa_pending = ? WHERE username = ?",
+      [pending ? 1 : 0, username]
+    );
+    return response;
+  },
+  isTwoFactorPending: async (username: string) => {
+    if (!username) return false;
+    username = username.toLowerCase();
+    const response = (await query(
+      "SELECT twofa_pending FROM accounts WHERE username = ?",
+      [username]
+    )) as any[];
+    if (!response || response.length === 0) return false;
+    return response[0].twofa_pending === 1;
+  },
+  getTwoFactorRequirements: async (username: string) => {
+    if (!username) return { requireWebAuthn: false, requireTotp: false, requireEmail2FA: false };
+    username = username.toLowerCase();
+    const response = (await query(
+      "SELECT require_webauthn, require_totp, require_email_2fa, totp_enabled, webauthn_enabled FROM accounts WHERE username = ?",
+      [username]
+    )) as any[];
+    if (!response || response.length === 0) return { requireWebAuthn: false, requireTotp: false, requireEmail2FA: false };
+    return {
+      requireWebAuthn: response[0].require_webauthn === 1,
+      requireTotp: response[0].require_totp === 1,
+      requireEmail2FA: response[0].require_email_2fa === 1,
+    };
+  },
+  setTwoFactorRequirement: async (username: string, method: string, value: boolean) => {
+    if (!username) return;
+    username = username.toLowerCase();
+    const col = method === 'webauthn' ? 'require_webauthn' : method === 'totp' ? 'require_totp' : 'require_email_2fa';
+    const response = await query(
+      `UPDATE accounts SET ${col} = ? WHERE username = ?`,
+      [value ? 1 : 0, username]
+    );
+    return response;
+  },
 };
 
 export default player;

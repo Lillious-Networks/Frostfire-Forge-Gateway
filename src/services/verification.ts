@@ -1,4 +1,4 @@
-import sendEmail from "./email";
+import sendEmail, { buildEmailBody, buildCodeAction } from "./email";
 import log from "../modules/logger";
 import query from "../controllers/sqldatabase";
 
@@ -12,11 +12,15 @@ function verify(token: string, useremail: string, username: string): Promise<voi
                 useremail = useremail.toLowerCase();
                 username = username.toLowerCase();
 
-                const gameName = process.env.GAME_NAME || process.env.DOMAIN || "Game";
-                const subject = `Verify your account`;
+                const gameName = process.env.GAME_NAME || "Frostfire Forge";
+                const subject = "Verify your account";
                 const code = shuffle(token, 6);
 
-                const message = `<p style="font-size: 20px;"><p>${code}</p><br><p style="font-size:12px;">If you did not request this, <b>change your password immediately</b>.</p><a href="${process.env.DOMAIN}/forgot-password?email=${useremail}">Reset Password</a>`;
+                const message = buildEmailBody(
+                  "Verify Your Account",
+                  `Enter the code below to verify your account for <strong>${username}</strong>.`,
+                  buildCodeAction(code)
+                );
 
                 const emailResponse = await sendEmail(useremail, subject, gameName, message);
                 if (emailResponse !== "Email sent successfully") {
@@ -38,7 +42,7 @@ function verify(token: string, useremail: string, username: string): Promise<voi
     });
 }
 
-function shuffle(str: string, length: number) {
+export function shuffle(str: string, length: number) {
     length = length || 6;
     const arr = str.split("");
     let n = arr.length;

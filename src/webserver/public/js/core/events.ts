@@ -372,6 +372,12 @@ document
   });
 
 document
+  .getElementById("pause-menu-action-profile")
+  ?.addEventListener("click", () => {
+    window.open("/manage-profile", "_blank");
+  });
+
+document
   .getElementById("pause-menu-action-exit")
   ?.addEventListener("click", () => {
     sendRequest({

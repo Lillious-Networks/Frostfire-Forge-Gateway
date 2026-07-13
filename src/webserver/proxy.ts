@@ -72,8 +72,10 @@ Bun.serve({
       }
     }
 
-    if (process.env.DOMAIN && process.env.DOMAIN !== "http://localhost" && process.env.DOMAIN?.replace(/https?:\/\//, "") !== url.host) {
-      log.debug(`Domain mismatch: expected "${process.env.DOMAIN?.replace(/https?:\/\//, "")}", got "${url.host}"`);
+    const domainHost = process.env.DOMAIN?.replace(/https?:\/\//, "") || "";
+    const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1" || domainHost === "localhost" || domainHost === "127.0.0.1";
+    if (!isLocalhost && domainHost && url.host !== domainHost) {
+      log.debug(`Domain mismatch: expected "${domainHost}", got "${url.host}"`);
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
     }
 

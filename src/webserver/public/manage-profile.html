@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <link rel="icon" type="image/ico" href="./img/icons/favicon.ico">
+        <meta charset="utf-8">
+        <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="theme-color" content="#000000">
+        <title>Frostfire Forge - Profile</title>
+        <link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="css/frontend.css">
+        <script src="./js/web/notification.js"></script>
+        <script defer src="./js/web/manageprofile.js"></script>
+        <style>
+            .page {
+                max-width: 840px;
+                width: 100%;
+                margin: 2rem 1rem;
+            }
+
+            .page-header {
+                margin-bottom: 2rem;
+            }
+            .page-header h1 {
+                font-family: 'Clash Display', sans-serif;
+                font-size: 2rem;
+                font-weight: 700;
+                margin-bottom: 0.35rem;
+            }
+            .page-header p {
+                font-size: 0.9rem;
+                color: var(--color-text-muted);
+            }
+
+            .profile-card {
+                background: rgba(30, 41, 59, 0.8);
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius);
+                padding: 2rem;
+                backdrop-filter: blur(10px);
+                margin-bottom: 1.5rem;
+            }
+
+            .avatar-row {
+                display: flex;
+                align-items: center;
+                gap: 1.25rem;
+            }
+            .avatar {
+                width: 56px;
+                height: 56px;
+                border-radius: 50%;
+                background: rgba(34, 197, 94, 0.12);
+                border: 1px solid rgba(34, 197, 94, 0.25);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .avatar svg {
+                width: 26px;
+                height: 26px;
+                color: var(--color-primary);
+            }
+            .avatar-details {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+            .avatar-details .col {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+            }
+            .avatar-details .label {
+                font-size: 0.7rem;
+                font-weight: 600;
+                color: var(--color-text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+            }
+            .avatar-details .value {
+                font-size: 0.95rem;
+                color: var(--color-text);
+                font-weight: 600;
+            }
+            .avatar-details .value-muted {
+                font-family: 'Space Mono', monospace;
+                font-size: 0.78rem;
+                color: var(--color-text-muted);
+            }
+            .email-inline {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+            }
+
+            .reveal-email-btn {
+                background: none;
+                border: 1px solid var(--color-border);
+                color: var(--color-text-muted);
+                cursor: pointer;
+                padding: 3px 5px;
+                border-radius: 4px;
+                display: inline-flex;
+                align-items: center;
+                transition: var(--transition);
+            }
+            .reveal-email-btn:hover {
+                border-color: var(--color-primary);
+                color: var(--color-primary);
+            }
+
+            .card-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+            .card-grid:last-child {
+                margin-bottom: 0;
+            }
+
+            .setting-card {
+                background: rgba(30, 41, 59, 0.8);
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius);
+                padding: 1.75rem;
+                backdrop-filter: blur(10px);
+            }
+            .setting-card h3 {
+                font-family: 'Clash Display', sans-serif;
+                font-size: 0.95rem;
+                font-weight: 600;
+                color: var(--color-text);
+                margin-bottom: 0.35rem;
+            }
+            .setting-card .desc {
+                font-size: 0.78rem;
+                color: var(--color-text-muted);
+                margin-bottom: 1.25rem;
+                line-height: 1.5;
+            }
+
+            .form-group {
+                display: flex;
+                flex-direction: column;
+                gap: 0.45rem;
+                margin-bottom: 1rem;
+            }
+            label {
+                font-size: 0.75rem;
+                font-weight: 600;
+                color: var(--color-text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+            }
+            input[type="email"],
+            input[type="text"],
+            input[type="password"] {
+                background: rgba(15, 23, 42, 0.5);
+                border: 1px solid var(--color-border);
+                color: var(--color-text);
+                padding: 0.8rem 0.95rem;
+                border-radius: var(--radius);
+                font-family: 'Space Mono', monospace;
+                font-size: 0.8rem;
+                transition: var(--transition);
+            }
+            input:focus {
+                outline: none;
+                border-color: var(--color-primary);
+                box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.08);
+            }
+            input::placeholder {
+                color: var(--color-text-muted);
+            }
+
+            .btn {
+                padding: 0.7rem 1.25rem;
+                background: var(--color-primary);
+                color: var(--color-bg);
+                border: none;
+                border-radius: var(--radius);
+                font-family: 'Clash Display', sans-serif;
+                font-size: 0.78rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                cursor: pointer;
+                transition: var(--transition);
+            }
+            .btn:hover {
+                background: var(--color-primary-dark);
+                transform: translateY(-1px);
+            }
+            .btn:active {
+                transform: translateY(0);
+            }
+
+            .btn-outline {
+                padding: 0.55rem 1rem;
+                background: transparent;
+                color: var(--color-text);
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius);
+                font-family: 'Clash Display', sans-serif;
+                font-size: 0.72rem;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                cursor: pointer;
+                transition: var(--transition);
+            }
+            .btn-outline:hover {
+                border-color: var(--color-primary);
+                color: var(--color-primary);
+            }
+            .btn-outline-danger {
+                color: var(--color-error);
+            }
+            .btn-outline-danger:hover {
+                border-color: var(--color-error);
+                color: var(--color-error);
+            }
+
+            .badge {
+                display: inline-block;
+                padding: 0.15rem 0.5rem;
+                border-radius: 3px;
+                font-size: 0.65rem;
+                font-weight: 600;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+            }
+            .badge-on {
+                background: rgba(34, 197, 94, 0.12);
+                color: var(--color-primary);
+            }
+            .badge-off {
+                background: rgba(148, 163, 184, 0.12);
+                color: #94a3b8;
+            }
+
+            .qrcode {
+                text-align: center;
+                margin: 0.75rem 0;
+            }
+            .qrcode img {
+                width: 150px;
+                height: 150px;
+                border-radius: var(--radius);
+                border: 1px solid var(--color-border);
+            }
+
+            .key-item {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 0.55rem 0.75rem;
+                background: rgba(15, 23, 42, 0.4);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: var(--radius);
+                margin-bottom: 0.4rem;
+            }
+            .key-item .key-label {
+                font-weight: 600;
+                font-size: 0.8rem;
+                color: var(--color-text);
+            }
+            .key-item .key-meta {
+                font-size: 0.68rem;
+                color: var(--color-text-muted);
+                margin-top: 0.1rem;
+            }
+
+            .card-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 1.25rem;
+                padding-bottom: 0.6rem;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            }
+            .card-header h3 {
+                font-family: 'Clash Display', sans-serif;
+                font-size: 0.95rem;
+                font-weight: 600;
+                color: var(--color-text);
+                margin: 0;
+            }
+            .card-header-checkbox {
+                width: 18px;
+                height: 18px;
+                accent-color: var(--color-primary);
+                cursor: pointer;
+                flex-shrink: 0;
+            }
+
+            .hidden {
+                display: none !important;
+            }
+
+            .msg {
+                padding: 0.55rem 0.8rem;
+                border-radius: var(--radius);
+                font-size: 0.75rem;
+                margin-top: 0.75rem;
+                line-height: 1.4;
+            }
+            .msg-ok {
+                background: rgba(34, 197, 94, 0.1);
+                color: var(--color-primary);
+                border: 1px solid rgba(34, 197, 94, 0.15);
+            }
+            .msg-err {
+                background: rgba(239, 68, 68, 0.1);
+                color: #fca5a5;
+                border: 1px solid rgba(239, 68, 68, 0.15);
+            }
+
+            .empty-note {
+                color: var(--color-text-muted);
+                font-size: 0.75rem;
+                padding: 0.4rem 0;
+            }
+
+            .home-button {
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                width: 40px;
+                height: 40px;
+                background: rgba(30, 41, 59, 0.85);
+                border: 1px solid var(--color-border);
+                border-radius: 50%;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: var(--transition);
+                z-index: 10;
+                font-size: 1.2rem;
+                color: var(--color-primary);
+            }
+            .home-button:hover {
+                border-color: var(--color-primary);
+            }
+
+            .row-actions {
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+                flex-wrap: wrap;
+            }
+
+            .modal-overlay {
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0, 0, 0, 0.6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 100;
+                backdrop-filter: blur(4px);
+            }
+            .modal-box {
+                background: rgba(30, 41, 59, 0.98);
+                border: 1px solid var(--color-border);
+                border-radius: var(--radius);
+                padding: 2rem;
+                width: 380px;
+                max-width: 90vw;
+                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+            }
+            .modal-box h3 {
+                font-family: 'Clash Display', sans-serif;
+                font-size: 1.05rem;
+                font-weight: 600;
+                margin-bottom: 1.25rem;
+            }
+            .modal-box .form-group {
+                margin-bottom: 1.25rem;
+            }
+            .modal-actions {
+                display: flex;
+                gap: 0.75rem;
+            }
+
+            .security-banner {
+                background: rgba(239, 68, 68, 0.12);
+                border: 1px solid rgba(239, 68, 68, 0.25);
+                color: #fca5a5;
+                padding: 0.75rem 1rem;
+                border-radius: var(--radius);
+                margin-bottom: 1.5rem;
+                font-size: 0.82rem;
+                text-align: center;
+                line-height: 1.5;
+            }
+            .security-banner strong {
+                color: #f87171;
+            }
+
+            .checkbox-row {
+                display: flex;
+                align-items: center;
+                gap: 0.65rem;
+                padding: 0.65rem 0;
+                cursor: pointer;
+                font-size: 0.85rem;
+                color: var(--color-text);
+                text-transform: none;
+                letter-spacing: normal;
+                font-weight: 400;
+            }
+            .checkbox-row + .checkbox-row {
+                border-top: 1px solid rgba(255, 255, 255, 0.05);
+            }
+            .checkbox-row input[type="checkbox"] {
+                width: 16px;
+                height: 16px;
+                accent-color: var(--color-primary);
+                cursor: pointer;
+            }
+
+            @media (max-width: 700px) {
+                .card-grid {
+                    grid-template-columns: 1fr;
+                }
+                .avatar-row {
+                    flex-direction: column;
+                    align-items: flex-start;
+                }
+                .avatar-details {
+                    gap: 0.75rem;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="home-button" onclick="location.href='/'">&larr;</div>
+            <div class="page">
+
+                <div class="page-header">
+                    <h1>Profile</h1>
+                    <p>Manage your account and security settings</p>
+                </div>
+
+                <div id="profile-loading" class="profile-card">Loading...</div>
+
+                <div id="reset-password-section" class="hidden">
+                    <div class="profile-card">
+                        <div class="page-header" style="margin-bottom:0;">
+                            <h1>Reset Password</h1>
+                            <p>Enter a new password for <strong id="reset-email-display"></strong></p>
+                        </div>
+                        <form onsubmit="return false" style="margin-top:1.5rem;" autocomplete="on">
+                        <div class="form-group">
+                            <label for="reset-new-password">New Password</label>
+                            <div style="display:flex;gap:0.5rem;">
+                                <input type="password" id="reset-new-password" placeholder="New password" spellcheck="false" autocomplete="new-password" style="flex:1;">
+                                <button type="button" id="reset-generate-password-btn" class="btn-outline" title="Generate secure password" style="white-space:nowrap;flex-shrink:0;">Generate</button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="reset-confirm-password">Confirm Password</label>
+                            <input type="password" id="reset-confirm-password" placeholder="Confirm new password" spellcheck="false" autocomplete="new-password">
+                        </div>
+                        <div class="form-group hidden" id="reset-totp-group">
+                            <label for="reset-totp">Authenticator Code</label>
+                            <input type="text" id="reset-totp" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                        </div>
+                        <button type="button" id="reset-password-btn" class="btn">Reset Password</button>
+                        <div id="reset-message"></div>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="profile-content" class="hidden">
+
+                    <div id="security-banner" class="security-banner hidden">
+                        <strong>Your account is not protected by two-factor authentication.</strong> Enable at least one method above to secure your account.
+                    </div>
+
+                    <div class="profile-card">
+                        <div class="avatar-row">
+                            <div class="avatar">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            </div>
+                            <div class="avatar-details">
+                                <div class="col">
+                                    <span class="label">Username</span>
+                                    <span class="value" id="profile-username">-</span>
+                                </div>
+                                <div class="col">
+                                    <span class="label">Email</span>
+                                    <span class="email-inline">
+                                        <span class="value-muted" id="profile-email">-</span>
+                                        <button id="reveal-email-btn" class="reveal-email-btn" title="Reveal email">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        </button>
+                                    </span>
+                                </div>
+                                <div class="col">
+                                    <span class="label">Last Login</span>
+                                    <span class="value-muted" id="profile-lastlogin">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-grid">
+                        <div class="setting-card">
+                            <div class="card-header">
+                                <h3>Email Address</h3>
+                                <input type="checkbox" class="card-header-checkbox" id="require-email" data-method="email" title="Required for sign-in">
+                            </div>
+                            <p class="desc">Update the email address associated with your account.</p>
+                            <div class="form-group">
+                                <label for="new-email">New Email</label>
+                                <input type="email" id="new-email" placeholder="your@email.com" spellcheck="false" autocomplete="off">
+                            </div>
+                            <button type="button" id="change-email-btn" class="btn">Update Email</button>
+                            <div id="email-message"></div>
+                        </div>
+
+                        <div class="setting-card">
+                            <h3>Password</h3>
+                            <p class="desc">Must be 8-20 characters with at least one uppercase letter, one lowercase letter, one number, and one special character (!@#$%^&amp;*...).</p>
+                            <form onsubmit="return false" autocomplete="on">
+                            <div class="form-group">
+                                <label for="current-password">Current Password</label>
+                                <input type="password" id="current-password" placeholder="Current password" spellcheck="false" autocomplete="current-password">
+                            </div>
+                            <div class="form-group">
+                                <label for="new-password">New Password</label>
+                                <div style="display:flex;gap:0.5rem;">
+                                    <input type="password" id="new-password" placeholder="New password" spellcheck="false" autocomplete="new-password" style="flex:1;">
+                                    <button type="button" id="generate-password-btn" class="btn-outline" title="Generate secure password" style="white-space:nowrap;flex-shrink:0;">Generate</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="confirm-password">Confirm Password</label>
+                                <input type="password" id="confirm-password" placeholder="Confirm new password" spellcheck="false" autocomplete="new-password">
+                            </div>
+                            <button type="submit" id="change-password-btn" class="btn">Update Password</button>
+                            <div id="password-message"></div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card-grid">
+                        <div class="setting-card">
+                            <div class="card-header">
+                                <h3>Authenticator App</h3>
+                                <input type="checkbox" class="card-header-checkbox" id="require-totp" data-method="totp" title="Required for sign-in">
+                            </div>
+                            <p class="desc">Use an authenticator app to generate verification codes for two-factor authentication.</p>
+                            <div class="row-actions">
+                                <span id="totp-badge" class="badge badge-off">Disabled</span>
+                                <button type="button" id="totp-enable-btn" class="btn-outline">Set Up</button>
+                                <button type="button" id="totp-disable-btn" class="btn-outline btn-outline-danger hidden">Disable</button>
+                            </div>
+                            <div id="totp-message"></div>
+                        </div>
+
+                        <div class="setting-card">
+                            <div class="card-header">
+                                <h3>Security Keys</h3>
+                                <input type="checkbox" class="card-header-checkbox" id="require-webauthn" data-method="webauthn" title="Required for sign-in">
+                            </div>
+                            <p class="desc">Register a FIDO2 security key for two-factor authentication.</p>
+                            <div class="row-actions" style="margin-bottom:0.75rem;">
+                                <span id="webauthn-badge" class="badge badge-off">No keys</span>
+                            </div>
+                            <div id="webauthn-keys-list">
+                                <div class="empty-note">No security keys registered</div>
+                            </div>
+                            <button type="button" id="webauthn-add-btn" class="btn-outline" style="margin-top:0.5rem;">Add Key</button>
+                            <div id="webauthn-message"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div id="reveal-email-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3>Verify Password</h3>
+                <p style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:1rem;">Enter your password to view your email.</p>
+                <form onsubmit="return false">
+                <div class="form-group">
+                    <label for="reveal-password">Password</label>
+                    <input type="password" id="reveal-password" placeholder="Password" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="reveal-email-submit" class="btn">Reveal</button>
+                    <button type="button" id="reveal-email-cancel" class="btn-outline">Cancel</button>
+                </div>
+                <div id="reveal-email-message"></div>
+                </form>
+            </div>
+        </div>
+
+        <div id="password-2fa-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3 id="password-2fa-title">Verify Identity</h3>
+                <div class="form-group hidden" id="password-2fa-totp">
+                    <label for="password-2fa-totp-input">Authenticator Code</label>
+                    <input type="text" id="password-2fa-totp-input" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="form-group hidden" id="password-2fa-email">
+                    <label for="password-2fa-email-input">Verification Code</label>
+                    <input type="text" id="password-2fa-email-input" placeholder="Check your email" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="password-2fa-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="password-2fa-submit" class="btn">Verify</button>
+                    <button type="button" id="password-2fa-cancel" class="btn-outline">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="email-2fa-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3 id="email-2fa-title">Verify Email Change</h3>
+                <p style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:1rem;line-height:1.5;" id="email-2fa-desc"></p>
+                <form onsubmit="return false">
+                <div class="form-group hidden" id="email-2fa-password">
+                    <label for="email-2fa-password-input">Account Password</label>
+                    <input type="password" id="email-2fa-password-input" placeholder="Your password" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="form-group hidden" id="email-2fa-totp">
+                    <label for="email-2fa-totp-input">Authenticator Code</label>
+                    <input type="text" id="email-2fa-totp-input" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="form-group hidden" id="email-2fa-code">
+                    <label for="email-2fa-code-input">Verification Code</label>
+                    <input type="text" id="email-2fa-code-input" placeholder="6-digit code" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="email-2fa-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="email-2fa-submit" class="btn">Continue</button>
+                    <button type="button" id="email-2fa-cancel" class="btn-outline">Cancel</button>
+                </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="webauthn-key-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3>Register Security Key</h3>
+                <form onsubmit="return false">
+                <div class="form-group">
+                    <label for="webauthn-key-name">Key Name</label>
+                    <input type="text" id="webauthn-key-name" placeholder="My YubiKey" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="webauthn-key-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="webauthn-register-btn" class="btn">Register Key</button>
+                    <button type="button" id="webauthn-cancel-btn" class="btn-outline">Cancel</button>
+                </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="totp-setup-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3 id="totp-setup-title">Set Up Authenticator</h3>
+                <form onsubmit="return false">
+                <div id="totp-setup-password">
+                    <div class="form-group">
+                        <label for="totp-setup-password-input">Account Password</label>
+                        <input type="password" id="totp-setup-password-input" placeholder="Your password" spellcheck="false" autocomplete="off">
+                    </div>
+                    <button type="button" id="totp-setup-password-btn" class="btn">Continue</button>
+                    <button type="button" id="totp-setup-cancel-btn" class="btn-outline">Cancel</button>
+                </div>
+                <div id="totp-setup-qr" class="hidden">
+                    <div class="qrcode" style="text-align:center;margin:0.75rem 0;">
+                        <img id="totp-qr" src="" alt="QR Code">
+                    </div>
+                    <div class="form-group">
+                        <label for="totp-code">Verification Code</label>
+                        <input type="text" id="totp-code" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                    </div>
+                    <button type="button" id="totp-verify-btn" class="btn">Verify &amp; Enable</button>
+                    <button type="button" id="totp-qr-cancel-btn" class="btn-outline">Cancel</button>
+                </div>
+                <div id="totp-setup-message"></div>
+                </form>
+            </div>
+        </div>
+
+        <div id="totp-remove-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3>Remove Authenticator</h3>
+                <p style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:1rem;">Enter your password to remove your authenticator app.</p>
+                <form onsubmit="return false">
+                <div class="form-group">
+                    <label for="totp-remove-password">Account Password</label>
+                    <input type="password" id="totp-remove-password" placeholder="Your password" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="totp-remove-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="totp-remove-submit" class="btn btn-danger">Remove</button>
+                    <button type="button" id="totp-remove-cancel" class="btn-outline">Cancel</button>
+                </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="remove-key-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3>Remove Security Key</h3>
+                <p style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:1rem;" id="remove-key-desc"></p>
+                <form onsubmit="return false">
+                <div class="form-group">
+                    <label for="remove-key-password">Account Password</label>
+                    <input type="password" id="remove-key-password" placeholder="Your password" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="form-group hidden" id="remove-key-totp">
+                    <label for="remove-key-totp-input">Authenticator Code</label>
+                    <input type="text" id="remove-key-totp-input" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="remove-key-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="remove-key-submit" class="btn btn-danger">Remove Key</button>
+                    <button type="button" id="remove-key-cancel" class="btn-outline">Cancel</button>
+                </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="disable-totp-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3>Disable Authenticator Requirement</h3>
+                <p style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:1rem;">Enter your authenticator code to disable this requirement.</p>
+                <form onsubmit="return false">
+                <div class="form-group">
+                    <label for="disable-totp-code">Authenticator Code</label>
+                    <input type="text" id="disable-totp-code" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="disable-totp-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="disable-totp-submit" class="btn">Disable</button>
+                    <button type="button" id="disable-totp-cancel" class="btn-outline">Cancel</button>
+                </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="disable-email-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+                <h3>Disable Email Requirement</h3>
+                <p style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:1rem;">A verification code was sent to your email. Enter it below.</p>
+                <form onsubmit="return false">
+                <div class="form-group">
+                    <label for="disable-email-code">Verification Code</label>
+                    <input type="text" id="disable-email-code" placeholder="000000" maxlength="6" spellcheck="false" autocomplete="off">
+                </div>
+                <div id="disable-email-message"></div>
+                <div class="modal-actions">
+                    <button type="button" id="disable-email-submit" class="btn">Disable</button>
+                    <button type="button" id="disable-email-cancel" class="btn-outline">Cancel</button>
+                </div>
+                </form>
+            </div>
+        </div>
+    </body>
+</html>

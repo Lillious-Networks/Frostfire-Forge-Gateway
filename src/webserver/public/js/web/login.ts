@@ -19,10 +19,15 @@ const login_listener = async () => {
             password: password.value
         }),
     });
+
     if (response.status === 200) {
-        window.Notify('success', 'Email sent successfully');
-        passwordForm.innerHTML =
-        `
+        const body = await response.json();
+        if (body.requires2FA) {
+            window.location.href = '/2fa-challenge';
+            return;
+        }
+        window.Notify('success', body.message);
+        passwordForm.innerHTML = `
             <label for="2fa">Code</label>
             <input type="text" id="code" name="code" placeholder="123456" spellcheck="false" autocomplete="off">
         `
@@ -50,6 +55,15 @@ const verify_listener = async () => {
     });
     if (response.status === 301 || response.type === 'opaqueredirect') {
         window.location.href = '/realm-selection';
+    } else if (response.status === 200) {
+        const body = await response.json();
+        if (body.requires2FA) {
+            window.location.href = '/2fa-challenge';
+        } else if (body.verified) {
+            window.location.href = '/realm-selection';
+        } else {
+            window.Notify('error', body.message || 'Verification failed');
+        }
     } else {
         const body = await response.json();
         window.Notify('error', body.message);
