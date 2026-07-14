@@ -326,8 +326,11 @@ async function authenticate(req: Request) {
 
   if (isAccountVerification) {
     await query("UPDATE accounts SET token = NULL WHERE username = ?", [username]);
+    await player.setTwoFactorPending(username, false);
     return new Response(JSON.stringify({ emailVerified: true }), { status: 200 });
   }
+
+  await player.setTwoFactorPending(username, false);
 
   const has2FA = await getRequiredLoginMethod(username);
 
@@ -468,6 +471,7 @@ async function login(req: Request, server: any) {
       if (result instanceof Error) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
+      await player.setTwoFactorPending(username, true);
       return new Response(JSON.stringify({ message: "Account not verified. Check your email.", code: "unverified" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
     }
 
@@ -476,6 +480,7 @@ async function login(req: Request, server: any) {
       if (result instanceof Error) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
+      await player.setTwoFactorPending(username, true);
       return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
     }
 
