@@ -27,8 +27,10 @@ const register_listener = async () => {
   if (response.status === 200) {
       window.Notify('success', 'Verification email sent');
       registerForm.innerHTML = `
-          <label for="2fa">Verification Code</label>
-          <input type="text" id="code" name="code" placeholder="123456" spellcheck="false" autocomplete="off">
+          <div class="form-group">
+              <label for="2fa">Verification Code</label>
+              <input type="text" id="code" name="code" placeholder="123456" spellcheck="false" autocomplete="off">
+          </div>
       `
       email.disabled = true;
       username.disabled = true;

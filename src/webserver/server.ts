@@ -406,7 +406,7 @@ async function register(req: Request, server: any) {
     if (result instanceof Error) {
       return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
     }
-    return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200 });
+    return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
   } catch (error) {
     return new Response(JSON.stringify({ message: "Failed to register", error: error instanceof Error ? error.message : "Unknown error" }), { status: 500 });
   }
