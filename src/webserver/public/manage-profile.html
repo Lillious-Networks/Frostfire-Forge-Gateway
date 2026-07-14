@@ -656,16 +656,29 @@
 
         <div id="webauthn-key-modal" class="modal-overlay hidden">
             <div class="modal-box">
-                <h3>Register Security Key</h3>
+                <h3 id="webauthn-key-title">Register Security Key</h3>
                 <form onsubmit="return false">
-                <div class="form-group">
-                    <label for="webauthn-key-name">Key Name</label>
-                    <input type="text" id="webauthn-key-name" placeholder="My YubiKey" spellcheck="false" autocomplete="off">
+                <div id="webauthn-password-step">
+                    <div class="form-group">
+                        <label for="webauthn-password">Account Password</label>
+                        <input type="password" id="webauthn-password" placeholder="Your password" spellcheck="false" autocomplete="off">
+                    </div>
+                    <div id="webauthn-key-message"></div>
+                    <div class="modal-actions">
+                        <button type="button" id="webauthn-password-btn" class="btn">Continue</button>
+                        <button type="button" id="webauthn-cancel-btn" class="btn-outline">Cancel</button>
+                    </div>
                 </div>
-                <div id="webauthn-key-message"></div>
-                <div class="modal-actions">
-                    <button type="button" id="webauthn-register-btn" class="btn">Register Key</button>
-                    <button type="button" id="webauthn-cancel-btn" class="btn-outline">Cancel</button>
+                <div id="webauthn-name-step" class="hidden">
+                    <div class="form-group">
+                        <label for="webauthn-key-name">Key Name</label>
+                        <input type="text" id="webauthn-key-name" placeholder="My YubiKey" spellcheck="false" autocomplete="off">
+                    </div>
+                    <div id="webauthn-step-message"></div>
+                    <div class="modal-actions">
+                        <button type="button" id="webauthn-register-btn" class="btn">Register Key</button>
+                        <button type="button" id="webauthn-name-cancel-btn" class="btn-outline">Cancel</button>
+                    </div>
                 </div>
                 </form>
             </div>

@@ -844,7 +844,7 @@ async function handleSetupTOTP(req: Request) {
 
   const issuer = process.env.GAME_NAME || "Frostfire Forge";
   const uri = generateTotpUri(secret, username, issuer);
-  const qrUrl = generateQRDataUri(uri);
+  const qrUrl = await generateQRDataUri(uri);
 
   return new Response(JSON.stringify({ qrUrl, uri }), { status: 200, headers: { "Content-Type": "application/json" } });
 }
@@ -928,6 +928,18 @@ async function handleRegisterWebAuthn(req: Request) {
   const username = await getUsernameFromToken(req);
   if (!username) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
+  }
+
+  const body = await req.json();
+  const { password } = body;
+
+  if (!password) {
+    return new Response(JSON.stringify({ message: "Password is required" }), { status: 400 });
+  }
+
+  const pwdCheck = await player.login(username, password);
+  if (!pwdCheck) {
+    return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
   }
 
   const { rpId } = getRequestOrigin(req);
@@ -1016,24 +1028,23 @@ async function handleRemoveWebAuthn(req: Request) {
   const totpData = await player.getTOTPSecret(username) as any;
   const hasTOTP = totpData?.totp_enabled === 1;
 
-  if (hasTOTP || await isEmail2FARequired(username)) {
-    if (hasTOTP) {
-      if (!body.totp) {
-        return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
-      }
-      if (!totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-        return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-      }
-    } else if (body.emailCode) {
-      const result = await query(
-        "SELECT verification_code FROM accounts WHERE username = ?",
-        [username]
-      ) as any[];
-      if (!result.length || result[0].verification_code !== body.emailCode) {
-        return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
-      }
-      await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
-    } else {
+  if (hasTOTP) {
+    if (!body.totp) {
+      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
+    }
+    if (!totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
+      return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
+    }
+  } else if (body.emailCode) {
+    const result = await query(
+      "SELECT verification_code FROM accounts WHERE username = ?",
+      [username]
+    ) as any[];
+    if (!result.length || result[0].verification_code !== body.emailCode) {
+      return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
+    }
+    await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
+  } else {
       const useremail = await player.getEmail(username);
       const code = randomBytes(6).substring(0, 6).toUpperCase();
       await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
@@ -1049,7 +1060,6 @@ async function handleRemoveWebAuthn(req: Request) {
 
       return new Response(JSON.stringify({ requiresEmail: true, message: "Verification email sent" }), { status: 200 });
     }
-  }
 
   await player.removeWebAuthnCredential(username, credentialId);
   const credentials = await player.getWebAuthnCredentials(username);

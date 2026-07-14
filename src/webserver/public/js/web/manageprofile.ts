@@ -602,11 +602,11 @@ function updateCheckboxStates(profile?: any) {
     const webauthnKeys = profile.webauthn_credentials || [];
     cbWebAuthn.disabled = webauthnKeys.length === 0;
     cbTotp.disabled = !profile.totp_enabled;
-    cbEmail.disabled = !profile.global_2fa_enabled;
+    cbEmail.disabled = false;
   } else {
     cbWebAuthn.disabled = document.querySelectorAll('.key-item').length === 0;
     cbTotp.disabled = !totpEnabled;
-    cbEmail.disabled = !requireEmail2FA;
+    cbEmail.disabled = false;
   }
 }
 
@@ -949,15 +949,49 @@ document.getElementById('totp-remove-submit')?.addEventListener('click', async (
 });
 
 // ========== WebAuthn ==========
+let pendingWebAuthnPassword = '';
+
 document.getElementById('webauthn-add-btn')?.addEventListener('click', () => {
+  pendingWebAuthnPassword = '';
+  document.getElementById('webauthn-password-step')!.classList.remove('hidden');
+  document.getElementById('webauthn-name-step')!.classList.add('hidden');
+  (document.getElementById('webauthn-password') as HTMLInputElement).value = '';
   document.getElementById('webauthn-key-modal')!.classList.remove('hidden');
-  (document.getElementById('webauthn-key-name') as HTMLInputElement).value = '';
-  document.getElementById('webauthn-key-name')?.focus();
+  document.getElementById('webauthn-password')?.focus();
 });
 
 document.getElementById('webauthn-cancel-btn')?.addEventListener('click', () => {
   document.getElementById('webauthn-key-modal')!.classList.add('hidden');
-  (document.getElementById('webauthn-key-name') as HTMLInputElement).value = '';
+});
+
+document.getElementById('webauthn-name-cancel-btn')?.addEventListener('click', () => {
+  document.getElementById('webauthn-key-modal')!.classList.add('hidden');
+});
+
+document.getElementById('webauthn-password-btn')?.addEventListener('click', async () => {
+  const password = (document.getElementById('webauthn-password') as HTMLInputElement).value;
+  if (!password) {
+    window.Notify('error', 'Password is required');
+    return;
+  }
+
+  const token = getToken();
+  const response = await fetch('/api/profile/register-webauthn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ password }),
+  });
+
+  if (response.ok) {
+    pendingWebAuthnPassword = password;
+    document.getElementById('webauthn-password-step')!.classList.add('hidden');
+    document.getElementById('webauthn-name-step')!.classList.remove('hidden');
+    (document.getElementById('webauthn-key-name') as HTMLInputElement).value = '';
+    document.getElementById('webauthn-key-name')?.focus();
+  } else {
+    const body = await response.json();
+    window.Notify('error', body.message);
+  }
 });
 
 document.getElementById('webauthn-register-btn')?.addEventListener('click', async () => {
@@ -965,14 +999,15 @@ document.getElementById('webauthn-register-btn')?.addEventListener('click', asyn
   const token = getToken();
 
   if (!window.isSecureContext || !navigator?.credentials) {
-    window.Notify('error', 'WebAuthn requires HTTPS or localhost. Your browser supports it but this page must be served over a secure connection.');
+    window.Notify('error', 'WebAuthn requires HTTPS or localhost');
     return;
   }
 
   try {
     const optionsResponse = await fetch('/api/profile/register-webauthn', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ password: pendingWebAuthnPassword }),
     });
     if (!optionsResponse.ok) {
       const err = await optionsResponse.json();
@@ -1162,7 +1197,7 @@ document.getElementById('remove-key-submit')?.addEventListener('click', async ()
     return;
   }
 
-  if (!totpEnabled && requireEmail2FA) {
+  if (!totpEnabled) {
     window.Notify('success', 'Sending verification email...');
     pendingRemovePassword = password;
     const token = getToken();
