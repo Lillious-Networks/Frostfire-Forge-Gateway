@@ -307,7 +307,7 @@ async function authenticate(req: Request) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
 
-  await query("UPDATE accounts SET verified = 1 WHERE token = ?", [token]);
+  await query("UPDATE accounts SET verified = 1, email_verified = 1 WHERE token = ?", [token]);
   await query("UPDATE accounts SET verification_code = NULL WHERE token = ?", [token]);
 
   const has2FA = await getRequiredLoginMethod(username);
@@ -441,8 +441,8 @@ async function login(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 400 });
     }
 
-    const account = await query("SELECT verified FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
-    const isVerified = account[0]?.verified === 1;
+    const account = await query("SELECT email_verified FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+    const isVerified = account[0]?.email_verified === 1;
 
     if (!isVerified) {
       const result = await verify(token, useremail.toLowerCase(), username.toLowerCase()) as any;
@@ -727,7 +727,7 @@ async function handleChangeEmail(req: Request) {
     if (!result.length || result[0].verification_code !== body.emailCode || result[0].pending_email !== email.toLowerCase()) {
       return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
     }
-    await query("UPDATE accounts SET email = pending_email, verification_code = NULL, pending_email = NULL WHERE username = ?", [username]);
+    await query("UPDATE accounts SET email = pending_email, email_verified = 1, verification_code = NULL, pending_email = NULL WHERE username = ?", [username]);
     return new Response(JSON.stringify({ message: "Email updated successfully", email_masked: maskEmail(email) }), { status: 200 });
   }
 

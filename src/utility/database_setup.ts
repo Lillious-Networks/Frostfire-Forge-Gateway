@@ -48,6 +48,7 @@ const addTwoFactorColumns = async () => {
     { name: "require_webauthn", type: "TINYINT DEFAULT 0" },
     { name: "require_totp", type: "TINYINT DEFAULT 0" },
     { name: "require_email_2fa", type: "TINYINT DEFAULT 0" },
+    { name: "email_verified", type: "TINYINT DEFAULT 0" },
   ];
 
   const engine = process.env.DATABASE_ENGINE || "mysql";
