@@ -315,7 +315,6 @@ Bun.serve({
 });
 
 async function authenticate(req: Request) {
-  const ip = getClientIP(req);
   const url = tryParseURL(req.url);
   if (!url) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
@@ -331,7 +330,7 @@ async function authenticate(req: Request) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
 
-  const result = await query("SELECT * FROM accounts WHERE token = ? AND username = ? AND verification_code = ? AND ip_address = ? LIMIT 1", [token, username, code, ip]) as any;
+  const result = await query("SELECT * FROM accounts WHERE token = ? AND username = ? AND verification_code = ? LIMIT 1", [token, username, code]) as any;
   if (result.length === 0) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
