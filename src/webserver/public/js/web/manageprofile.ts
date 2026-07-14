@@ -64,6 +64,10 @@ async function loadProfile() {
       window.location.href = '/';
       return;
     }
+    if (response.status === 403) {
+      window.location.href = '/2fa-challenge';
+      return;
+    }
     const profile = await response.json();
 
     const loadingEl = document.getElementById('profile-loading');

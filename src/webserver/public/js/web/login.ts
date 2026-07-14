@@ -61,7 +61,15 @@ const verify_listener = async () => {
             window.location.href = '/2fa-challenge';
         } else if (body.emailVerified) {
             window.Notify('success', 'Email verified. Please sign in.');
-            window.location.href = '/';
+            passwordForm.innerHTML = `
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="••••••••" spellcheck="false" autocomplete="off">
+            `
+            username.disabled = false;
+            password.disabled = false;
+            login.innerHTML = 'Login';
+            login.removeEventListener('click', verify_listener);
+            login.addEventListener('click', login_listener);
         } else if (body.verified) {
             window.location.href = '/realm-selection';
         } else {

@@ -56,6 +56,18 @@ async function getUsernameFromToken(req: Request): Promise<string | null> {
   return result[0].username;
 }
 
+async function requireAuth(req: Request): Promise<{ username: string } | Response> {
+  const username = await getUsernameFromToken(req);
+  if (!username) {
+    return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
+  }
+  const isPending = await player.isTwoFactorPending(username);
+  if (isPending) {
+    return new Response(JSON.stringify({ message: "2FA required" }), { status: 403 });
+  }
+  return { username };
+}
+
 const routes = {
   "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
   "/": login_html,
@@ -622,10 +634,9 @@ const readyTimeMs = performance.now() - now;
 log.success(`Webserver started on internal port ${serverPort} (HTTP, 127.0.0.1) - Ready in ${(readyTimeMs / 1000).toFixed(3)}s (${readyTimeMs.toFixed(0)}ms)`);
 
 async function handleGetProfile(req: Request) {
-  const username = await getUsernameFromToken(req);
-  if (!username) {
-    return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
-  }
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  const username = auth.username;
 
   const profile = await player.getProfile(username) as any;
   if (!profile) {
