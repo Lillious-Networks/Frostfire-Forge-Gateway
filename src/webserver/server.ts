@@ -140,6 +140,7 @@ const routes = {
         const username = await getUsernameFromToken(req);
         if (username) {
           const isPending = await player.isTwoFactorPending(username);
+          log.debug(`Connection token check: user=${username}, pending=${isPending}`);
           if (isPending) {
             return new Response(JSON.stringify({
               message: "2FA required"
