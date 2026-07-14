@@ -294,10 +294,3 @@ export function verifyAssertion(clientDataJSON: string, authenticatorData: strin
 
   return true;
 }
-
-export function generateQRDataUri(text: string): string {
-  // Generate a simple SVG QR-like representation or use a data URI.
-  // Return the Google Charts API URL for QR code generation.
-  const encoded = encodeURIComponent(text);
-  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encoded}`;
-}

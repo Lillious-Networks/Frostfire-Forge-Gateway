@@ -20,7 +20,7 @@ function getToken(): string {
 }
 
 let totpEnabled = false;
-let global2faEnabled = false;
+let requireEmail2FA = false;
 
 function base64UrlToBuffer(base64url: string): ArrayBuffer {
   const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
@@ -85,7 +85,7 @@ async function loadProfile() {
     updateSecurityBanner();
 
     totpEnabled = profile.totp_enabled;
-    global2faEnabled = profile.global_2fa_enabled;
+    requireEmail2FA = profile.require_email_2fa;
 
     const totpBadge = document.getElementById('totp-badge')!;
     const totpEnableBtn = document.getElementById('totp-enable-btn')!;
@@ -279,7 +279,7 @@ document.getElementById('email-2fa-submit')?.addEventListener('click', async () 
     }
     emailChangePassword = pwd;
 
-    if (global2faEnabled && totpEnabled) {
+    if (totpEnabled) {
       showEmailChangeModal('totp');
       return;
     }
@@ -408,12 +408,12 @@ document.getElementById('change-password-btn')?.addEventListener('click', async 
     return;
   }
 
-  if (global2faEnabled && totpEnabled) {
+  if (totpEnabled) {
     show2FAModal('totp');
     return;
   }
 
-  if (global2faEnabled && !totpEnabled) {
+  if (!totpEnabled && requireEmail2FA) {
     window.Notify('success', 'Sending verification email...');
     const token = getToken();
     const response = await fetch('/api/profile/change-password', {
@@ -606,7 +606,7 @@ function updateCheckboxStates(profile?: any) {
   } else {
     cbWebAuthn.disabled = document.querySelectorAll('.key-item').length === 0;
     cbTotp.disabled = !totpEnabled;
-    cbEmail.disabled = !global2faEnabled;
+    cbEmail.disabled = !requireEmail2FA;
   }
 }
 
@@ -1138,7 +1138,7 @@ document.getElementById('remove-key-submit')?.addEventListener('click', async ()
     return;
   }
 
-  if (global2faEnabled && totpEnabled) {
+  if (totpEnabled) {
     const totpInput = document.getElementById('remove-key-totp-input') as HTMLInputElement;
     const totpCode = totpInput.value.trim();
     const totpVisible = !document.getElementById('remove-key-totp')!.classList.contains('hidden');
@@ -1162,7 +1162,7 @@ document.getElementById('remove-key-submit')?.addEventListener('click', async ()
     return;
   }
 
-  if (global2faEnabled && !totpEnabled) {
+  if (!totpEnabled && requireEmail2FA) {
     window.Notify('success', 'Sending verification email...');
     pendingRemovePassword = password;
     const token = getToken();

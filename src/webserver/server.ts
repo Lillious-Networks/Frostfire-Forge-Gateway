@@ -6,16 +6,14 @@ import verify, { shuffle } from "../services/verification";
 import { hash, randomBytes } from "../modules/hash";
 import query from "../controllers/sqldatabase";
 import { generateSecret, generateTotpUri, verifyTOTP } from "../services/totp";
-import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verifyAttestation, generateAssertionOptions, verifyAssertion, generateQRDataUri } from "../services/webauthn";
+import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verifyAttestation, generateAssertionOptions, verifyAssertion } from "../services/webauthn";
+import { generateQRDataUri } from "../services/qrcode";
 
 const settings = {
   guest_mode: {
     enabled: process.env.GUEST_MODE_ENABLED === "true" || process.env.GUEST_MODE_ENABLED === "1"
   },
   default_map: process.env.DEFAULT_MAP || "overworld.json",
-  "2fa": {
-    enabled: process.env.TWO_FA_ENABLED === "true" || process.env.TWO_FA_ENABLED === "1"
-  }
 };
 import crypto from "crypto";
 import animator_html from "./public/animator.html";
@@ -402,16 +400,13 @@ async function register(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 400 });
     }
 
-    if (settings['2fa'].enabled) {
-      const result = await verify(token, email.toLowerCase(), username.toLowerCase()) as any;
+    await query("UPDATE accounts SET require_email_2fa = 1 WHERE username = ?", [username]);
 
-      if (result instanceof Error) {
-        return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
-      }
-      return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200 });
-    } else {
-      return new Response(JSON.stringify({ message: "Logged in successfully"}), { status: 301, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+    const result = await verify(token, email.toLowerCase(), username.toLowerCase()) as any;
+    if (result instanceof Error) {
+      return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
     }
+    return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200 });
   } catch (error) {
     return new Response(JSON.stringify({ message: "Failed to register", error: error instanceof Error ? error.message : "Unknown error" }), { status: 500 });
   }
@@ -446,30 +441,33 @@ async function login(req: Request, server: any) {
       return new Response(JSON.stringify({ message: "Invalid credentials" }), { status: 400 });
     }
 
-    if (!settings["2fa"].enabled || !(await isEmail2FARequired(username))) {
+    const account = await query("SELECT verified FROM accounts WHERE username = ? LIMIT 1", [username]) as any[];
+    const isVerified = account[0]?.verified === 1;
 
-      await query("UPDATE accounts SET verified = 1 WHERE token = ?", [token]);
-
-      await query("UPDATE accounts SET verification_code = NULL WHERE token = ?", [token]);
-
-      const has2FA = await getRequiredLoginMethod(username);
-
-      if (has2FA) {
-        await player.setTwoFactorPending(username, true);
-
-        return new Response(JSON.stringify({ message: "2FA required", requires2FA: true }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
-      }
-
-      return new Response(JSON.stringify({ message: "Logged in successfully"}), { status: 301, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
-    }
-    else {
+    if (!isVerified) {
       const result = await verify(token, useremail.toLowerCase(), username.toLowerCase()) as any;
       if (result instanceof Error) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
-
-      return new Response(JSON.stringify({ message: "Verification email sent"}), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+      return new Response(JSON.stringify({ message: "Account not verified. Check your email.", code: "unverified" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
     }
+
+    if (await isEmail2FARequired(username)) {
+      const result = await verify(token, useremail.toLowerCase(), username.toLowerCase()) as any;
+      if (result instanceof Error) {
+        return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
+      }
+      return new Response(JSON.stringify({ message: "Verification email sent" }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/;` } });
+    }
+
+    const has2FA = await getRequiredLoginMethod(username);
+
+    if (has2FA) {
+      await player.setTwoFactorPending(username, true);
+      return new Response(JSON.stringify({ message: "2FA required", requires2FA: true }), { status: 200, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
+    }
+
+    return new Response(JSON.stringify({ message: "Logged in successfully"}), { status: 301, headers: { "Set-Cookie": `token=${token}; Path=/; SameSite=Lax` } });
   } catch (error) {
     log.error(`Failed to authenticate: ${error}`);
     return new Response(JSON.stringify({ message: "Failed to authenticate" }), { status: 500 });
@@ -644,7 +642,6 @@ async function handleGetProfile(req: Request) {
     webauthn_enabled: profile.webauthn_enabled === 1,
     webauthn_credentials: webauthnCredentials,
     last_login: profile.last_login,
-    global_2fa_enabled: settings["2fa"].enabled,
     require_webauthn: profile.require_webauthn === 1,
     require_totp: profile.require_totp === 1,
     require_email_2fa: profile.require_email_2fa === 1,
@@ -681,17 +678,15 @@ async function handleChangeEmail(req: Request) {
     return new Response(JSON.stringify({ message: "Email already in use" }), { status: 400 });
   }
 
-  if (settings["2fa"].enabled) {
-    const hasTOTP = await player.hasTwoFactorEnabled(username);
-    if (hasTOTP) {
-      if (body.totp) {
-        const totpData = await player.getTOTPSecret(username) as any;
-        if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-          return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-        }
-      } else if (!body.oldEmailCode && !body.emailCode) {
-        return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
+  const hasTOTP = await player.hasTwoFactorEnabled(username);
+  if (hasTOTP) {
+    if (body.totp) {
+      const totpData = await player.getTOTPSecret(username) as any;
+      if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
+        return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
       }
+    } else if (!body.oldEmailCode && !body.emailCode) {
+      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
     }
   }
 
@@ -775,34 +770,33 @@ async function handleChangePassword(req: Request) {
     return new Response(JSON.stringify({ message: "Current password is incorrect" }), { status: 400 });
   }
 
-  if (settings["2fa"].enabled) {
-    const hasTOTP = await player.hasTwoFactorEnabled(username);
+  const hasTOTP = await player.hasTwoFactorEnabled(username);
 
-    if (hasTOTP) {
-      if (!body.totp) {
-        return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
+  if (hasTOTP) {
+    if (!body.totp) {
+      return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
+    }
+    const totpData = await player.getTOTPSecret(username) as any;
+    if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
+      return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
+    }
+  } else if (await isEmail2FARequired(username)) {
+    if (body.emailCode) {
+      const result = await query(
+        "SELECT verification_code FROM accounts WHERE username = ?",
+        [username]
+      ) as any[];
+      if (!result.length || result[0].verification_code !== body.emailCode) {
+        return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
       }
-      const totpData = await player.getTOTPSecret(username) as any;
-      if (!totpData || !totpData.totp_secret || !verifyTOTP(totpData.totp_secret, body.totp)) {
-        return new Response(JSON.stringify({ message: "Invalid authenticator code" }), { status: 400 });
-      }
+      await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
     } else {
-      if (body.emailCode) {
-        const result = await query(
-          "SELECT verification_code FROM accounts WHERE username = ?",
-          [username]
-        ) as any[];
-        if (!result.length || result[0].verification_code !== body.emailCode) {
-          return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
-        }
-        await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
-      } else {
-        const useremail = await player.getEmail(username);
-        const code = shuffle(token, 6);
-        await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
+      const useremail = await player.getEmail(username);
+      const code = shuffle(token, 6);
+      await query("UPDATE accounts SET verification_code = ? WHERE username = ?", [code, username]);
 
-        const gameName = process.env.GAME_NAME || "Frostfire Forge";
-        const subject = "Verify password change";
+      const gameName = process.env.GAME_NAME || "Frostfire Forge";
+      const subject = "Verify password change";
         const message = buildEmailBody(
           "Confirm Password Change",
           "Enter the code below to confirm your password change.",
@@ -816,8 +810,6 @@ async function handleChangePassword(req: Request) {
         return new Response(JSON.stringify({ requiresEmail: true, message: "Verification email sent" }), { status: 200 });
       }
     }
-  }
-
   const newPasswordHash = await hash(newPassword);
   await player.changePassword(username, newPasswordHash);
 
@@ -1021,10 +1013,10 @@ async function handleRemoveWebAuthn(req: Request) {
     return new Response(JSON.stringify({ message: "Incorrect password" }), { status: 400 });
   }
 
-  if (settings["2fa"].enabled) {
-    const totpData = await player.getTOTPSecret(username) as any;
-    const hasTOTP = totpData?.totp_enabled === 1;
+  const totpData = await player.getTOTPSecret(username) as any;
+  const hasTOTP = totpData?.totp_enabled === 1;
 
+  if (hasTOTP || await isEmail2FARequired(username)) {
     if (hasTOTP) {
       if (!body.totp) {
         return new Response(JSON.stringify({ message: "Authenticator code is required" }), { status: 400 });
@@ -1364,9 +1356,7 @@ async function handleSet2FARequirement(req: Request) {
       }
     }
     if (method === 'email') {
-      if (!settings["2fa"].enabled) {
-        return new Response(JSON.stringify({ message: "Email 2FA is not enabled globally" }), { status: 400 });
-      }
+      // email 2FA is always available
     }
 
     await player.setTwoFactorRequirement(username, method, true);

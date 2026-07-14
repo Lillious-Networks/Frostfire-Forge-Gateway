@@ -26,6 +26,10 @@ const login_listener = async () => {
             window.location.href = '/2fa-challenge';
             return;
         }
+        if (body.code === 'unverified') {
+            window.Notify('error', body.message);
+            return;
+        }
         window.Notify('success', body.message);
         passwordForm.innerHTML = `
             <label for="2fa">Code</label>
