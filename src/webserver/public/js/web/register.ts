@@ -59,7 +59,10 @@ const verify_listener = async () => {
         window.location.href = '/game';
     } else if (response.status === 200) {
         const body = await response.json();
-        if (body.requires2FA) {
+        if (body.emailVerified) {
+            window.Notify('success', 'Email verified. You can now sign in.');
+            window.location.href = '/';
+        } else if (body.requires2FA) {
             window.location.href = '/2fa-challenge';
         } else if (body.verified) {
             window.location.href = '/game';

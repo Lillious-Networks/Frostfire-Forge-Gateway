@@ -59,6 +59,9 @@ const verify_listener = async () => {
         const body = await response.json();
         if (body.requires2FA) {
             window.location.href = '/2fa-challenge';
+        } else if (body.emailVerified) {
+            window.Notify('success', 'Email verified. Please sign in.');
+            window.location.href = '/';
         } else if (body.verified) {
             window.location.href = '/realm-selection';
         } else {

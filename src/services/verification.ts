@@ -2,7 +2,7 @@ import sendEmail, { buildEmailBody, buildCodeAction } from "./email";
 import log from "../modules/logger";
 import query from "../controllers/sqldatabase";
 
-function verify(token: string, useremail: string, username: string): Promise<void> {
+function verify(token: string, useremail: string, username: string, purpose: 'account' | 'login' = 'login'): Promise<void> {
     return new Promise((resolve, reject) => {
         async function execute() {
             try {
@@ -13,21 +13,24 @@ function verify(token: string, useremail: string, username: string): Promise<voi
                 username = username.toLowerCase();
 
                 const gameName = process.env.GAME_NAME || "Frostfire Forge";
-                const subject = "Verify your account";
+
+                const isAccount = purpose === 'account';
+                const subject = isAccount ? "Verify your email address" : "Login verification code";
+                const title = isAccount ? "Verify Your Email Address" : "Login Verification";
+                const desc = isAccount
+                  ? `Enter the code below to confirm your email address for <strong>${username}</strong>.`
+                  : `Enter the code below to sign in to your account.`;
+
                 const code = shuffle(token, 6);
 
-                const message = buildEmailBody(
-                  "Verify Your Account",
-                  `Enter the code below to verify your account for <strong>${username}</strong>.`,
-                  buildCodeAction(code)
-                );
+                const message = buildEmailBody(title, desc, buildCodeAction(code));
 
                 const emailResponse = await sendEmail(useremail, subject, gameName, message);
                 if (emailResponse !== "Email sent successfully") {
                     return reject(new Error("Failed to send email"));
                 }
 
-                const sql = await query(`UPDATE accounts SET verification_code = ?, verified = ? WHERE username = ? AND email = ?`, [code, 0, username, useremail]);
+                const sql = await query(`UPDATE accounts SET verification_code = ? WHERE username = ? AND email = ?`, [code, username, useremail]);
                 if (!sql) {
                     return reject(new Error("An unexpected error occurred"));
                 }

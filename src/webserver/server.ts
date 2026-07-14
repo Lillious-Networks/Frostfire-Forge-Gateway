@@ -307,8 +307,15 @@ async function authenticate(req: Request) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
 
-  await query("UPDATE accounts SET verified = 1, email_verified = 1 WHERE token = ?", [token]);
+  const isAccountVerification = result[0].email_verified === 0;
+
+  await query("UPDATE accounts SET email_verified = 1 WHERE token = ?", [token]);
   await query("UPDATE accounts SET verification_code = NULL WHERE token = ?", [token]);
+
+  if (isAccountVerification) {
+    await query("UPDATE accounts SET token = NULL WHERE username = ?", [username]);
+    return new Response(JSON.stringify({ emailVerified: true }), { status: 200 });
+  }
 
   const has2FA = await getRequiredLoginMethod(username);
 
@@ -402,7 +409,7 @@ async function register(req: Request, server: any) {
 
     await query("UPDATE accounts SET require_email_2fa = 1 WHERE username = ?", [username]);
 
-    const result = await verify(token, email.toLowerCase(), username.toLowerCase()) as any;
+    const result = await verify(token, email.toLowerCase(), username.toLowerCase(), 'account') as any;
     if (result instanceof Error) {
       return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
     }
@@ -445,7 +452,7 @@ async function login(req: Request, server: any) {
     const isVerified = account[0]?.email_verified === 1;
 
     if (!isVerified) {
-      const result = await verify(token, useremail.toLowerCase(), username.toLowerCase()) as any;
+      const result = await verify(token, useremail.toLowerCase(), username.toLowerCase(), 'account') as any;
       if (result instanceof Error) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
@@ -453,7 +460,7 @@ async function login(req: Request, server: any) {
     }
 
     if (await isEmail2FARequired(username)) {
-      const result = await verify(token, useremail.toLowerCase(), username.toLowerCase()) as any;
+      const result = await verify(token, useremail.toLowerCase(), username.toLowerCase(), 'login') as any;
       if (result instanceof Error) {
         return new Response(JSON.stringify({ message: "Failed to send verification email" }), { status: 500 });
       }
