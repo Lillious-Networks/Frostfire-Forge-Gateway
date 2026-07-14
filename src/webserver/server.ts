@@ -63,7 +63,11 @@ async function requireAuth(req: Request): Promise<{ username: string } | Respons
   }
   const isPending = await player.isTwoFactorPending(username);
   if (isPending) {
-    return new Response(JSON.stringify({ message: "2FA required" }), { status: 403 });
+    const codeCheck = await query("SELECT verification_code FROM accounts WHERE username = ?", [username]) as any[];
+    if (codeCheck.length > 0 && codeCheck[0].verification_code) {
+      return new Response(JSON.stringify({ redirect: "/", message: "Complete email verification first" }), { status: 403 });
+    }
+    return new Response(JSON.stringify({ redirect: "/2fa-challenge", message: "2FA required" }), { status: 403 });
   }
   return { username };
 }

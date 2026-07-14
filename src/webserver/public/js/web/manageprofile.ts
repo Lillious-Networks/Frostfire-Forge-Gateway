@@ -65,7 +65,8 @@ async function loadProfile() {
       return;
     }
     if (response.status === 403) {
-      window.location.href = '/2fa-challenge';
+      const body = await response.json();
+      window.location.href = body.redirect || '/2fa-challenge';
       return;
     }
     const profile = await response.json();
