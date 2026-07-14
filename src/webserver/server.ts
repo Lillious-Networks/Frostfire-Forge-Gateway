@@ -76,21 +76,7 @@ const routes = {
   "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
   "/": login_html,
   "/registration": register_html,
-  "/game": async (req: Request) => {
-    const token = getTokenFromRequest(req);
-    if (!token) return Response.redirect("/", 301);
-    const usernameResult = await player.getUsernameByToken(token) as any[];
-    if (!usernameResult || usernameResult.length === 0) return Response.redirect("/", 301);
-    const isPending = await player.isTwoFactorPending(usernameResult[0].username);
-    if (isPending) {
-      const codeCheck = await query("SELECT verification_code FROM accounts WHERE username = ?", [usernameResult[0].username]) as any[];
-      if (codeCheck.length > 0 && codeCheck[0].verification_code) {
-        return Response.redirect("/", 301);
-      }
-      return Response.redirect("/2fa-challenge", 301);
-    }
-    return game_html;
-  },
+  "/game": game_html,
   "/map-editor": map_editor_html,
   "/particle-editor": particleeditor_html,
   "/npc-editor": npceditor_html,
