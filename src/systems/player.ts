@@ -7,7 +7,7 @@ const player = {
   clear: async () => {
 
     await query(
-      "UPDATE accounts SET session_id = NULL, online = 0, token = NULL, verified = 0, verification_code = NULL, party_id = NULL"
+      "UPDATE accounts SET session_id = NULL, online = 0, token = NULL, verified = 0, verification_code = NULL, party_id = NULL, twofa_pending = 0"
     );
 
     if (process.env.DATABASE_ENGINE === "sqlite") {
@@ -145,7 +145,7 @@ const player = {
   logout: async (session_id: string) => {
     if (!session_id) return;
     const response = await query(
-      "UPDATE accounts SET token = NULL, online = ?, session_id = NULL, verification_code = NULL, verified = ? WHERE session_id = ?",
+      "UPDATE accounts SET token = NULL, online = ?, session_id = NULL, verification_code = NULL, verified = ?, twofa_pending = 0 WHERE session_id = ?",
       [0, 0, session_id]
     );
     return response;
