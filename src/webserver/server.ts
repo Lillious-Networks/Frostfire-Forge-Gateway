@@ -137,6 +137,19 @@ const routes = {
   "/api/gateway/connection-token": {
     GET: async (req: Request) => {
       try {
+        const username = await getUsernameFromToken(req);
+        if (username) {
+          const isPending = await player.isTwoFactorPending(username);
+          if (isPending) {
+            return new Response(JSON.stringify({
+              message: "2FA required"
+            }), {
+              status: 403,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+        }
+
         const token = crypto.randomBytes(32).toString("hex");
         const timestamp = Date.now();
         const expiresAt = timestamp + (60 * 1000);
