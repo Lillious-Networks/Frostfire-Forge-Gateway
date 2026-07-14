@@ -140,7 +140,6 @@ const routes = {
         const username = await getUsernameFromToken(req);
         if (username) {
           const isPending = await player.isTwoFactorPending(username);
-          log.debug(`Connection token check: user=${username}, pending=${isPending}`);
           if (isPending) {
             return new Response(JSON.stringify({
               message: "2FA required"
@@ -338,7 +337,7 @@ async function authenticate(req: Request) {
 
   const isAccountVerification = result[0].email_verified === 0;
 
-  await query("UPDATE accounts SET email_verified = 1 WHERE token = ?", [token]);
+  await query("UPDATE accounts SET verified = 1, email_verified = 1 WHERE token = ?", [token]);
   await query("UPDATE accounts SET verification_code = NULL WHERE token = ?", [token]);
 
   if (isAccountVerification) {
