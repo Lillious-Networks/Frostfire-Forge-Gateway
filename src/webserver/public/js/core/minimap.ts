@@ -177,31 +177,15 @@ function renderMinimap() {
     const bufW = actualW * scale;
     const bufH = actualH * scale;
 
-    const groundCanvas = chunkData.groundCanvas;
-    if (groundCanvas) {
-      bufferCtx.drawImage(
-        groundCanvas,
-        0, 0, groundCanvas.width, groundCanvas.height,
-        bufX, bufY, bufW, bufH,
-      );
-    }
-
-    const lowerCanvas = chunkData.lowerCanvas;
-    if (lowerCanvas) {
-      bufferCtx.drawImage(
-        lowerCanvas,
-        0, 0, lowerCanvas.width, lowerCanvas.height,
-        bufX, bufY, bufW, bufH,
-      );
-    }
-
-    const upperCanvas = chunkData.upperCanvas;
-    if (upperCanvas) {
-      bufferCtx.drawImage(
-        upperCanvas,
-        0, 0, upperCanvas.width, upperCanvas.height,
-        bufX, bufY, bufW, bufH,
-      );
+    const segmentCanvases = chunkData.segmentCanvases;
+    if (segmentCanvases) {
+      for (const segmentCanvas of segmentCanvases) {
+        bufferCtx.drawImage(
+          segmentCanvas,
+          0, 0, segmentCanvas.width, segmentCanvas.height,
+          bufX, bufY, bufW, bufH,
+        );
+      }
     }
 
     // Animated tiles are skipped during static chunk baking, so draw a static

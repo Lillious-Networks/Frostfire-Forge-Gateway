@@ -2,13 +2,64 @@ import { canvas, ctx, progressBar, loadingScreen } from "../core/ui";
 import { invalidateTilesetLookupCache, recordChunkLoadTime } from "./renderer.js";
 import pako from "../libs/pako.js";
 import { config } from "../web/global.js";
+import { SHADOW_MAX_OFFSET } from "./shadows.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
-const SHADOW_Z_INDEX = 2;
 declare global {
   interface Window {
     mapData?: any;
   }
+}
+
+// A "cut" is a point in the zIndex order where baked tile rendering must pause so
+// something dynamic can be drawn between tile layers: either a shadow layer's
+// silhouette (drawn at the shadow layer's own zIndex) or the player/NPC/entity
+// pass (at PLAYER_Z_INDEX). Tile layers with zIndex <= key render below the cut.
+export interface LayerCut {
+  key: number;
+  shadowZ: number | null;
+  player: boolean;
+}
+
+export function computeLayerCuts(layers: Array<{ name: string; zIndex: number }>): LayerCut[] {
+  const shadowNames: string[] | null = window.mapData?.shadowLayerNames || null;
+  const shadowNameSet = new Set((shadowNames || []).map((n) => n.toLowerCase()));
+  const shadowZs = new Set<number>();
+  for (const l of layers) {
+    if (l.name && shadowNameSet.has(l.name.toLowerCase())) shadowZs.add(Number(l.zIndex));
+  }
+  // Shadow cuts sit just below the nearest rendered tile layer beneath the
+  // shadow's own zIndex, so the silhouette draws under the object it is attached
+  // to even when the object's base spans the layer directly below (e.g. tall
+  // grass split across two layers). Falls back to just below the shadow's own
+  // zIndex when no rendered layer exists beneath it.
+  const renderedZs: number[] = [];
+  for (const l of layers) {
+    const name = l.name ? l.name.toLowerCase() : '';
+    if (name.includes('collision') || name.includes('nopvp') || name.includes('no-pvp') || name.includes('shadow')) continue;
+    if (shadowNameSet.has(name)) continue;
+    renderedZs.push(Number(l.zIndex));
+  }
+
+  const cuts: LayerCut[] = [...shadowZs].map((z) => {
+    let prevZ = -Infinity;
+    for (const rz of renderedZs) {
+      if (rz < z && rz > prevZ) prevZ = rz;
+    }
+    const key = prevZ === -Infinity ? z - 0.5 : prevZ - 0.5;
+    return { key, shadowZ: z, player: false };
+  });
+  // Player cut sits just below PLAYER_Z_INDEX so tiles at PLAYER_Z_INDEX render above players.
+  cuts.push({ key: Number(PLAYER_Z_INDEX) - 0.5, shadowZ: null, player: true });
+  // On equal keys, shadows draw before the player pass.
+  cuts.sort((a, b) => a.key - b.key || (a.player ? 1 : 0) - (b.player ? 1 : 0));
+  return cuts;
+}
+
+export function segmentIndexForZ(z: number, cuts: LayerCut[]): number {
+  let i = 0;
+  while (i < cuts.length && z > cuts[i].key) i++;
+  return i;
 }
 
 function getBaseGID(gid: number): number { return gid & 0x0FFFFFFF; }
@@ -66,7 +117,7 @@ interface AnimationFrame {
 }
 
 interface AnimatedTile {
-  layerGroup: 'lower' | 'upper';
+  segment: number;
   zIndex: number;
   destX: number;
   destY: number;
@@ -98,12 +149,9 @@ interface ChunkData {
     locked?: boolean;
   }>;
   canvas?: HTMLCanvasElement;
-  groundCanvas?: HTMLCanvasElement;
-  lowerCanvas?: HTMLCanvasElement;
-  upperCanvas?: HTMLCanvasElement;
+  segmentCanvases?: HTMLCanvasElement[];
   animatedTiles?: AnimatedTile[];
-  shadowCanvas?: HTMLCanvasElement;
-  shadowLayers?: HTMLCanvasElement[];
+  shadowLayers?: Array<{ canvas: HTMLCanvasElement; zIndex: number }>;
 }
 
 export default async function loadMap(metadata: any): Promise<boolean> {
@@ -233,13 +281,17 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       getChunkCanvas: (chunkX: number, chunkY: number) => {
         return getChunkCanvas(chunkX, chunkY);
       },
-      getChunkLowerCanvas: (chunkX: number, chunkY: number) => {
-        return getChunkLowerCanvas(chunkX, chunkY);
-      },
-      getChunkUpperCanvas: (chunkX: number, chunkY: number) => {
-        return getChunkUpperCanvas(chunkX, chunkY);
-      },
     };
+
+    // Preloaded chunks skip re-baking, so seed the layer cuts from their layer
+    // structure; otherwise cuts are computed during the first chunk bake.
+    for (const preloadedChunk of preloadedChunks.values()) {
+      const layers = (preloadedChunk as any)?.layers;
+      if (Array.isArray(layers)) {
+        window.mapData.layerCuts = computeLayerCuts(layers);
+        break;
+      }
+    }
 
     // Invalidate tileset lookup cache for the new map
     invalidateTilesetLookupCache();
@@ -678,7 +730,7 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
   const chunkKey = `${chunkX}-${chunkY}`;
 
   const existingChunk = window.mapData.loadedChunks.get(chunkKey);
-  if (existingChunk && existingChunk.canvas && existingChunk.lowerCanvas && existingChunk.upperCanvas) {
+  if (existingChunk && existingChunk.canvas && existingChunk.segmentCanvases) {
     return existingChunk;
   }
 
@@ -708,14 +760,18 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
       }
     }
 
-    const { groundCanvas, lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
-    chunkData.groundCanvas = groundCanvas;
-    chunkData.lowerCanvas = lowerCanvas;
-    chunkData.upperCanvas = upperCanvas;
-    chunkData.canvas = lowerCanvas;
+    const { segmentCanvases } = await renderChunkToCanvas(chunkData);
+    chunkData.segmentCanvases = segmentCanvases;
+    chunkData.canvas = segmentCanvases[0];
 
     bakeChunkShadowEdges(chunkData);
     window.mapData.loadedChunks.set(chunkKey, chunkData);
+
+    // If this chunk carries shadow tiles at its edge, already-baked neighbors
+    // need their silhouettes re-baked to include them in their aprons.
+    if (hasShadowTilesNearBorder(chunkData)) {
+      rebakeNeighborShadowEdges(chunkX, chunkY);
+    }
 
     // Keep persisted out-of-border content visible on reload even if the LOAD_MAP
     // dimensions are stale: grow the bounds to include this chunk's content.
@@ -769,35 +825,28 @@ async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunk
   }
 }
 
-async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = false): Promise<{groundCanvas: HTMLCanvasElement, lowerCanvas: HTMLCanvasElement, upperCanvas: HTMLCanvasElement}> {
+async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = false): Promise<{segmentCanvases: HTMLCanvasElement[]}> {
   if (!window.mapData) throw new Error("Map data not initialized");
 
   const pixelWidth = chunkData.width * window.mapData.tilewidth;
   const pixelHeight = chunkData.height * window.mapData.tileheight;
 
-  const groundCanvas = document.createElement("canvas");
-  const lowerCanvas = document.createElement("canvas");
-  const upperCanvas = document.createElement("canvas");
+  const cuts = computeLayerCuts(chunkData.layers);
+  window.mapData.layerCuts = cuts;
 
-  groundCanvas.width = pixelWidth;
-  groundCanvas.height = pixelHeight;
-  lowerCanvas.width = pixelWidth;
-  lowerCanvas.height = pixelHeight;
-  upperCanvas.width = pixelWidth;
-  upperCanvas.height = pixelHeight;
-
-  const groundCtx = groundCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
-  const lowerCtx = lowerCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
-  const upperCtx = upperCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
-
-  if (!groundCtx || !lowerCtx || !upperCtx) throw new Error("Failed to get canvas context");
-
-  groundCtx.imageSmoothingEnabled = false;
-  lowerCtx.imageSmoothingEnabled = false;
-  upperCtx.imageSmoothingEnabled = false;
-  groundCtx.clearRect(0, 0, pixelWidth, pixelHeight);
-  lowerCtx.clearRect(0, 0, pixelWidth, pixelHeight);
-  upperCtx.clearRect(0, 0, pixelWidth, pixelHeight);
+  const segmentCanvases: HTMLCanvasElement[] = [];
+  const segmentCtxs: CanvasRenderingContext2D[] = [];
+  for (let i = 0; i <= cuts.length; i++) {
+    const segCanvas = document.createElement("canvas");
+    segCanvas.width = pixelWidth;
+    segCanvas.height = pixelHeight;
+    const segCtx = segCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
+    if (!segCtx) throw new Error("Failed to get canvas context");
+    segCtx.imageSmoothingEnabled = false;
+    segCtx.clearRect(0, 0, pixelWidth, pixelHeight);
+    segmentCanvases.push(segCanvas);
+    segmentCtxs.push(segCtx);
+  }
 
   const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
 
@@ -849,14 +898,8 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
     }
 
     const layerZ = Number(layer.zIndex);
-    let ctx: CanvasRenderingContext2D;
-    if (layerZ < SHADOW_Z_INDEX) {
-      ctx = groundCtx;
-    } else if (layerZ < Number(PLAYER_Z_INDEX)) {
-      ctx = lowerCtx;
-    } else {
-      ctx = upperCtx;
-    }
+    const segment = segmentIndexForZ(layerZ, cuts);
+    const ctx = segmentCtxs[segment];
 
     let tileCount = 0;
 
@@ -873,7 +916,7 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
         const animInfo = animatedTileLookup.get(baseGID);
         if (animInfo) {
           animatedTiles.push({
-            layerGroup: layerZ < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper',
+            segment,
             zIndex: layer.zIndex,
             destX: x * window.mapData.tilewidth,
             destY: y * window.mapData.tileheight,
@@ -924,7 +967,7 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
   animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
   chunkData.animatedTiles = animatedTiles;
 
-  return { groundCanvas, lowerCanvas, upperCanvas };
+  return { segmentCanvases };
 }
 
 // Incrementally re-composite specific cells of an already-baked chunk. Used by the
@@ -933,13 +976,16 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
 // Mirrors the per-cell logic of renderChunkToCanvas (layer filtering, lower/upper
 // split, animated-tile handling) so results match a full re-bake.
 export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number; y: number }>): void {
-  if (!window.mapData || !chunkData.lowerCanvas || !chunkData.upperCanvas) return;
+  if (!window.mapData || !chunkData.segmentCanvases || chunkData.segmentCanvases.length === 0) return;
 
-  const lowerCtx = chunkData.lowerCanvas.getContext("2d");
-  const upperCtx = chunkData.upperCanvas.getContext("2d");
-  if (!lowerCtx || !upperCtx) return;
-  lowerCtx.imageSmoothingEnabled = false;
-  upperCtx.imageSmoothingEnabled = false;
+  const cuts: LayerCut[] = window.mapData.layerCuts || computeLayerCuts(chunkData.layers);
+  const segmentCtxs: CanvasRenderingContext2D[] = [];
+  for (const segCanvas of chunkData.segmentCanvases) {
+    const segCtx = segCanvas.getContext("2d");
+    if (!segCtx) return;
+    segCtx.imageSmoothingEnabled = false;
+    segmentCtxs.push(segCtx);
+  }
 
   const tilewidth = window.mapData.tilewidth;
   const tileheight = window.mapData.tileheight;
@@ -976,8 +1022,9 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
     const px = x * tilewidth;
     const py = y * tileheight;
 
-    lowerCtx.clearRect(px, py, tilewidth, tileheight);
-    upperCtx.clearRect(px, py, tilewidth, tileheight);
+    for (const segCtx of segmentCtxs) {
+      segCtx.clearRect(px, py, tilewidth, tileheight);
+    }
 
     // Drop animated-tile records previously registered at this cell.
     chunkData.animatedTiles = chunkData.animatedTiles.filter((at) => !(at.destX === px && at.destY === py));
@@ -995,12 +1042,12 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
       const baseGID = getBaseGID(tileIndex);
       const { flipH, flipV, flipD } = getTileFlags(tileIndex);
 
-      const layerGroup: 'lower' | 'upper' = layer.zIndex < Number(PLAYER_Z_INDEX) ? 'lower' : 'upper';
+      const segment = Math.min(segmentIndexForZ(Number(layer.zIndex), cuts), segmentCtxs.length - 1);
 
       const animInfo = animatedTileLookup.get(baseGID);
       if (animInfo) {
         chunkData.animatedTiles.push({
-          layerGroup,
+          segment,
           zIndex: layer.zIndex,
           destX: px,
           destY: py,
@@ -1024,7 +1071,7 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
       const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
       const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
 
-      const targetCtx = layerGroup === 'lower' ? lowerCtx : upperCtx;
+      const targetCtx = segmentCtxs[segment];
       try {
         drawRotatedTile(targetCtx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, px, py, tilewidth, tileheight, flipH, flipV, flipD);
       } catch (drawError) {
@@ -1035,6 +1082,17 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
 
   chunkData.animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
   bakeChunkShadowEdges(chunkData);
+
+  // Edits touching the chunk's edge can change what neighboring chunks see in
+  // their silhouette aprons, so re-bake their shadow edges too.
+  const touchesBorder = cells.some((c) =>
+    c.x <= 0 || c.y <= 0 || c.x >= chunkData.width - 1 || c.y >= chunkData.height - 1
+  );
+  if (touchesBorder) {
+    const chunkX = chunkData.chunkX ?? Math.floor(chunkData.startX / chunkData.width);
+    const chunkY = chunkData.chunkY ?? Math.floor(chunkData.startY / chunkData.height);
+    rebakeNeighborShadowEdges(chunkX, chunkY);
+  }
 }
 
 // Create an empty in-memory chunk, used by the editor when painting into the
@@ -1059,10 +1117,14 @@ function createEmptyChunk(chunkX: number, chunkY: number): any | null {
 
   const pixelW = chunkSize * window.mapData.tilewidth;
   const pixelH = chunkSize * window.mapData.tileheight;
-  const lowerCanvas = document.createElement("canvas");
-  const upperCanvas = document.createElement("canvas");
-  lowerCanvas.width = pixelW; lowerCanvas.height = pixelH;
-  upperCanvas.width = pixelW; upperCanvas.height = pixelH;
+  const cuts: LayerCut[] = window.mapData.layerCuts || computeLayerCuts(layers);
+  const segmentCanvases: HTMLCanvasElement[] = [];
+  for (let i = 0; i <= cuts.length; i++) {
+    const segCanvas = document.createElement("canvas");
+    segCanvas.width = pixelW;
+    segCanvas.height = pixelH;
+    segmentCanvases.push(segCanvas);
+  }
 
   const chunk: any = {
     chunkX, chunkY,
@@ -1073,9 +1135,8 @@ function createEmptyChunk(chunkX: number, chunkY: number): any | null {
     tilewidth: window.mapData.tilewidth,
     tileheight: window.mapData.tileheight,
     layers,
-    lowerCanvas,
-    upperCanvas,
-    canvas: lowerCanvas,
+    segmentCanvases,
+    canvas: segmentCanvases[0],
     animatedTiles: [],
   };
 
@@ -1148,34 +1209,15 @@ function getChunkCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | nul
   return chunk?.canvas || null;
 }
 
-function getChunkLowerCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | null {
-  if (!window.mapData) return null;
-
-  const chunkKey = `${chunkX}-${chunkY}`;
-  const chunk = window.mapData.loadedChunks.get(chunkKey);
-
-  return chunk?.lowerCanvas || null;
-}
-
-function getChunkUpperCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | null {
-  if (!window.mapData) return null;
-
-  const chunkKey = `${chunkX}-${chunkY}`;
-  const chunk = window.mapData.loadedChunks.get(chunkKey);
-
-  return chunk?.upperCanvas || null;
-}
-
 async function rebakeAllChunks() {
   if (!window.mapData) return;
 
   const chunks = [...window.mapData.loadedChunks.values()];
   for (const chunkData of chunks) {
     try {
-      const { groundCanvas, lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunkData);
-      chunkData.groundCanvas = groundCanvas;
-      chunkData.lowerCanvas = lowerCanvas;
-      chunkData.upperCanvas = upperCanvas;
+      const { segmentCanvases } = await renderChunkToCanvas(chunkData);
+      chunkData.segmentCanvases = segmentCanvases;
+      chunkData.canvas = segmentCanvases[0];
       bakeChunkShadowEdges(chunkData);
     } catch (error) {
       console.error('Error rebaking chunk:', error);
@@ -1187,7 +1229,6 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
   if (!window.mapData) return;
   const shadowLayerNames = window.mapData.shadowLayerNames;
   if (!shadowLayerNames || shadowLayerNames.length === 0) {
-    chunkData.shadowCanvas = undefined;
     chunkData.shadowLayers = undefined;
     return;
   }
@@ -1197,7 +1238,6 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
     l.name && shadowNameSet.has(l.name.toLowerCase())
   );
   if (shadowLayers.length === 0) {
-    chunkData.shadowCanvas = undefined;
     chunkData.shadowLayers = undefined;
     return;
   }
@@ -1206,6 +1246,18 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
   const th = window.mapData.tileheight;
   const pw = chunkData.width * tw;
   const ph = chunkData.height * th;
+
+  // Silhouettes are baked with a padded apron of neighbor-chunk tiles so the
+  // bottom-edge trim and blur see shapes that continue across chunk borders;
+  // the result is cropped back to the chunk rect so adjacent chunks never
+  // overlap (which would double-darken the translucent shadows).
+  const bottomTrim = SHADOW_MAX_OFFSET + 2;
+  const pad = bottomTrim + 4;
+  const cw = pw + pad * 2;
+  const ch = ph + pad * 2;
+
+  const chunkX = chunkData.chunkX ?? Math.floor(chunkData.startX / chunkData.width);
+  const chunkY = chunkData.chunkY ?? Math.floor(chunkData.startY / chunkData.height);
 
   // Build O(1) tileset lookup
   const tsInfo = new Map<number, { tileset: any; image: HTMLImageElement }>();
@@ -1218,57 +1270,133 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
     }
   }
 
-  const canvases: HTMLCanvasElement[] = [];
+  const canvases: Array<{ canvas: HTMLCanvasElement; zIndex: number }> = [];
 
   // Produce one silhouette canvas per shadow layer
   for (const sl of shadowLayers) {
     if (!sl.data) continue;
 
-    let hasTiles = false;
-    for (let i = 0; i < sl.data.length; i++) {
-      if (sl.data[i] !== 0) { hasTiles = true; break; }
-    }
-    if (!hasTiles) continue;
-
-    const sil = document.createElement('canvas');
-    sil.width = pw; sil.height = ph;
-    const sctx = sil.getContext('2d')!;
-    sctx.imageSmoothingEnabled = false;
-
-    for (let y = 0; y < chunkData.height; y++) {
-      for (let x = 0; x < chunkData.width; x++) {
-        const gid = sl.data[y * chunkData.width + x];
-        if (gid === 0) continue;
-        const info = tsInfo.get(gid & 0x0FFFFFFF);
-        if (!info) continue;
-        const ts = info.tileset; const img = info.image;
-        const li = (gid & 0x0FFFFFFF) - ts.firstgid;
-        const tpr = Math.floor(ts.imagewidth / ts.tilewidth);
-        sctx.drawImage(img,
-          (li % tpr) * ts.tilewidth,
-          Math.floor(li / tpr) * ts.tileheight,
-          ts.tilewidth, ts.tileheight,
-          x * tw, y * th, tw, th);
+    // Gather this chunk's layer plus the same layer from any loaded neighbor
+    // chunk, positioned so tiles near the shared border land in the apron.
+    const sources: Array<{ data: number[]; w: number; h: number; offX: number; offY: number }> = [
+      { data: sl.data, w: chunkData.width, h: chunkData.height, offX: pad, offY: pad },
+    ];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const neighbor = window.mapData.loadedChunks.get(`${chunkX + dx}-${chunkY + dy}`);
+        const nl = neighbor?.layers?.find((l: any) => l.name === sl.name);
+        if (!nl?.data) continue;
+        sources.push({
+          data: nl.data,
+          w: neighbor.width,
+          h: neighbor.height,
+          offX: pad + (dx === -1 ? -neighbor.width * tw : dx * pw),
+          offY: pad + (dy === -1 ? -neighbor.height * th : dy * ph),
+        });
       }
     }
+
+    let sil: HTMLCanvasElement | null = null;
+    let sctx: CanvasRenderingContext2D | null = null;
+
+    for (const src of sources) {
+      const startTx = Math.max(0, Math.floor(-src.offX / tw));
+      const endTx = Math.min(src.w - 1, Math.ceil((cw - src.offX) / tw) - 1);
+      const startTy = Math.max(0, Math.floor(-src.offY / th));
+      const endTy = Math.min(src.h - 1, Math.ceil((ch - src.offY) / th) - 1);
+      for (let y = startTy; y <= endTy; y++) {
+        for (let x = startTx; x <= endTx; x++) {
+          const gid = src.data[y * src.w + x];
+          if (gid === 0) continue;
+          const info = tsInfo.get(gid & 0x0FFFFFFF);
+          if (!info) continue;
+          if (!sctx || !sil) {
+            sil = document.createElement('canvas');
+            sil.width = cw; sil.height = ch;
+            sctx = sil.getContext('2d')!;
+            sctx.imageSmoothingEnabled = false;
+          }
+          const ts = info.tileset; const img = info.image;
+          const li = (gid & 0x0FFFFFFF) - ts.firstgid;
+          const tpr = Math.floor(ts.imagewidth / ts.tilewidth);
+          sctx.drawImage(img,
+            (li % tpr) * ts.tilewidth,
+            Math.floor(li / tpr) * ts.tileheight,
+            ts.tilewidth, ts.tileheight,
+            src.offX + x * tw, src.offY + y * th, tw, th);
+        }
+      }
+    }
+
+    if (!sil || !sctx) continue;
 
     // Convert colored tiles to solid black silhouette
     sctx.globalCompositeOperation = 'source-in';
     sctx.fillStyle = '#000000';
-    sctx.fillRect(0, 0, pw, ph);
+    sctx.fillRect(0, 0, cw, ch);
+
+    // Objects don't cast from their base: erode the silhouette's bottom edges by
+    // the maximum downward sun offset (+ blur radius), keeping only pixels that
+    // still have silhouette material that far below them. This stops the
+    // translated silhouette's bottom outline from protruding beneath the object.
+    const trimmed = document.createElement('canvas');
+    trimmed.width = cw; trimmed.height = ch;
+    const tctx = trimmed.getContext('2d')!;
+    tctx.drawImage(sil, 0, 0);
+    tctx.globalCompositeOperation = 'destination-in';
+    tctx.drawImage(sil, 0, -bottomTrim);
 
     // Blur for soft shadow edges
     const blurred = document.createElement('canvas');
-    blurred.width = pw; blurred.height = ph;
+    blurred.width = cw; blurred.height = ch;
     const bctx = blurred.getContext('2d')!;
     bctx.filter = 'blur(2px)';
-    bctx.drawImage(sil, 0, 0);
+    bctx.drawImage(trimmed, 0, 0);
 
-    canvases.push(blurred);
+    // Crop the apron away so the stored canvas maps 1:1 onto the chunk rect
+    const cropped = document.createElement('canvas');
+    cropped.width = pw; cropped.height = ph;
+    const cctx = cropped.getContext('2d')!;
+    cctx.drawImage(blurred, pad, pad, pw, ph, 0, 0, pw, ph);
+
+    canvases.push({ canvas: cropped, zIndex: Number(sl.zIndex) });
   }
 
-  chunkData.shadowCanvas = undefined;
   chunkData.shadowLayers = canvases.length > 0 ? canvases : undefined;
+}
+
+// True when any shadow layer has a tile in the chunk's outermost tile ring —
+// only then can this chunk's content affect a neighbor's baked silhouette apron.
+function hasShadowTilesNearBorder(chunkData: ChunkData): boolean {
+  const shadowLayerNames = window.mapData?.shadowLayerNames;
+  if (!shadowLayerNames || shadowLayerNames.length === 0) return false;
+  const shadowNameSet = new Set(shadowLayerNames.map((n: string) => n.toLowerCase()));
+  const w = chunkData.width;
+  const h = chunkData.height;
+  for (const l of chunkData.layers) {
+    if (!l.name || !shadowNameSet.has(l.name.toLowerCase()) || !l.data) continue;
+    for (let x = 0; x < w; x++) {
+      if (l.data[x] !== 0 || l.data[(h - 1) * w + x] !== 0) return true;
+    }
+    for (let y = 0; y < h; y++) {
+      if (l.data[y * w] !== 0 || l.data[y * w + w - 1] !== 0) return true;
+    }
+  }
+  return false;
+}
+
+// Re-bake the shadow silhouettes of loaded chunks adjacent to (chunkX, chunkY)
+// so shapes spanning chunk borders pick up newly available neighbor context.
+function rebakeNeighborShadowEdges(chunkX: number, chunkY: number): void {
+  if (!window.mapData?.shadowLayerNames?.length) return;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const neighbor = window.mapData.loadedChunks.get(`${chunkX + dx}-${chunkY + dy}`);
+      if (neighbor) bakeChunkShadowEdges(neighbor);
+    }
+  }
 }
 
 export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached, rebakeAllChunks, bakeChunkShadowEdges };

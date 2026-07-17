@@ -1,7 +1,7 @@
 import { getEffectiveTime } from "./ambience.js";
 import { getWeatherType } from "./renderer.js";
 
-const MAX_OFFSET = 14;
+export const SHADOW_MAX_OFFSET = 14;
 
 interface ShadowParams {
   offsetX: number;
@@ -37,15 +37,18 @@ export function getShadowParams(): ShadowParams {
   const fade = smoothWindow(hour24);
 
   return {
-    offsetX: -MAX_OFFSET * Math.sin(sunAng),
-    offsetY: MAX_OFFSET * len,
+    offsetX: -SHADOW_MAX_OFFSET * Math.sin(sunAng),
+    offsetY: SHADOW_MAX_OFFSET * len,
     alpha: 0.35 * len * fade,
   };
 }
 
 export function renderShadows(
   ctx: CanvasRenderingContext2D,
-  visibleChunks: Array<{ x: number; y: number }>
+  visibleChunks: Array<{ x: number; y: number }>,
+  shadowZ: number,
+  offsetX: number,
+  offsetY: number
 ): void {
   if (!window.mapData) return;
 
@@ -57,19 +60,21 @@ export function renderShadows(
   ctx.save();
   ctx.globalAlpha = params.alpha;
 
+  const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
+
   for (const chunk of visibleChunks) {
     const chunkData = window.mapData.loadedChunks.get(`${chunk.x}-${chunk.y}`);
     if (!chunkData) continue;
 
-    const canvases = chunkData.shadowLayers;
-    if (!canvases || canvases.length === 0) continue;
+    const shadowLayers = chunkData.shadowLayers;
+    if (!shadowLayers || shadowLayers.length === 0) continue;
 
-    const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
-    const ox = chunk.x * chunkPixelSize + params.offsetX;
-    const oy = chunk.y * chunkPixelSize + params.offsetY;
+    const ox = chunk.x * chunkPixelSize + params.offsetX + offsetX;
+    const oy = chunk.y * chunkPixelSize + params.offsetY + offsetY;
 
-    for (const c of canvases) {
-      ctx.drawImage(c, ox, oy);
+    for (const sl of shadowLayers) {
+      if (sl.zIndex !== shadowZ) continue;
+      ctx.drawImage(sl.canvas, ox, oy);
     }
   }
 

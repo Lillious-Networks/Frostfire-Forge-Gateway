@@ -270,10 +270,9 @@ class TileEditor {
       }
 
       rebakes.push(
-        renderChunkToCanvas(chunkData, true).then(({ lowerCanvas, upperCanvas }) => {
-          chunkData.lowerCanvas = lowerCanvas;
-          chunkData.upperCanvas = upperCanvas;
-          chunkData.canvas = lowerCanvas;
+        renderChunkToCanvas(chunkData, true).then(({ segmentCanvases }) => {
+          chunkData.segmentCanvases = segmentCanvases;
+          chunkData.canvas = segmentCanvases[0];
         })
       );
     }
@@ -2094,7 +2093,7 @@ class TileEditor {
     this.modifiedChunkKeys.add(chunkKey);
     const chunk = window.mapData.loadedChunks.get(chunkKey);
     if (!chunk) return;
-    if (!chunk.lowerCanvas || !chunk.upperCanvas) {
+    if (!chunk.segmentCanvases || chunk.segmentCanvases.length === 0) {
       this.rerenderChunk(chunkX, chunkY);
       return;
     }
@@ -2327,10 +2326,9 @@ class TileEditor {
     const chunk = window.mapData.loadedChunks.get(chunkKey);
     if (!chunk) return;
 
-    const { lowerCanvas, upperCanvas } = await renderChunkToCanvas(chunk);
-    chunk.lowerCanvas = lowerCanvas;
-    chunk.upperCanvas = upperCanvas;
-    chunk.canvas = lowerCanvas;
+    const { segmentCanvases } = await renderChunkToCanvas(chunk);
+    chunk.segmentCanvases = segmentCanvases;
+    chunk.canvas = segmentCanvases[0];
 
   }
 
