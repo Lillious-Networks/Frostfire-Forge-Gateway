@@ -1535,6 +1535,14 @@ input::placeholder(:not(#chat-container input)) {
   border-radius: 4px;
 }
 
+#hotbar #grid .slot.spell-locked {
+  pointer-events: none;
+}
+
+#hotbar #grid .slot.spell-locked img {
+  filter: grayscale(100%) brightness(0.45);
+}
+
 #buff-bar {
   position: fixed;
   top: 25px;
@@ -1587,6 +1595,23 @@ input::placeholder(:not(#chat-container input)) {
   font-size: 12px;
   font-weight: bold;
   color: #ffffff;
+  text-shadow: 1px 1px 2px #000, 0 0 3px #000;
+  pointer-events: none;
+}
+
+.buff-icon.debuff {
+  border: 1px solid rgba(255, 90, 90, 0.75);
+  background: rgba(45, 10, 10, 0.55);
+}
+
+.buff-icon .buff-stacks {
+  position: absolute;
+  top: -2px;
+  right: 1px;
+  display: none;
+  font-size: 12px;
+  font-weight: bold;
+  color: #ffd75e;
   text-shadow: 1px 1px 2px #000, 0 0 3px #000;
   pointer-events: none;
 }

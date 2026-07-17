@@ -1,6 +1,7 @@
 import { getIsLoaded, getMovementAllowed, cachedPlayerId, sendRequest } from "./socket.js";
 import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
+import { getParticleSprite, particlePool } from "./npc.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
@@ -1187,6 +1188,50 @@ function animationLoop() {
     }
   }
 
+  // Collect player effect particles into the same layer system that
+  // entity/NPC particles use. zIndex defaults to 3 (upper layer, above sprites).
+  for (const p of visiblePlayers) {
+    const effects = p.activeEffects?.filter((e: any) => e.endTime > Date.now()) || [];
+    const allParticles: any[] = [];
+    for (const effect of effects) {
+      if (Array.isArray(effect.particles)) {
+        for (const pd of effect.particles) allParticles.push(pd);
+      }
+    }
+    if (allParticles.length === 0) continue;
+
+    if (!(p as any)._fxWrapper) {
+      (p as any)._fxWrapper = {
+        position: { x: 0, y: 0 },
+        particleArrays: {} as Record<string, any[]>,
+        lastEmitTime: {} as Record<string, number>,
+        particles: [] as any[],
+        updateParticle: null as any,
+      };
+    }
+    const wrap = (p as any)._fxWrapper;
+    wrap.position.x = p.renderPosition.x;
+    wrap.position.y = p.renderPosition.y;
+    wrap.particles = allParticles;
+
+    if (!wrap.updateParticle && cache.entities.length > 0) {
+      wrap.updateParticle = ((cache.entities[0] as any).updateParticle as any);
+    }
+    if (!wrap.updateParticle) continue;
+
+    for (const particleDef of allParticles) {
+      const zIndex = particleDef.zIndex || 3;
+      if (!particlesByLayer.has(zIndex)) {
+        particlesByLayer.set(zIndex, []);
+      }
+      particlesByLayer.get(zIndex)!.push({
+        particle: particleDef,
+        source: wrap,
+        sourceType: 'entity',
+      });
+    }
+  }
+
   if (!wireframeDebugCheckbox.checked) {
     if ((window as any).tileEditor?.isActive && window.mapData?.infinite) {
       renderInfiniteZone();
@@ -1207,6 +1252,7 @@ function animationLoop() {
 
   const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
   const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+  ctx.save();
   ctx.translate(offsetX, offsetY);
 
   ctx.imageSmoothingEnabled = false;
@@ -1315,6 +1361,129 @@ function animationLoop() {
       projectile.currentX = projectile.startX + (endX - projectile.startX) * progress;
       projectile.currentY = projectile.startY + (endY - projectile.startY) * progress;
 
+      // --- Emit and update projectile trail particles ---
+      const particles = projectile.particles as any[] | undefined;
+      if (particles && particles.length > 0) {
+        if (!projectile.particleArrays) projectile.particleArrays = {};
+        const dtSec = Math.min(deltaTime, 0.1);
+
+        // Track the last position where particles were emitted so new particles
+        // are distributed along the travel arc, producing a trail instead of a
+        // single stacking cluster.
+        if (!(projectile as any)._lastSpawnX) {
+          (projectile as any)._lastSpawnX = projectile.startX;
+          (projectile as any)._lastSpawnY = projectile.startY;
+        }
+        const lastSpawnX = (projectile as any)._lastSpawnX;
+        const lastSpawnY = (projectile as any)._lastSpawnY;
+        const dsx = projectile.currentX - lastSpawnX;
+        const dsy = projectile.currentY - lastSpawnY;
+        (projectile as any)._lastSpawnX = projectile.currentX;
+        (projectile as any)._lastSpawnY = projectile.currentY;
+
+        for (const particleDef of particles) {
+          const name = particleDef.name || '';
+          // Spawn a batch of particles every frame, distributed along the arc
+          // since the last frame. The trail forms naturally because each particle
+          // persists for its lifetime and the arc segments overlap.
+          const amount = Math.max(Number(particleDef.amount) || 1, 1);
+          const staggerTime = Math.max(Number(particleDef.staggertime) || 0, 0);
+
+          for (let a = 0; a < amount; a++) {
+            // Distribute each particle along the arc segment travelled since the
+            // last frame so they form a continuous trail.
+            const t = amount > 1 ? a / (amount - 1) : 0.5;
+            const spawnWX = lastSpawnX + dsx * t;
+            const spawnWY = lastSpawnY + dsy * t;
+
+            const p = particlePool.acquire();
+            const life = (Number(particleDef.lifetime) || 1000) + staggerTime * a;
+            p.currentLife = life;
+            p.lifetime = life;
+            p.size = Number(particleDef.size) || 5;
+            p.color = particleDef.color || '#ffffff';
+            p.opacity = Number(particleDef.opacity) || 1;
+            p.gravity = particleDef.gravity ? { x: Number(particleDef.gravity.x || 0), y: Number(particleDef.gravity.y || 0) } : { x: 0, y: 0 };
+            p.velocity = particleDef.velocity ? { x: Number(particleDef.velocity.x || 0), y: Number(particleDef.velocity.y || 0) } : { x: 0, y: 0 };
+            // Spread applies around the spawn point
+            const spreadX = (Math.random() - 0.5) * (Number(particleDef.spread?.x) || 0);
+            const spreadY = (Math.random() - 0.5) * (Number(particleDef.spread?.y) || 0);
+            // Store absolute world position so the particle stays where it was spawned
+            // instead of following the projectile.
+            p.worldX = spawnWX + spreadX;
+            p.worldY = spawnWY + spreadY;
+            p.glow_intensity = Number(particleDef.glow_intensity) || 0;
+
+            if (!(projectile.particleArrays as Record<string, any[]>)[name]) {
+              (projectile.particleArrays as Record<string, any[]>)[name] = [];
+            }
+            (projectile.particleArrays as Record<string, any[]>)[name].push(p);
+          }
+        }
+
+        // Update and render existing particles (absolute world positions, trail)
+        for (const name of Object.keys(projectile.particleArrays)) {
+          const arr = (projectile.particleArrays as Record<string, any[]>)[name];
+          const particleDef = particles.find((d: any) => d.name === name);
+          if (!particleDef) continue;
+
+          const gravX = Number(particleDef.gravity?.x || 0);
+          const gravY = Number(particleDef.gravity?.y || 0);
+  const baseColor = particleDef.color || 'white';
+          const baseOpacity = Number(particleDef.opacity) || 1;
+          const glowIntensity = Number(particleDef.glow_intensity) || 0;
+          const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity);
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+
+          for (let k = arr.length - 1; k >= 0; k--) {
+            const pp = arr[k];
+            pp.currentLife -= dtSec * 1000;
+            if (pp.currentLife <= 0) {
+              particlePool.release(pp);
+              arr.splice(k, 1);
+              continue;
+            }
+
+            // Apply gravity to velocity (wind/time-of-day intentionally skipped)
+            pp.velocity.y += gravY * dtSec;
+            pp.velocity.x += gravX * dtSec;
+
+            // Move the absolute world position
+            pp.worldX += pp.velocity.x * dtSec;
+            pp.worldY += pp.velocity.y * dtSec;
+
+            const lifeElapsed = pp.lifetime - pp.currentLife;
+            const fadeInDur = pp.lifetime * 0.4;
+            const fadeOutDur = pp.lifetime * 0.4;
+            let alpha;
+            if (lifeElapsed < fadeInDur) {
+              alpha = (lifeElapsed / fadeInDur) * baseOpacity;
+            } else if (pp.currentLife < fadeOutDur) {
+              alpha = (pp.currentLife / fadeOutDur) * baseOpacity;
+            } else {
+              alpha = baseOpacity;
+            }
+
+            ctx.globalAlpha = alpha;
+            const cx = pp.worldX * 1;
+            const cy = pp.worldY * 1;
+            ctx.drawImage(
+              particleSprite.canvas,
+              cx - particleSprite.half,
+              cy - particleSprite.half,
+              particleSprite.half * 2,
+              particleSprite.half * 2
+            );
+          }
+
+          ctx.restore();
+        }
+      }
+
       if (isInView(projectile.currentX, projectile.currentY)) {
         ctx.save();
 
@@ -1373,8 +1542,8 @@ function animationLoop() {
         for (const { particle, source } of particlesAtLayer) {
           source.updateParticle(particle, source, ctx, deltaTime);
         }
-      }
 
+  }
   }
 
   ctx.restore();
@@ -1893,6 +2062,12 @@ function animationLoop() {
 
     for (const p of visiblePlayers) {
       p.showDamageNumbers(ctx);
+    }
+
+    for (const p of visiblePlayers) {
+      if (p.showDebuffs) {
+        p.showDebuffs(ctx);
+      }
     }
 
     for (const p of visiblePlayers) {

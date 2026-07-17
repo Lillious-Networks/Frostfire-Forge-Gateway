@@ -118,6 +118,7 @@ import {
   updateAdminPlayerListWithData,
   updateBuffBar,
   startSpellCooldown,
+  startSpellLockout,
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
 import { createNPC, reinitNpcSprite } from "./npc.ts";
@@ -150,6 +151,25 @@ const loadPlayersQueue: any[] = [];
 
 // Global item cache for looking up item details by name
 const itemsByName = new Map<string, any>();
+
+function getMissingIconUrl(): string {
+  return `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
+}
+
+// Creates a 32x32 spell icon image that falls back to the missing icon
+// when no source is provided or the source fails to load
+function createSpellIconImage(src: string | null | undefined, onReady: (img: HTMLImageElement) => void): HTMLImageElement {
+  const img = new Image();
+  img.draggable = false;
+  img.width = 32;
+  img.height = 32;
+  img.onload = () => onReady(img);
+  img.onerror = () => {
+    if (img.src !== getMissingIconUrl()) img.src = getMissingIconUrl();
+  };
+  img.src = src || getMissingIconUrl();
+  return img;
+}
 
 export function requestMapChunkViaWS(mapName: string, chunkX: number, chunkY: number, chunkSize: number): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -712,6 +732,13 @@ socket.onmessage = async (event) => {
       }
       break;
     }
+    case "SPELL_LOCKOUT": {
+      const duration = Number(data?.duration) || 0;
+      if (duration > 0) {
+        startSpellLockout(duration);
+      }
+      break;
+    }
     case "PROJECTILE": {
       const player_id = data?.id;
       const target_id = data?.target_id;
@@ -745,20 +772,24 @@ socket.onmessage = async (event) => {
 
       if (icon && spell && !cache.projectileIcons.has(spell)) {
 
-        createCachedImage(icon).then((iconImage) => {
-          iconImage.onload = () => {
-            cache.projectileIcons.set(spell, iconImage);
-          };
-
-          iconImage.onerror = (error) => {
+        // Projectiles render nothing when the real icon is missing -
+        // skip caching if the asset server served its fallback icon
+        fetch(icon)
+          .then((response) => {
+            if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
+            return response.blob();
+          })
+          .then((blob) => {
+            if (!blob) return;
+            const iconImage = new Image();
+            iconImage.onload = () => {
+              cache.projectileIcons.set(spell, iconImage);
+            };
+            iconImage.src = URL.createObjectURL(blob);
+          })
+          .catch((error) => {
             console.error("Error loading projectile icon:", error);
-          };
-
-          // Trigger load in case image is cached
-          if (iconImage.complete) {
-            cache.projectileIcons.set(spell, iconImage);
-          }
-        });
+          });
       }
 
       cache.projectiles.push({
@@ -772,7 +803,10 @@ socket.onmessage = async (event) => {
         startTime: performance.now(),
         duration: time_to_travel * 1000,
         spell: spell || 'unknown',
-        isEntityTarget: isEntityTarget
+        isEntityTarget: isEntityTarget,
+        particles: Array.isArray(data?.particles) ? data.particles : [],
+        particleArrays: {} as Record<string, any[]>,
+        lastEmitTime: {} as Record<string, number>,
       });
 
       break;
@@ -2449,19 +2483,9 @@ socket.onmessage = async (event) => {
             spriteUrl: spell.spriteUrl,
           };
 
-          if (spell.spriteUrl) {
-            const iconImage = new Image();
-            iconImage.draggable = false;
-            iconImage.width = 32;
-            iconImage.height = 32;
-            iconImage.onload = () => {
-              slot.appendChild(iconImage);
-            };
-            iconImage.src = spell.spriteUrl;
-          } else {
-
-            slot.innerHTML = `${spell.name || Object.keys(data)[i] || 'Unknown'}`;
-          }
+          createSpellIconImage(spell.spriteUrl, (iconImage) => {
+            slot.appendChild(iconImage);
+          });
 
           slot.addEventListener("dragstart", (event: DragEvent) => {
             if (event.dataTransfer) {
@@ -2518,17 +2542,12 @@ socket.onmessage = async (event) => {
             (spell.name || '') === spellName
           );
 
-          if (matchingSpell && matchingSpell.spriteUrl) {
-            const iconImage = new Image();
-            iconImage.draggable = false;
-            iconImage.width = 32;
-            iconImage.height = 32;
-            iconImage.onload = () => {
+          if (matchingSpell) {
+            createSpellIconImage(matchingSpell.spriteUrl, (iconImage) => {
               hotbarSlot.innerHTML = "";
               hotbarSlot.classList.remove("empty");
               hotbarSlot.appendChild(iconImage);
-            };
-            iconImage.src = matchingSpell.spriteUrl;
+            });
           }
         }
       });
@@ -2557,16 +2576,7 @@ socket.onmessage = async (event) => {
       slot.draggable = true;
       slot.dataset.spellName = spell.name;
 
-      if (spell.spriteUrl) {
-        const img = new Image();
-        img.draggable = false;
-        img.width = 32;
-        img.height = 32;
-        img.onload = () => slot.appendChild(img);
-        img.src = spell.spriteUrl;
-      } else {
-        slot.textContent = spell.name;
-      }
+      createSpellIconImage(spell.spriteUrl, (img) => slot.appendChild(img));
 
       slot.addEventListener("dragstart", (event: DragEvent) => {
         if (event.dataTransfer) {
@@ -2587,13 +2597,12 @@ socket.onmessage = async (event) => {
       else grid.appendChild(slot);
 
       hotbarSlots.forEach((s) => {
-        if (s.dataset.spellName === spell.name && spell.spriteUrl) {
-          const img = new Image();
-          img.draggable = false;
-          img.width = 32;
-          img.height = 32;
-          img.onload = () => { s.innerHTML = ""; s.classList.remove("empty"); s.appendChild(img); };
-          img.src = spell.spriteUrl;
+        if (s.dataset.spellName === spell.name) {
+          createSpellIconImage(spell.spriteUrl, (img) => {
+            s.innerHTML = "";
+            s.classList.remove("empty");
+            s.appendChild(img);
+          });
         }
       });
       break;
@@ -4054,7 +4063,23 @@ socket.onmessage = async (event) => {
       break;
     }
     case "EFFECTS": {
-      updateBuffBar(data || []);
+      // Supports both the legacy array shape (self only) and the
+      // broadcast shape { id, effects } for map-wide effect visibility
+      const effectsList = Array.isArray(data) ? data : (data?.effects || []);
+      const effectsTargetId = Array.isArray(data) ? cachedPlayerId : (data?.id ?? cachedPlayerId);
+
+      if (effectsTargetId === cachedPlayerId) {
+        updateBuffBar(effectsList);
+      }
+
+      const effectsTarget = Array.from(cache.players).find((p: any) => p.id === effectsTargetId);
+      if (effectsTarget) {
+        const nowMs = Date.now();
+        effectsTarget.activeEffects = effectsList.map((e: any) => ({
+          ...e,
+          endTime: nowMs + (Number(e.remaining) || 0) * 1000,
+        }));
+      }
       break;
     }
     default:

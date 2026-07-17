@@ -190,6 +190,7 @@ const blacklistedKeys = new Set([
 function cast(hotbar_index: number) {
     const keyName = `Digit${hotbar_index + 1}`;
     if (isKeyOnCooldown(keyName)) return;
+    if (Date.now() < cache.spellLockoutUntil) return;
     selectHotbarSlot(hotbar_index);
     putKeyOnCooldown(keyName);
 

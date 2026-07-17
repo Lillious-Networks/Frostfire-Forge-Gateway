@@ -261,7 +261,7 @@ class ParticleEditorBridge {
         const spX = (Math.random() < 0.5 ? -1 : 1) * Math.random() * pData.spread.x, spY = (Math.random() < 0.5 ? -1 : 1) * Math.random() * pData.spread.y;
         this.previewParticles.push({
           x: canvas.width / 2 + (pData.localposition ? pData.localposition.x : 0) + spX,
-          y: canvas.height / 2 + (pData.localposition ? pData.localposition.y : 0) + spY,
+          y: canvas.height / 2 - (pData.localposition ? pData.localposition.y : 0) + spY,
           vx: -(pData.velocity.x + wBias.x), vy: -(pData.velocity.y + wBias.y),
           lifetime: baseLife + randExt, currentLife: baseLife + randExt, size: pData.size || 5, color: pData.color || "white", glow_intensity: pData.glow_intensity || 0,
         });

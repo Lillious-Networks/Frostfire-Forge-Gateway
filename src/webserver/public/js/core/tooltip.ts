@@ -251,7 +251,7 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
   const rawName = spellData.name || "Unknown Spell";
   tooltipName.innerText = rawName.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
 
-  tooltipType.innerText = "Spell";
+  tooltipType.innerText = spellData.isDebuff ? "Debuff" : spellData.activeEffect ? "Buff" : "Spell";
 
   const lines: { text: string; color: string }[] = [];
 
@@ -264,16 +264,48 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
 
   if (Array.isArray(spellData.effects)) {
     for (const effect of spellData.effects) {
-      if (effect && effect.type === "absorbtion") {
+      if (!effect) continue;
+      if (effect.type === "absorbtion") {
         const duration = effect.duration ? ` for ${effect.duration}s` : "";
         lines.push({ text: `${effect.value} Absorb Shield${duration}`, color: "#7ab8ff" });
+      } else if (effect.type === "damage_over_time") {
+        const interval = Number(effect.interval) || 1;
+        const duration = Number(effect.duration) || 0;
+        let text = `${effect.value} Damage every ${interval}s for ${duration}s`;
+        if (effect.stackable) {
+          text += ` (stacks up to ${effect.max_stacks || 5})`;
+        }
+        lines.push({ text, color: "#9ade4a" });
+      } else if (effect.type === "interrupt") {
+        const duration = Number(effect.duration) || 3;
+        lines.push({ text: `Interrupts spell casting, locking spells for ${duration}s`, color: "#ffd75e" });
       }
     }
   }
 
-  if (spellData.mana) lines.push({ text: `${spellData.mana} Mana`, color: "#469cd9" });
-  if (spellData.cast_time) lines.push({ text: `${spellData.cast_time}s Cast Time`, color: "#bdbdbd" });
-  if (spellData.cooldown) lines.push({ text: `${spellData.cooldown}s Cooldown`, color: "#bdbdbd" });
+  // Live info for an effect currently applied to the player (buff/debuff bar)
+  if (spellData.activeEffect) {
+    const active = spellData.activeEffect;
+    const stacks = Number(active.stacks) || 1;
+    const value = Number(active.value) || 0;
+    if (spellData.isDebuff && value > 0) {
+      const interval = Number(active.interval) || 1;
+      lines.push({ text: `Taking ${value * stacks} Damage every ${interval}s`, color: "#ff6b6b" });
+    }
+    if (stacks > 1) {
+      lines.push({ text: `${stacks} Stacks`, color: "#ffd75e" });
+    }
+    const remaining = Number(active.remaining) || 0;
+    if (remaining > 0) {
+      lines.push({ text: `${remaining}s Remaining`, color: "#bdbdbd" });
+    }
+  }
+
+  if (!spellData.activeEffect) {
+    if (spellData.mana) lines.push({ text: `${spellData.mana} Mana`, color: "#469cd9" });
+    if (spellData.cast_time) lines.push({ text: `${spellData.cast_time}s Cast Time`, color: "#bdbdbd" });
+    if (spellData.cooldown) lines.push({ text: `${spellData.cooldown}s Cooldown`, color: "#bdbdbd" });
+  }
 
   if (lines.length > 0) {
     lines.forEach(({ text, color }) => {

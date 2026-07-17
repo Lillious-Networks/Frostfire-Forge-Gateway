@@ -6,6 +6,9 @@ import { getCameraX, getCameraY, setCameraX, setCameraY, getWeatherType } from "
 import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, positionText } from "./ui.js";
 import { updateXp } from "./xp.js";
 import { getLines } from "./chat.js";
+import { getCachedImage } from "./images.js";
+import { config } from "../web/global.js";
+import { particlePool, getParticleSprite } from "./npc.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
 
@@ -113,6 +116,214 @@ async function createPlayer(data: any) {
     castingDuration: 0,
     castingInterrupted: false,
     castingInterruptedProgress: undefined as number | undefined,
+    activeEffects: [] as Array<any>,
+    _effectParticleArrays: undefined as Record<string, any[]> | undefined,
+    _effectLastEmitTime: undefined as Record<string, number> | undefined,
+    showEffectParticles: function (context: CanvasRenderingContext2D, dtSec: number) {
+      const now = Date.now();
+      const effects = this.activeEffects?.filter((e: any) => e.endTime > now) || [];
+      if (effects.length === 0) return;
+
+      if (!this._effectParticleArrays) this._effectParticleArrays = {};
+      if (!this._effectLastEmitTime) this._effectLastEmitTime = {};
+
+      for (const effect of effects) {
+        const particles = effect.particles as any[] | undefined;
+        if (!particles || particles.length === 0) continue;
+
+        for (const particleDef of particles) {
+          const name = particleDef.name || '';
+          const key = `${effect.id}_${name}`;
+          const amount = Math.max(Number(particleDef.amount) || 1, 1);
+
+          const emitIntervalMs = Math.max(Number(particleDef.interval) || 10, 1);
+          const lastTime = (this._effectLastEmitTime as Record<string, number>)[key] || 0;
+          if (now - lastTime >= emitIntervalMs) {
+            (this._effectLastEmitTime as Record<string, number>)[key] = now;
+
+            if (!(this._effectParticleArrays as Record<string, any[]>)[key]) {
+              (this._effectParticleArrays as Record<string, any[]>)[key] = [];
+            }
+            const arr = (this._effectParticleArrays as Record<string, any[]>)[key];
+
+            for (let a = 0; a < amount; a++) {
+              const p = particlePool.acquire();
+              const lifeMs = Number(particleDef.lifetime) || 1000;
+              p.currentLife = lifeMs;
+              p.lifetime = lifeMs;
+              p.size = Number(particleDef.size) || 5;
+              p.color = particleDef.color || '#ffffff';
+              p.opacity = Number(particleDef.opacity) || 1;
+              p.gravity = particleDef.gravity ? { x: Number(particleDef.gravity.x || 0), y: Number(particleDef.gravity.y || 0) } : { x: 0, y: 0 };
+              p.velocity = particleDef.velocity ? { x: Number(particleDef.velocity.x || 0), y: Number(particleDef.velocity.y || 0) } : { x: 0, y: 0 };
+              const spreadX = (Math.random() - 0.5) * (Number(particleDef.spread?.x) || 0);
+              const spreadY = (Math.random() - 0.5) * (Number(particleDef.spread?.y) || 0);
+              p.localposition = { x: spreadX, y: spreadY };
+              p.glow_intensity = Number(particleDef.glow_intensity) || 0;
+
+              arr.push(p);
+            }
+          }
+        }
+      }
+
+      // Update and render existing effect particles (world → screen via offset)
+      const activeKeys = new Set<string>();
+      for (const effect of effects) {
+        const particles = effect.particles as any[] | undefined;
+        if (!particles || particles.length === 0) continue;
+        for (const particleDef of particles) {
+          activeKeys.add(`${effect.id}_${particleDef.name || ''}`);
+        }
+      }
+
+      for (const [key, arr] of Object.entries(this._effectParticleArrays as Record<string, any[]>)) {
+        if (!activeKeys.has(key)) {
+          for (const pp of arr) particlePool.release(pp);
+          delete (this._effectParticleArrays as Record<string, any[]>)[key];
+          delete (this._effectLastEmitTime as Record<string, number>)[key];
+          continue;
+        }
+
+        const parts = key.split('_');
+        const particleName = parts.slice(1).join('_');
+        let particleDef: any = null;
+        for (const effect of effects) {
+          const pd = (effect.particles as any[])?.find((p: any) => p.name === particleName);
+          if (pd) { particleDef = pd; break; }
+        }
+        if (!particleDef) continue;
+
+        const gravX = Number(particleDef.gravity?.x || 0);
+        const gravY = Number(particleDef.gravity?.y || 0);
+        const baseColor = particleDef.color || '#ffffff';
+        const baseOpacity = Number(particleDef.opacity) || 1;
+        const glowIntensity = Number(particleDef.glow_intensity) || 0;
+        const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity);
+
+        context.save();
+        context.globalCompositeOperation = 'lighter';
+        context.shadowColor = 'transparent';
+        context.shadowBlur = 0;
+
+        for (let k = arr.length - 1; k >= 0; k--) {
+          const pp = arr[k];
+          pp.currentLife -= dtSec * 1000;
+          if (pp.currentLife <= 0) {
+            particlePool.release(pp);
+            arr.splice(k, 1);
+            continue;
+          }
+
+          pp.velocity.y += gravY * dtSec;
+          pp.velocity.x += gravX * dtSec;
+          pp.localposition.x += pp.velocity.x * dtSec;
+          pp.localposition.y += pp.velocity.y * dtSec;
+
+          const lifeElapsed = pp.lifetime - pp.currentLife;
+          const fadeInDur = pp.lifetime * 0.4;
+          const fadeOutDur = pp.lifetime * 0.4;
+          let alpha;
+          if (lifeElapsed < fadeInDur) {
+            alpha = (lifeElapsed / fadeInDur) * baseOpacity;
+          } else if (pp.currentLife < fadeOutDur) {
+            alpha = (pp.currentLife / fadeOutDur) * baseOpacity;
+          } else {
+            alpha = baseOpacity;
+          }
+
+          // World coordinates — rendered inside ctx.translate(offsetX, offsetY)
+          context.globalAlpha = alpha;
+          const cx = this.renderPosition.x + pp.localposition.x;
+          const cy = this.renderPosition.y + pp.localposition.y;
+          context.drawImage(
+            particleSprite.canvas,
+            cx - particleSprite.half,
+            cy - particleSprite.half,
+            particleSprite.half * 2,
+            particleSprite.half * 2
+          );
+        }
+
+        context.restore();
+      }
+    },
+    showDebuffs: function (context: CanvasRenderingContext2D) {
+      if (!Array.isArray(this.activeEffects) || this.activeEffects.length === 0) return;
+
+      const now = Date.now();
+      const debuffs = this.activeEffects
+        .filter((e: any) => e.isDebuff && e.endTime > now)
+        .slice(0, 10);
+      if (debuffs.length === 0) return;
+
+      const iconSize = 18;
+      const gap = 3;
+      const maxPerRow = 5;
+      const timerHeight = 12;
+      const rowHeight = iconSize + timerHeight + gap;
+      const baseIconY = this.renderPosition.y - 64;
+
+      // First row sits closest to the head; overflow expands upwards
+      const rows: any[][] = [];
+      for (let i = 0; i < debuffs.length; i += maxPerRow) {
+        rows.push(debuffs.slice(i, i + maxPerRow));
+      }
+
+      context.save();
+      context.imageSmoothingEnabled = false;
+
+      for (let r = 0; r < rows.length; r++) {
+        const row = rows[r];
+        const rowWidth = row.length * iconSize + (row.length - 1) * gap;
+        let x = Math.round(this.renderPosition.x - rowWidth / 2);
+        const y = Math.round(baseIconY - r * rowHeight);
+
+        for (const effect of row) {
+          const iconUrl = effect.icon
+            || cache.spells?.[effect.spell]?.spriteUrl
+            || `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
+          const img = getCachedImage(iconUrl);
+
+          context.fillStyle = "rgba(0, 0, 0, 0.6)";
+          context.fillRect(x - 1, y - 1, iconSize + 2, iconSize + 2);
+
+          if (img.complete && img.naturalWidth > 0) {
+            context.drawImage(img, x, y, iconSize, iconSize);
+          }
+
+          context.strokeStyle = "rgba(255, 90, 90, 0.9)";
+          context.lineWidth = 1;
+          context.strokeRect(x - 0.5, y - 0.5, iconSize + 1, iconSize + 1);
+
+          const stacks = Number(effect.stacks) || 1;
+          if (stacks > 1) {
+            context.font = "bold 10px 'Comic Relief'";
+            context.textAlign = "right";
+            context.fillStyle = "#ffd75e";
+            context.strokeStyle = "black";
+            context.lineWidth = 2;
+            context.strokeText(`${stacks}`, x + iconSize, y + iconSize - 1);
+            context.fillText(`${stacks}`, x + iconSize, y + iconSize - 1);
+          }
+
+          const remaining = Math.ceil((effect.endTime - now) / 1000);
+          if (remaining > 0) {
+            context.font = "bold 10px 'Comic Relief'";
+            context.textAlign = "center";
+            context.fillStyle = "white";
+            context.strokeStyle = "black";
+            context.lineWidth = 2;
+            context.strokeText(`${remaining}`, x + iconSize / 2, y + iconSize + timerHeight - 2);
+            context.fillText(`${remaining}`, x + iconSize / 2, y + iconSize + timerHeight - 2);
+          }
+
+          x += iconSize + gap;
+        }
+      }
+
+      context.restore();
+    },
     showChat: function (context: CanvasRenderingContext2D) {
 
       if (this.chat) {

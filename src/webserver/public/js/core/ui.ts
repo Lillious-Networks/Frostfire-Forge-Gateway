@@ -2,7 +2,7 @@ import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 import { cast } from "./input.js";
 import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip } from "./tooltip.js";
-import draggableUI from "./draggable.js";
+import { config } from "../web/global.js";
 const debugContainer = document.getElementById("debug-container") as HTMLDivElement;
 const statUI = document.getElementById("stat-screen") as HTMLDivElement;
 const positionText = document.getElementById("position") as HTMLDivElement;
@@ -111,32 +111,69 @@ hotbarSlots.forEach((slot, index) => {
 });
 
 const buffBar = document.getElementById("buff-bar") as HTMLDivElement;
-const buffElements = new Map<string, { el: HTMLDivElement; timerEl: HTMLDivElement; endTime: number; spell: string }>();
+const buffElements = new Map<string, { el: HTMLDivElement; timerEl: HTMLDivElement; stacksEl: HTMLDivElement; endTime: number; spell: string; isDebuff: boolean; info: any }>();
 
-function createBuffIcon(spell: string, endTime: number) {
+function getMissingIconUrl(): string {
+  return `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
+}
+
+function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = false, info: any = null) {
   const el = document.createElement("div");
-  el.className = "buff-icon ui";
+  el.className = isDebuff ? "buff-icon debuff ui" : "buff-icon ui";
 
   const meta = Cache.getInstance().spells[spell];
-  if (meta?.spriteUrl) {
-    const img = new Image();
-    img.draggable = false;
-    img.src = meta.spriteUrl;
-    el.appendChild(img);
-  } else {
-    const fallback = document.createElement("div");
-    fallback.className = "buff-fallback";
-    fallback.innerText = spell;
-    el.appendChild(fallback);
-  }
+  const img = new Image();
+  img.draggable = false;
+  img.src = meta?.spriteUrl || getMissingIconUrl();
+  img.addEventListener("error", () => {
+    if (img.src !== getMissingIconUrl()) img.src = getMissingIconUrl();
+  }, { once: true });
+  el.appendChild(img);
 
   const timerEl = document.createElement("div");
   timerEl.className = "buff-timer";
   el.appendChild(timerEl);
 
-  setupSpellTooltip(el, () => Cache.getInstance().spells[spell] || { name: spell });
+  const stacksEl = document.createElement("div");
+  stacksEl.className = "buff-stacks";
+  el.appendChild(stacksEl);
 
-  return { el, timerEl, endTime, spell };
+  const entry = { el, timerEl, stacksEl, endTime, spell, isDebuff, info };
+
+  // Tooltip describes what the effect is actively doing to the player
+  setupSpellTooltip(el, () => {
+    const spellMeta = Cache.getInstance().spells[spell];
+    return {
+      name: spell,
+      description: spellMeta?.description,
+      isDebuff: entry.isDebuff,
+      activeEffect: {
+        value: entry.info?.value,
+        interval: entry.info?.interval,
+        stacks: entry.info?.stacks,
+        remaining: Math.max(0, Math.ceil((entry.endTime - Date.now()) / 1000)),
+      },
+    };
+  });
+
+  return entry;
+}
+
+function setBuffStacks(entry: { stacksEl: HTMLDivElement }, stacks: number) {
+  if (stacks > 1) {
+    entry.stacksEl.innerText = `${stacks}`;
+    entry.stacksEl.style.display = "block";
+  } else {
+    entry.stacksEl.innerText = "";
+    entry.stacksEl.style.display = "none";
+  }
+}
+
+function removeBuffElement(entry: { el: HTMLDivElement }) {
+  // Detach tooltip handlers and hide the tooltip if it is currently
+  // showing for this icon (mouseleave never fires on removed elements)
+  removeItemTooltip(entry.el);
+  entry.el.remove();
 }
 
 function tickBuffTimers() {
@@ -144,7 +181,7 @@ function tickBuffTimers() {
   for (const [id, entry] of buffElements) {
     const remaining = Math.ceil((entry.endTime - now) / 1000);
     if (remaining <= 0) {
-      entry.el.remove();
+      removeBuffElement(entry);
       buffElements.delete(id);
     } else {
       entry.timerEl.innerText = `${remaining}`;
@@ -155,14 +192,22 @@ function tickBuffTimers() {
 function updateBuffBar(effects: any[]) {
   if (!buffBar) return;
 
-  const incoming = new Map<string, { spell: string; endTime: number }>();
+  const incoming = new Map<string, { spell: string; endTime: number; isDebuff: boolean; stacks: number; raw: any }>();
   for (const e of (effects || [])) {
-    incoming.set(e.id, { spell: e.spell, endTime: Date.now() + (Number(e.remaining) || 0) * 1000 });
+    // Visual-only effects (particles, nothing else) don't show in the buff bar
+    if (e.isVisual) continue;
+    incoming.set(e.id, {
+      spell: e.spell,
+      endTime: Date.now() + (Number(e.remaining) || 0) * 1000,
+      isDebuff: e.isDebuff === true,
+      stacks: Number(e.stacks) || 1,
+      raw: e,
+    });
   }
 
   for (const [id, entry] of buffElements) {
     if (!incoming.has(id)) {
-      entry.el.remove();
+      removeBuffElement(entry);
       buffElements.delete(id);
     }
   }
@@ -170,11 +215,14 @@ function updateBuffBar(effects: any[]) {
   for (const [id, info] of incoming) {
     const existing = buffElements.get(id);
     if (!existing) {
-      const entry = createBuffIcon(info.spell, info.endTime);
+      const entry = createBuffIcon(info.spell, info.endTime, info.isDebuff, info.raw);
+      setBuffStacks(entry, info.stacks);
       buffElements.set(id, entry);
       buffBar.appendChild(entry.el);
     } else {
       existing.endTime = info.endTime;
+      existing.info = info.raw;
+      setBuffStacks(existing, info.stacks);
     }
   }
 
@@ -182,10 +230,6 @@ function updateBuffBar(effects: any[]) {
 }
 
 setInterval(tickBuffTimers, 1000);
-
-if (buffBar) {
-  draggableUI.registerPanel("buff-bar", buffBar, buffBar);
-}
 
 // --- Hotbar spell cooldown clock + "ready" flash ---
 const READY_FLASH_MS = 600;
@@ -249,6 +293,32 @@ function tickSpellCooldowns() {
   });
 
   cooldownRaf = active ? requestAnimationFrame(tickSpellCooldowns) : 0;
+}
+
+// --- Spell lockout (e.g. from an interrupt): grey out all hotbar spells ---
+let spellLockoutTimeout = 0;
+
+function startSpellLockout(durationSec: number) {
+  const durationMs = Math.max(0, Number(durationSec) || 0) * 1000;
+  if (durationMs <= 0) return;
+
+  const cache = Cache.getInstance();
+  const end = Date.now() + durationMs;
+  if (end <= cache.spellLockoutUntil) return;
+  cache.spellLockoutUntil = end;
+
+  hotbarSlots.forEach((slot) => {
+    if (slot.dataset.spellName) slot.classList.add("spell-locked");
+  });
+
+  if (spellLockoutTimeout) window.clearTimeout(spellLockoutTimeout);
+  spellLockoutTimeout = window.setTimeout(() => {
+    spellLockoutTimeout = 0;
+    hotbarSlots.forEach((slot) => {
+      slot.classList.remove("spell-locked");
+      if (slot.dataset.spellName) flashSlotReady(slot);
+    });
+  }, durationMs);
 }
 
 function saveHotbarConfiguration() {
@@ -1737,16 +1807,14 @@ async function loadHotbarConfiguration(hotbarConfig: any) {
 
       slot.innerHTML = "";
 
-      const imageSrc = spellImageMap[spellName];
-      if (imageSrc) {
-        const iconImage = new Image();
-        iconImage.src = imageSrc;
-        iconImage.draggable = false;
-        slot.appendChild(iconImage);
-      } else {
-
-        slot.innerText = spellName;
-      }
+      const imageSrc = spellImageMap[spellName] || getMissingIconUrl();
+      const iconImage = new Image();
+      iconImage.src = imageSrc;
+      iconImage.draggable = false;
+      iconImage.addEventListener("error", () => {
+        if (iconImage.src !== getMissingIconUrl()) iconImage.src = getMissingIconUrl();
+      }, { once: true });
+      slot.appendChild(iconImage);
     } else {
 
       delete slot.dataset.spellName;
@@ -2065,7 +2133,7 @@ if (guildCreateButton) {
 }
 
 export {
-    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, castSpell, positionText,
+    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,

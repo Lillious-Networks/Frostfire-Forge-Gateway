@@ -23,6 +23,9 @@ class Cache {
     duration: number;
     spell: string;
     isEntityTarget?: boolean;
+    particles?: any[];
+    particleArrays?: Record<string, any[]>;
+    lastEmitTime?: Record<string, number>;
   }> = [];
   // existing fields above...
   inventory: any[] = [];
@@ -30,6 +33,7 @@ class Cache {
   inventoryConfig: any = null;
   spells: Record<string, any> = {};
   collectables: any[] = [];
+  spellLockoutUntil: number = 0;
 
   private constructor() {}
 
