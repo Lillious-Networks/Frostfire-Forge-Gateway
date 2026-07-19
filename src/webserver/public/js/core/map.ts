@@ -1,5 +1,5 @@
 import { canvas, ctx, progressBar, loadingScreen } from "../core/ui";
-import { invalidateTilesetLookupCache, recordChunkLoadTime } from "./renderer.js";
+import { invalidateTilesetLookupCache, recordChunkLoadTime, clearChunkTracking } from "./renderer.js";
 import pako from "../libs/pako.js";
 import { config } from "../web/global.js";
 import { SHADOW_MAX_OFFSET } from "./shadows.js";
@@ -166,6 +166,7 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 
     if (window.mapData) {
       window.mapData.loadedChunks.clear();
+      clearChunkTracking();
     }
 
     // Handle both old and new message formats

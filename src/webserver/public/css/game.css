@@ -982,40 +982,30 @@ body {
   bottom: 200px;
   left: 50%;
   transform: translateX(-50%);
-  width: 380px;
-  height: 42px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  width: 320px;
+  height: 36px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(20, 20, 30, 0.95) 0%, rgba(10, 10, 18, 0.98) 100%);
+  border: 1px solid rgba(180, 170, 150, 0.35);
   display: none;
-  -webkit-box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4),
-    inset 0 2px 4px rgba(255, 255, 255, 0.25),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.25);
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.4),
-    inset 0 2px 4px rgba(255, 255, 255, 0.25),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.25);
+    0 2px 12px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 100;
   overflow: hidden;
 }
 
 #castbar-progress {
-  background: linear-gradient(180deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%);
+  background: linear-gradient(180deg, #f0c84a 0%, #d4a826 50%, #b8901e 100%);
   box-sizing: border-box;
-  border-radius: 8px;
+  border-radius: 5px;
   height: 100%;
   will-change: transform;
   transform: scaleX(var(--xscale, 1));
   transform-origin: left;
-  -webkit-box-shadow: 0 0 24px rgba(139, 92, 246, 0.5),
-    inset 0 2px 4px rgba(255, 255, 255, 0.3),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.3);
   box-shadow:
-    0 0 24px rgba(139, 92, 246, 0.5),
-    inset 0 2px 4px rgba(255, 255, 255, 0.3),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.3);
+    0 0 16px rgba(212, 168, 38, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   position: relative;
 }
 
@@ -1025,9 +1015,9 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  height: 45%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.25), transparent);
-  border-radius: 8px 8px 0 0;
+  height: 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent);
+  border-radius: 5px 5px 0 0;
   pointer-events: none;
 }
 
@@ -1040,14 +1030,13 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #ffffff;
-  font-size: 14px;
+  color: #e8e0d0;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   text-shadow:
-    0 2px 4px rgba(0,0,0,0.9),
-    0 0 10px rgba(0,0,0,0.6),
-    0 1px 0 rgba(0,0,0,0.8);
+    0 1px 3px rgba(0, 0, 0, 0.95),
+    0 0 8px rgba(0, 0, 0, 0.7);
   pointer-events: none;
   z-index: 2;
 }
@@ -1533,6 +1522,19 @@ input::placeholder(:not(#chat-container input)) {
   pointer-events: none;
   z-index: 3;
   border-radius: 4px;
+}
+
+#hotbar #grid .slot .hotbar-key {
+  position: absolute;
+  bottom: 0;
+  left: 1px;
+  font-size: 9px;
+  font-weight: bold;
+  color: #ffffff;
+  text-shadow: 1px 1px 1px #000;
+  z-index: 4;
+  pointer-events: none;
+  line-height: 1;
 }
 
 #hotbar #grid .slot.spell-locked {
@@ -5323,8 +5325,8 @@ body.mobile-landscape {
     right: auto;
     transform: translateX(-50%) scale(0.8);
     transform-origin: top center;
-    width: 340px;
-    z-index: 9500;
+    width: 290px;
+    height: 32px;
   }
 
   #castbar-text {

@@ -156,6 +156,14 @@ function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = fals
     };
   });
 
+  // Right-click buffs (not debuffs) to cancel the effect
+  if (!isDebuff) {
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      sendRequest({ type: "CANCEL_EFFECT", data: { id: entry.info?.id || spell } });
+    });
+  }
+
   return entry;
 }
 
@@ -299,10 +307,18 @@ function tickSpellCooldowns() {
 let spellLockoutTimeout = 0;
 
 function startSpellLockout(durationSec: number) {
-  const durationMs = Math.max(0, Number(durationSec) || 0) * 1000;
-  if (durationMs <= 0) return;
-
   const cache = Cache.getInstance();
+  const durationMs = Math.max(0, Number(durationSec) || 0) * 1000;
+  if (durationMs <= 0) {
+    if (spellLockoutTimeout) window.clearTimeout(spellLockoutTimeout);
+    spellLockoutTimeout = 0;
+    cache.spellLockoutUntil = 0;
+    hotbarSlots.forEach((slot) => {
+      slot.classList.remove("spell-locked");
+      if (slot.dataset.spellName) flashSlotReady(slot);
+    });
+    return;
+  }
   const end = Date.now() + durationMs;
   if (end <= cache.spellLockoutUntil) return;
   cache.spellLockoutUntil = end;
@@ -377,7 +393,9 @@ hotbarSlots.forEach((slot, index) => {
     if (!successfulHotbarDrop && event.dataTransfer && event.dataTransfer.dropEffect === "none") {
 
       delete slot.dataset.spellName;
+      const existingKey = slot.querySelector(".hotbar-key");
       slot.innerHTML = "";
+      if (existingKey) slot.appendChild(existingKey);
       saveHotbarConfiguration();
     }
 
@@ -417,7 +435,9 @@ hotbarSlots.forEach((slot, index) => {
           const targetImageSrc = targetImg ? targetImg.src : null;
 
           slot.dataset.spellName = spellName;
+          const targetKey = slot.querySelector(".hotbar-key");
           slot.innerHTML = "";
+          if (targetKey) slot.appendChild(targetKey);
 
           if (imageSrc) {
             const iconImage = new Image();
@@ -425,13 +445,16 @@ hotbarSlots.forEach((slot, index) => {
             iconImage.draggable = false;
             slot.appendChild(iconImage);
           } else {
-            slot.innerText = spellName;
+            const textNode = document.createTextNode(spellName);
+            slot.appendChild(textNode);
           }
 
           if (targetSpellName && targetSpellName !== "") {
 
             sourceSlot.dataset.spellName = targetSpellName;
+            const sourceKey = sourceSlot.querySelector(".hotbar-key");
             sourceSlot.innerHTML = "";
+            if (sourceKey) sourceSlot.appendChild(sourceKey);
 
             if (targetImageSrc) {
               const iconImage = new Image();
@@ -439,19 +462,24 @@ hotbarSlots.forEach((slot, index) => {
               iconImage.draggable = false;
               sourceSlot.appendChild(iconImage);
             } else {
-              sourceSlot.innerText = targetSpellName;
+              const textNode = document.createTextNode(targetSpellName);
+              sourceSlot.appendChild(textNode);
             }
           } else {
 
             delete sourceSlot.dataset.spellName;
+            const sourceKey2 = sourceSlot.querySelector(".hotbar-key");
             sourceSlot.innerHTML = "";
+            if (sourceKey2) sourceSlot.appendChild(sourceKey2);
           }
 
           successfulHotbarDrop = true;
         } else {
 
           slot.dataset.spellName = spellName;
+          const selfKey = slot.querySelector(".hotbar-key");
           slot.innerHTML = "";
+          if (selfKey) slot.appendChild(selfKey);
 
           if (imageSrc) {
             const iconImage = new Image();
@@ -459,7 +487,8 @@ hotbarSlots.forEach((slot, index) => {
             iconImage.draggable = false;
             slot.appendChild(iconImage);
           } else {
-            slot.innerText = spellName;
+            const textNode = document.createTextNode(spellName);
+            slot.appendChild(textNode);
           }
         }
 
@@ -1805,7 +1834,10 @@ async function loadHotbarConfiguration(hotbarConfig: any) {
 
       slot.dataset.spellName = spellName;
 
+      // Preserve the hotbar key label
+      const existingKey = slot.querySelector(".hotbar-key");
       slot.innerHTML = "";
+      if (existingKey) slot.appendChild(existingKey);
 
       const imageSrc = spellImageMap[spellName] || getMissingIconUrl();
       const iconImage = new Image();
@@ -1818,7 +1850,9 @@ async function loadHotbarConfiguration(hotbarConfig: any) {
     } else {
 
       delete slot.dataset.spellName;
+      const existingKey = slot.querySelector(".hotbar-key");
       slot.innerHTML = "";
+      if (existingKey) slot.appendChild(existingKey);
     }
   });
 }

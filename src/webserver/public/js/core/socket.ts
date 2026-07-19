@@ -1660,6 +1660,8 @@ socket.onmessage = async (event) => {
 
       const existingInPending = cache.pendingPlayers?.get(data.id);
 
+      if (data.effects) console.log("[VANISH-DBG] SPAWN_PLAYER hasEffects=", data.effects.length, "username=", data.username, "existingInCache=", !!existingByUsername, "existingInPending=", !!existingInPending);
+
       if (!existingByUsername && !existingInPending) {
         if (data.id === cachedPlayerId) {
           const pendingWeather = (window as any).__pendingWeather;
@@ -1723,6 +1725,15 @@ socket.onmessage = async (event) => {
           existingByUsername.renderPosition.x = Math.round(data.location.x);
           existingByUsername.renderPosition.y = Math.round(data.location.y);
         }
+        // Sync effects from spawn data when provided (vanish, etc.)
+        if (Array.isArray(data.effects) && data.effects.length > 0) {
+          const nowMs = Date.now();
+          existingByUsername.activeEffects = data.effects.map((e: any) => ({
+            ...e,
+            endTime: nowMs + (Number(e.remaining) || 0) * 1000,
+          }));
+          console.log("[VANISH-DBG] Object.assign path set activeEffects=", existingByUsername.activeEffects.length, "effects=", JSON.stringify(existingByUsername.activeEffects.map((e: any) => e.id)));
+        }
         if (data.id === cachedPlayerId && loaded) {
           const pendingWeather = (window as any).__pendingWeather;
           if (pendingWeather !== undefined) {
@@ -1740,6 +1751,26 @@ socket.onmessage = async (event) => {
           setCameraX(existingByUsername.position.x - window.innerWidth / 2 + 8);
           setCameraY(existingByUsername.position.y - window.innerHeight / 2 + 48);
           window.scrollTo(getCameraX(), getCameraY());
+        }
+      } else if (existingInPending) {
+        // Player exists in pendingPlayers but hasn't finished loading into cache.players yet.
+        // Update the pending object so effects/position carry through when it finishes loading.
+        Object.assign(existingInPending, data);
+        if (data.location) {
+          existingInPending.position.x = Math.round(data.location.x);
+          existingInPending.position.y = Math.round(data.location.y);
+          existingInPending.serverPosition.x = Math.round(data.location.x);
+          existingInPending.serverPosition.y = Math.round(data.location.y);
+          existingInPending.renderPosition.x = Math.round(data.location.x);
+          existingInPending.renderPosition.y = Math.round(data.location.y);
+        }
+        if (Array.isArray(data.effects) && data.effects.length > 0) {
+          const nowMs = Date.now();
+          existingInPending.activeEffects = data.effects.map((e: any) => ({
+            ...e,
+            endTime: nowMs + (Number(e.remaining) || 0) * 1000,
+          }));
+          console.log("[VANISH-DBG] pendingPlayer path set activeEffects=", existingInPending.activeEffects.length, "effects=", JSON.stringify(existingInPending.activeEffects.map((e: any) => e.id)));
         }
       }
 
@@ -2544,7 +2575,9 @@ socket.onmessage = async (event) => {
 
           if (matchingSpell) {
             createSpellIconImage(matchingSpell.spriteUrl, (iconImage) => {
+              const existingKey = hotbarSlot.querySelector(".hotbar-key");
               hotbarSlot.innerHTML = "";
+              if (existingKey) hotbarSlot.appendChild(existingKey);
               hotbarSlot.classList.remove("empty");
               hotbarSlot.appendChild(iconImage);
             });
@@ -2599,7 +2632,9 @@ socket.onmessage = async (event) => {
       hotbarSlots.forEach((s) => {
         if (s.dataset.spellName === spell.name) {
           createSpellIconImage(spell.spriteUrl, (img) => {
+            const existingKey = s.querySelector(".hotbar-key");
             s.innerHTML = "";
+            if (existingKey) s.appendChild(existingKey);
             s.classList.remove("empty");
             s.appendChild(img);
           });
@@ -4072,13 +4107,17 @@ socket.onmessage = async (event) => {
         updateBuffBar(effectsList);
       }
 
-      const effectsTarget = Array.from(cache.players).find((p: any) => p.id === effectsTargetId);
+      const effectsTarget = Array.from(cache.players).find((p: any) => p.id === effectsTargetId)
+        || (cache.pendingPlayers?.get(effectsTargetId) as any);
       if (effectsTarget) {
         const nowMs = Date.now();
         effectsTarget.activeEffects = effectsList.map((e: any) => ({
           ...e,
           endTime: nowMs + (Number(e.remaining) || 0) * 1000,
         }));
+        // Vanish state is derived from active effects — this keeps the client
+        // in sync without needing a separate packet (like stealth's STEALTH packet).
+        effectsTarget.isVanished = effectsList.some((e: any) => e.id?.startsWith && e.id.startsWith("vanish:"));
       }
       break;
     }

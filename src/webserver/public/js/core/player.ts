@@ -86,6 +86,7 @@ async function createPlayer(data: any) {
     velocity: { x: 0, y: 0 },
     chat: "",
     isStealth: data.isStealth,
+    isVanished: data.isVanished || false,
     isAdmin: data.isAdmin,
     isGuest: data.isGuest || false,
     _adminColorHue: Math.floor(Math.random() * 360),
@@ -116,7 +117,12 @@ async function createPlayer(data: any) {
     castingDuration: 0,
     castingInterrupted: false,
     castingInterruptedProgress: undefined as number | undefined,
-    activeEffects: [] as Array<any>,
+    activeEffects: (Array.isArray(data.effects) && data.effects.length > 0)
+      ? data.effects.map((e: any) => ({
+          ...e,
+          endTime: Date.now() + (Number(e.remaining) || 0) * 1000,
+        }))
+      : [] as Array<any>,
     _effectParticleArrays: undefined as Record<string, any[]> | undefined,
     _effectLastEmitTime: undefined as Record<string, number> | undefined,
     showEffectParticles: function (context: CanvasRenderingContext2D, dtSec: number) {
@@ -252,22 +258,23 @@ async function createPlayer(data: any) {
       if (!Array.isArray(this.activeEffects) || this.activeEffects.length === 0) return;
 
       const now = Date.now();
-      const debuffs = this.activeEffects
-        .filter((e: any) => e.isDebuff && e.endTime > now)
+      // Buffs first, then debuffs. Visual-only effects excluded.
+      const active = this.activeEffects
+        .filter((e: any) => !e.isVisual && e.endTime > now)
+        .sort((a: any, b: any) => (a.isDebuff ? 1 : 0) - (b.isDebuff ? 1 : 0))
         .slice(0, 10);
-      if (debuffs.length === 0) return;
+      if (active.length === 0) return;
 
       const iconSize = 18;
       const gap = 3;
       const maxPerRow = 5;
       const timerHeight = 12;
       const rowHeight = iconSize + timerHeight + gap;
-      const baseIconY = this.renderPosition.y - 64;
+      const baseIconY = this.renderPosition.y - 87;
 
-      // First row sits closest to the head; overflow expands upwards
       const rows: any[][] = [];
-      for (let i = 0; i < debuffs.length; i += maxPerRow) {
-        rows.push(debuffs.slice(i, i + maxPerRow));
+      for (let i = 0; i < active.length; i += maxPerRow) {
+        rows.push(active.slice(i, i + maxPerRow));
       }
 
       context.save();
@@ -280,6 +287,7 @@ async function createPlayer(data: any) {
         const y = Math.round(baseIconY - r * rowHeight);
 
         for (const effect of row) {
+          const isDebuff = effect.isDebuff === true;
           const iconUrl = effect.icon
             || cache.spells?.[effect.spell]?.spriteUrl
             || `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
@@ -292,7 +300,7 @@ async function createPlayer(data: any) {
             context.drawImage(img, x, y, iconSize, iconSize);
           }
 
-          context.strokeStyle = "rgba(255, 90, 90, 0.9)";
+          context.strokeStyle = isDebuff ? "rgba(255, 90, 90, 0.9)" : "rgba(120, 170, 255, 0.9)";
           context.lineWidth = 1;
           context.strokeRect(x - 0.5, y - 0.5, iconSize + 1, iconSize + 1);
 
@@ -447,96 +455,62 @@ async function createPlayer(data: any) {
       let progress;
       if (this.castingInterrupted) {
         if (this.castingSpell === "Failed") {
-
           progress = 1.0;
         } else {
-
           progress = Math.max(this.castingInterruptedProgress || 0, 0.15);
         }
       } else {
         progress = Math.min(elapsed / this.castingDuration, 1);
       }
 
-      const barWidth = 120;
-      const barHeight = 12;
-      const barX = this.position.x - barWidth / 2;
-      const barY = this.position.y - 45;
+      const barWidth = 110;
+      const barHeight = 10;
+      const barX = this.renderPosition.x - barWidth / 2;
+      const barY = this.renderPosition.y - 38;
 
-      context.shadowColor = "rgba(0, 0, 0, 0.7)";
-      context.shadowBlur = 8;
-      context.shadowOffsetY = 3;
+      // Background
+      context.fillStyle = "rgba(8, 8, 16, 0.9)";
+      context.beginPath();
+      context.roundRect(barX, barY, barWidth, barHeight, 3);
+      context.fill();
 
-      context.fillStyle = "rgba(15, 15, 25, 0.95)";
-      context.fillRect(barX, barY, barWidth, barHeight);
+      // Border
+      context.strokeStyle = "rgba(160, 150, 130, 0.4)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.roundRect(barX, barY, barWidth, barHeight, 3);
+      context.stroke();
 
-      context.shadowColor = "transparent";
-      context.shadowBlur = 0;
-      context.shadowOffsetY = 0;
-
-      context.fillStyle = "rgba(10, 10, 15, 0.8)";
-      context.fillRect(barX + 1, barY + 1, barWidth - 2, barHeight - 2);
-
+      // Fill color based on state
       if (this.castingInterrupted) {
         if (this.castingSpell === "Failed") {
-
-          const gradient = context.createLinearGradient(barX, barY, barX, barY + barHeight);
-          gradient.addColorStop(0, "#ef4444");
-          gradient.addColorStop(0.5, "#dc2626");
-          gradient.addColorStop(1, "#b91c1c");
-          context.fillStyle = gradient;
-
-          context.shadowColor = "rgba(239, 68, 68, 0.8)";
-          context.shadowBlur = 10;
+          context.fillStyle = "rgba(220, 60, 60, 0.95)";
         } else {
-
-          const gradient = context.createLinearGradient(barX, barY, barX, barY + barHeight);
-          gradient.addColorStop(0, "#9ca3af");
-          gradient.addColorStop(0.5, "#6b7280");
-          gradient.addColorStop(1, "#4b5563");
-          context.fillStyle = gradient;
-
-          context.shadowColor = "rgba(107, 114, 128, 0.5)";
-          context.shadowBlur = 6;
+          context.fillStyle = "rgba(120, 120, 130, 0.95)";
         }
       } else {
-
-        const gradient = context.createLinearGradient(barX, barY, barX, barY + barHeight);
-        gradient.addColorStop(0, "#a78bfa");
-        gradient.addColorStop(0.5, "#8b5cf6");
-        gradient.addColorStop(1, "#7c3aed");
-        context.fillStyle = gradient;
-
-        context.shadowColor = "rgba(139, 92, 246, 0.7)";
-        context.shadowBlur = 12;
+        context.fillStyle = "rgba(212, 168, 38, 0.95)";
       }
 
-      context.fillRect(barX + 2, barY + 2, (barWidth - 4) * progress, barHeight - 4);
+      context.beginPath();
+      context.roundRect(barX + 1, barY + 1, (barWidth - 2) * progress, barHeight - 2, 2);
+      context.fill();
 
-      context.shadowColor = "transparent";
-      context.shadowBlur = 0;
+      // Highlight
+      context.fillStyle = "rgba(255, 255, 255, 0.12)";
+      context.beginPath();
+      context.roundRect(barX + 1, barY + 1, (barWidth - 2) * progress, (barHeight - 2) / 2, [2, 2, 0, 0]);
+      context.fill();
 
-      const highlightGradient = context.createLinearGradient(barX, barY, barX, barY + barHeight / 2);
-      highlightGradient.addColorStop(0, "rgba(255, 255, 255, 0.25)");
-      highlightGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
-      context.fillStyle = highlightGradient;
-      context.fillRect(barX + 2, barY + 2, (barWidth - 4) * progress, (barHeight - 4) / 2);
-
-      context.strokeStyle = "rgba(255, 255, 255, 0.15)";
-      context.lineWidth = 1.5;
-      context.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
-
-      context.font = "bold 11px 'Comic Relief'";
-      context.fillStyle = "white";
+      // Spell name
+      context.font = "bold 10px 'Comic Relief'";
+      context.fillStyle = "#e8e0d0";
       context.textAlign = "center";
       context.shadowColor = "rgba(0, 0, 0, 0.9)";
-      context.shadowBlur = 4;
-      context.shadowOffsetY = 1;
-      const spellText = this.castingInterrupted ? this.castingSpell : this.castingSpell;
-      context.fillText(spellText, this.position.x, barY - 5);
-
+      context.shadowBlur = 3;
+      context.fillText(this.castingSpell, this.renderPosition.x, barY - 5);
       context.shadowColor = "transparent";
       context.shadowBlur = 0;
-      context.shadowOffsetY = 0;
 
       if (this.castingInterrupted && elapsed >= 1500) {
         this.castingSpell = null;
@@ -568,7 +542,7 @@ async function createPlayer(data: any) {
 
       context.imageSmoothingEnabled = false;
 
-      if (this.isStealth) {
+      if (this.isStealth || this.isVanished) {
         context.globalAlpha = 0.5;
       }
 

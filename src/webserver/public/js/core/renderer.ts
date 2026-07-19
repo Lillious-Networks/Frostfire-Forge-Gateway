@@ -178,6 +178,18 @@ const loadedChunksSet = new Set<string>();
 const pendingChunks = new Set<string>();
 let pendingRequest: boolean = false;
 
+function clearChunkTracking() {
+  loadedChunksSet.clear();
+  pendingChunks.clear();
+  chunkLoadTimes.clear();
+  frameVisibleChunksCache = null;
+}
+
+function deleteChunkTracking(chunkKey: string) {
+  loadedChunksSet.delete(chunkKey);
+  chunkLoadTimes.delete(chunkKey);
+}
+
 function updateCamera(currentPlayer: any, deltaTime: number) {
   if (!getIsLoaded()) return;
 
@@ -296,10 +308,23 @@ function getVisibleChunks(): Array<{x: number, y: number}> {
   return visible;
 }
 
+let frameVisibleChunksCache: Array<{x: number, y: number}> | null = null;
+let frameVisibleChunksFrameId = -1;
+let globalFrameId = 0;
+
+function getVisibleChunksCached(): Array<{x: number, y: number}> {
+  if (frameVisibleChunksCache && frameVisibleChunksFrameId === globalFrameId) {
+    return frameVisibleChunksCache;
+  }
+  frameVisibleChunksCache = getVisibleChunks();
+  frameVisibleChunksFrameId = globalFrameId;
+  return frameVisibleChunksCache;
+}
+
 async function loadVisibleChunks() {
   if (!window.mapData) return;
 
-  const visibleChunks = getVisibleChunks();
+  const visibleChunks = getVisibleChunksCached();
   const visibleKeys = new Set(visibleChunks.map(c => `${c.x}-${c.y}`));
 
   const unloadDistance = window.mapData.chunkSize * window.mapData.tilewidth * 2;
@@ -329,7 +354,12 @@ async function loadVisibleChunks() {
   for (const chunkKey of chunksToUnload) {
     window.mapData.loadedChunks.delete(chunkKey);
     loadedChunksSet.delete(chunkKey);
-    chunkLoadTimes.delete(chunkKey); // Clean up load time tracking
+    chunkLoadTimes.delete(chunkKey);
+
+    const preloadCache = (window as any).__preloadedMaps?.[window.mapData.name]?.loadedChunks;
+    if (preloadCache) {
+      preloadCache.delete(chunkKey);
+    }
   }
 
   const chunksToLoad: Array<{x: number, y: number, key: string}> = [];
@@ -900,7 +930,7 @@ function renderMap(phase: 'below' | 'above' = 'below') {
   const offsetX = Math.round(viewportWidth / 2 - smoothMapX + mapCenterOffsetX);
   const offsetY = Math.round(viewportHeight / 2 - smoothMapY + mapCenterOffsetY);
 
-  const visibleChunks = getVisibleChunks();
+  const visibleChunks = getVisibleChunksCached();
 
   const tileEditor = (window as any).tileEditor;
   const isEditorActive = tileEditor?.isActive;
@@ -973,6 +1003,7 @@ function renderMap(phase: 'below' | 'above' = 'below') {
 
 function animationLoop() {
   if (!ctx) return;
+  globalFrameId++;
 
   const fpsTarget = parseFloat(fpsSlider.value);
   // Treat the slider maximum as "uncapped": render every animation frame with no
@@ -1609,7 +1640,7 @@ function animationLoop() {
     ctx.translate(offsetX, offsetY);
 
     if (window.mapData) {
-      const visibleChunks = getVisibleChunks();
+      const visibleChunks = getVisibleChunksCached();
       ctx.strokeStyle = 'rgba(128, 128, 128, 0.5)';
       ctx.lineWidth = 1;
 
@@ -1665,7 +1696,7 @@ function animationLoop() {
   }
 
   if (chunkOutlineDebugCheckbox.checked && window.mapData) {
-    const visibleChunks = getVisibleChunks();
+    const visibleChunks = getVisibleChunksCached();
 
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
     ctx.lineWidth = 3;
@@ -1680,7 +1711,7 @@ function animationLoop() {
   }
 
   if (collisionTilesDebugCheckbox.checked && window.mapData) {
-    const visibleChunks = getVisibleChunks();
+    const visibleChunks = getVisibleChunksCached();
 
     ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
     ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
@@ -1720,7 +1751,7 @@ function animationLoop() {
   }
 
   if (noPvpDebugCheckbox.checked && window.mapData) {
-    const visibleChunks = getVisibleChunks();
+    const visibleChunks = getVisibleChunksCached();
 
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
     ctx.fillStyle = 'rgba(0, 255, 0, 0.2)';
@@ -1811,7 +1842,7 @@ function animationLoop() {
 
       // Draw every shadow tile into the silhouette canvas
       const shadowNameSet = new Set(shadowLayerNames.map((n: string) => n.toLowerCase()));
-      const visibleChunks = getVisibleChunks();
+      const visibleChunks = getVisibleChunksCached();
 
       for (const chunk of visibleChunks) {
         const chunkData = window.mapData.loadedChunks.get(`${chunk.x}-${chunk.y}`);
@@ -1972,7 +2003,7 @@ function animationLoop() {
   }
 
   if (showGridCheckbox.checked && window.mapData) {
-    const visibleChunks = getVisibleChunks();
+    const visibleChunks = getVisibleChunksCached();
 
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.lineWidth = 1;
@@ -2178,5 +2209,7 @@ export {
   setPendingRequest,
   getPendingRequest,
   invalidateTilesetLookupCache,
-  recordChunkLoadTime
+  recordChunkLoadTime,
+  clearChunkTracking,
+  deleteChunkTracking
 };

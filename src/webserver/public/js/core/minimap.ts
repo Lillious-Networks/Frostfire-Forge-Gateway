@@ -357,8 +357,15 @@ function renderMinimap() {
   ctx.stroke();
 }
 
+let minimapFrameCounter = 0;
+const MINIMAP_FRAME_INTERVAL = 15;
+
 function minimapLoop() {
-  renderMinimap();
+  minimapFrameCounter++;
+  if (minimapFrameCounter >= MINIMAP_FRAME_INTERVAL) {
+    renderMinimap();
+    minimapFrameCounter = 0;
+  }
   requestAnimationFrame(minimapLoop);
 }
 

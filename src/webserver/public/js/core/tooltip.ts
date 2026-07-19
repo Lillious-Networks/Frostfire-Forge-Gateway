@@ -255,6 +255,11 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
 
   const lines: { text: string; color: string }[] = [];
 
+  const aoeRadius = Number(spellData.aoe_radius) || 0;
+  if (aoeRadius > 0) {
+    lines.push({ text: `Area of Effect: ${aoeRadius}`, color: "#ff9f43" });
+  }
+
   const damage = Number(spellData.damage) || 0;
   if (damage > 0) {
     lines.push({ text: `${damage} Damage`, color: "#ff6b6b" });
