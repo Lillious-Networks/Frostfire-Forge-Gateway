@@ -4,6 +4,7 @@ class Cache {
   players: Set<any> = new Set();
   onlinePlayers: Set<string> = new Set();
   pendingPlayers: Map<string, any> = new Map();
+  pendingEffects: Map<string, any[]> = new Map();
   npcs: any[] = [];
   entities: any[] = [];
   audio: any[] = [];

@@ -8,7 +8,12 @@ import { updateTime, setHasWeather, setStormAmbience } from "./ambience.ts";
 import { setWeatherType, setWeatherData } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
+import { startPersistentSpellCooldown } from "./ui.js";
 const cache = Cache.getInstance();
+
+// Pending cooldown/lockout data from CLIENTCONFIG, applied after SPELLS populates the spell cache
+let pendingSpellCooldowns: Record<string, number> | null = null;
+let pendingSpellLockout = 0;
 
 // Global particle registry for resolving particle names to definitions
 const particleRegistry: Map<string, any> = new Map();
@@ -2585,6 +2590,18 @@ socket.onmessage = async (event) => {
         }
       });
 
+      if (pendingSpellCooldowns) {
+        for (const [spellName, remainingMs] of Object.entries(pendingSpellCooldowns)) {
+          startPersistentSpellCooldown(spellName, Number(remainingMs));
+        }
+        pendingSpellCooldowns = null;
+      }
+
+      if (pendingSpellLockout > 0) {
+        startSpellLockout(pendingSpellLockout / 1000);
+        pendingSpellLockout = 0;
+      }
+
       break;
     }
     case "LEARN_SPELL": {
@@ -3348,6 +3365,14 @@ socket.onmessage = async (event) => {
 
       if (data.hotbar_config) {
         loadHotbarConfiguration(data.hotbar_config);
+      }
+
+      if (data.spell_cooldowns) {
+        pendingSpellCooldowns = data.spell_cooldowns as Record<string, number>;
+      }
+
+      if (data.spell_lockout > 0) {
+        pendingSpellLockout = Number(data.spell_lockout);
       }
 
       if (data.inventory_config) {
@@ -4118,6 +4143,12 @@ socket.onmessage = async (event) => {
         // Vanish state is derived from active effects — this keeps the client
         // in sync without needing a separate packet (like stealth's STEALTH packet).
         effectsTarget.isVanished = effectsList.some((e: any) => e.id?.startsWith && e.id.startsWith("vanish:"));
+      } else if (!cache.pendingEffects.has(effectsTargetId)) {
+        const nowMs = Date.now();
+        cache.pendingEffects.set(effectsTargetId, effectsList.map((e: any) => ({
+          ...e,
+          endTime: nowMs + (Number(e.remaining) || 0) * 1000,
+        })));
       }
       break;
     }

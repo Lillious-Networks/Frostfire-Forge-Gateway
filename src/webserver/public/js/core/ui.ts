@@ -254,6 +254,18 @@ function startSpellCooldown(spellName: string) {
   if (!cooldownRaf) cooldownRaf = requestAnimationFrame(tickSpellCooldowns);
 }
 
+function startPersistentSpellCooldown(spellName: string, remainingMs: number) {
+  if (!spellName || remainingMs <= 0) return;
+  const meta = Cache.getInstance().spells[spellName];
+  const cooldownSec = Number(meta?.cooldown) || 0;
+  const fullMs = cooldownSec * 1000;
+  if (fullMs <= 0) return;
+  const now = performance.now();
+  const elapsedMs = Math.max(0, fullMs - remainingMs);
+  spellCooldowns.set(spellName, { start: now - elapsedMs, end: now + remainingMs });
+  if (!cooldownRaf) cooldownRaf = requestAnimationFrame(tickSpellCooldowns);
+}
+
 function getCooldownOverlay(slot: HTMLDivElement): HTMLDivElement {
   let overlay = slot.querySelector(".cooldown-overlay") as HTMLDivElement | null;
   if (!overlay) {
@@ -2167,7 +2179,7 @@ if (guildCreateButton) {
 }
 
 export {
-    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startSpellLockout, castSpell, positionText,
+    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,

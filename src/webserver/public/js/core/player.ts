@@ -117,12 +117,7 @@ async function createPlayer(data: any) {
     castingDuration: 0,
     castingInterrupted: false,
     castingInterruptedProgress: undefined as number | undefined,
-    activeEffects: (Array.isArray(data.effects) && data.effects.length > 0)
-      ? data.effects.map((e: any) => ({
-          ...e,
-          endTime: Date.now() + (Number(e.remaining) || 0) * 1000,
-        }))
-      : [] as Array<any>,
+    activeEffects: [] as Array<any>,
     _effectParticleArrays: undefined as Record<string, any[]> | undefined,
     _effectLastEmitTime: undefined as Record<string, number> | undefined,
     showEffectParticles: function (context: CanvasRenderingContext2D, dtSec: number) {
@@ -846,6 +841,29 @@ async function createPlayer(data: any) {
 
   if (cache.pendingPlayers) {
     cache.pendingPlayers.delete(player.id);
+  }
+
+  // Apply effects: prefer pendingEffects (from the later EFFECTS packet, already
+  // has endTime computed at the moment the packet was received) over data.effects
+  // (from the spawn packet, whose remaining values are stale by the time
+  // createPlayer finishes async animation loading).
+  // Only set if the EFFECTS handler didn't already set activeEffects directly.
+  if (!Array.isArray(player.activeEffects) || player.activeEffects.length === 0) {
+    const pendingList = cache.pendingEffects?.get(player.id);
+    if (pendingList && pendingList.length > 0) {
+      player.activeEffects = pendingList;
+      player.isVanished = pendingList.some((e: any) => e.id?.startsWith && e.id.startsWith("vanish:"));
+    } else if (Array.isArray(data.effects) && data.effects.length > 0) {
+      const nowMs = Date.now();
+      player.activeEffects = data.effects.map((e: any) => ({
+        ...e,
+        endTime: nowMs + (Number(e.remaining) || 0) * 1000,
+      }));
+      player.isVanished = data.effects.some((e: any) => e.id?.startsWith && e.id.startsWith("vanish:"));
+    }
+  }
+  if (cache.pendingEffects) {
+    cache.pendingEffects.delete(player.id);
   }
 
   if (data.id === cachedPlayerId) {
