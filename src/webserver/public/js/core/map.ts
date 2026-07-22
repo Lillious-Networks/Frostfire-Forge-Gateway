@@ -165,6 +165,9 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     }
 
     if (window.mapData) {
+      for (const chunkData of window.mapData.loadedChunks.values()) {
+        disposeChunkCanvases(chunkData);
+      }
       window.mapData.loadedChunks.clear();
       clearChunkTracking();
     }
@@ -835,6 +838,8 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
   const cuts = computeLayerCuts(chunkData.layers);
   window.mapData.layerCuts = cuts;
 
+  disposeChunkCanvases(chunkData);
+
   const segmentCanvases: HTMLCanvasElement[] = [];
   const segmentCtxs: CanvasRenderingContext2D[] = [];
   for (let i = 0; i <= cuts.length; i++) {
@@ -1210,6 +1215,25 @@ function getChunkCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | nul
   return chunk?.canvas || null;
 }
 
+export function disposeChunkCanvases(chunkData: ChunkData): void {
+  if (chunkData.segmentCanvases) {
+    for (const c of chunkData.segmentCanvases) {
+      c.width = 0;
+      c.height = 0;
+    }
+    chunkData.segmentCanvases.length = 0;
+  }
+  if (chunkData.shadowLayers) {
+    for (const sl of chunkData.shadowLayers) {
+      sl.canvas.width = 0;
+      sl.canvas.height = 0;
+    }
+    chunkData.shadowLayers = undefined;
+  }
+  chunkData.animatedTiles = [];
+  chunkData.canvas = undefined;
+}
+
 async function rebakeAllChunks() {
   if (!window.mapData) return;
 
@@ -1268,6 +1292,13 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
     if (!img || !img.complete || img.naturalWidth === 0) continue;
     for (let gid = ts.firstgid; gid < ts.firstgid + ts.tilecount; gid++) {
       tsInfo.set(gid, { tileset: ts, image: img });
+    }
+  }
+
+  if (chunkData.shadowLayers) {
+    for (const sl of chunkData.shadowLayers) {
+      sl.canvas.width = 0;
+      sl.canvas.height = 0;
     }
   }
 
@@ -1362,6 +1393,10 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
     cctx.drawImage(blurred, pad, pad, pw, ph, 0, 0, pw, ph);
 
     canvases.push({ canvas: cropped, zIndex: Number(sl.zIndex) });
+
+    sil.width = 0; sil.height = 0;
+    trimmed.width = 0; trimmed.height = 0;
+    blurred.width = 0; blurred.height = 0;
   }
 
   chunkData.shadowLayers = canvases.length > 0 ? canvases : undefined;

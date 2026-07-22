@@ -352,6 +352,25 @@ async function loadVisibleChunks() {
   }
 
   for (const chunkKey of chunksToUnload) {
+    const chunkData = window.mapData.loadedChunks.get(chunkKey);
+    if (chunkData) {
+      if (chunkData.segmentCanvases) {
+        for (const c of chunkData.segmentCanvases) {
+          c.width = 0;
+          c.height = 0;
+        }
+        chunkData.segmentCanvases.length = 0;
+      }
+      if (chunkData.shadowLayers) {
+        for (const sl of chunkData.shadowLayers) {
+          sl.canvas.width = 0;
+          sl.canvas.height = 0;
+        }
+        chunkData.shadowLayers = undefined;
+      }
+      chunkData.animatedTiles = [];
+      chunkData.canvas = undefined;
+    }
     window.mapData.loadedChunks.delete(chunkKey);
     loadedChunksSet.delete(chunkKey);
     chunkLoadTimes.delete(chunkKey);
