@@ -108,8 +108,8 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number)
 
   // Bake at a fixed 1x scale on every device. shadowBlur and additive clamping
   // are resolution-dependent, so baking at the device dpr made iOS (2x) glow at a
-  // different brightness than PC (1x). A constant scale keeps the rasterization —
-  // and thus brightness — identical everywhere (matching the 1x PC/editor look).
+  // different brightness than PC (1x). A constant scale keeps the rasterization -
+  // and thus brightness - identical everywhere (matching the 1x PC/editor look).
   const scale = 1;
 
   let baseBlur = 0;

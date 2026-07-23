@@ -97,7 +97,7 @@ export default function sendEmail(email: string, subject: string, header: string
           log.error(error as string);
           resolve("Email failed to send");
         } else {
-          log.info(`Email sent: ${censorEmail(email)} — ${subject}`);
+          log.info(`Email sent: ${censorEmail(email)} - ${subject}`);
           resolve("Email sent successfully");
         }
       });

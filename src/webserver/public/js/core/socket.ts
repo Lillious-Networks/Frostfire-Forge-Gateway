@@ -124,6 +124,7 @@ import {
   updateBuffBar,
   startSpellCooldown,
   startSpellLockout,
+  spellCooldowns,
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
 import { createNPC, reinitNpcSprite } from "./npc.ts";
@@ -734,6 +735,81 @@ socket.onmessage = async (event) => {
       castSpell(data.id, data.spell, data.time);
       if (data.id === cachedPlayerId && data.spell !== "interrupted") {
         startSpellCooldown(data.spell);
+        const lp = Array.from(cache.players).find(p => p.id === cachedPlayerId);
+        if (lp) lp._lastCastSpellName = data.spell;
+      }
+      if (data.id === cachedPlayerId && data.spell === "interrupted") {
+        const lp = Array.from(cache.players).find(p => p.id === cachedPlayerId);
+        if (lp && lp._lastCastSpellName && spellCooldowns) {
+          const spName = lp._lastCastSpellName;
+          spellCooldowns.delete(spName);
+          lp._lastCastSpellName = undefined;
+          hotbarSlots.forEach((slot: any) => {
+            if (slot.dataset.spellName === spName) {
+              const overlay = slot.querySelector(".cooldown-overlay");
+              if (overlay) overlay.remove();
+            }
+          });
+          const spellGrid = spellBookUI.querySelector("#grid");
+          if (spellGrid) {
+            spellGrid.querySelectorAll(".slot").forEach((slot: any) => {
+              if (slot.dataset.spellName === spName) {
+                const overlay = slot.querySelector(".cooldown-overlay");
+                if (overlay) overlay.remove();
+              }
+            });
+          }
+        }
+      }
+      if (data.groundX !== undefined && data.groundY !== undefined) {
+        const targetPlayer = Array.from(cache.players).find(p => p.id === data.id);
+        if (targetPlayer) {
+          targetPlayer.groundAoeTarget = { x: data.groundX, y: data.groundY };
+          targetPlayer.groundAoeRadius = data.groundRadius || 0;
+        }
+      }
+      break;
+    }
+    case "GROUND_AOE_CASTING": {
+      if (!data || !data.casterId) break;
+      cache.groundAoeCastingPreviews[data.casterId] = {
+        x: data.x,
+        y: data.y,
+        radius: data.radius,
+        spell: data.spell,
+        casterId: data.casterId,
+        castTime: data.castTime,
+        startTime: performance.now(),
+      };
+      break;
+    }
+    case "GROUND_AOE_SPAWN": {
+      if (!data || !data.id) break;
+      cache.activeGroundAoeZones[data.id] = {
+        id: data.id,
+        spell: data.spell,
+        casterId: data.casterId,
+        casterUsername: data.casterUsername,
+        x: data.x,
+        y: data.y,
+        radius: data.radius,
+        duration: data.duration,
+        damageType: data.damageType,
+        particles: data.particles,
+        createdAt: performance.now(),
+      };
+      delete cache.groundAoeCastingPreviews[data.casterId];
+      break;
+    }
+    case "GROUND_AOE_DESPAWN": {
+      if (!data || !data.id) break;
+      delete cache.activeGroundAoeZones[data.id];
+      // Also remove matching casting preview
+      for (const key in cache.groundAoeCastingPreviews) {
+        if (cache.groundAoeCastingPreviews[key].casterId + "_casting" === data.id ||
+            key === data.id) {
+          delete cache.groundAoeCastingPreviews[key];
+        }
       }
       break;
     }
@@ -751,8 +827,53 @@ socket.onmessage = async (event) => {
       const spell = data?.spell;
       const icon = data?.icon;
       const isEntityTarget = data?.entity || false;
+      const isThrown = data?.isThrown || false;
 
-      if (!player_id || !target_id || !time_to_travel) break;
+      if (!player_id || !time_to_travel) break;
+
+      if (isThrown) {
+        const targetX = Number(data?.targetX) || 0;
+        const targetY = Number(data?.targetY) || 0;
+
+        const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
+        const sourcePos = sourcePlayer?.position;
+        if (!sourcePos) break;
+
+        if (icon && spell && !cache.projectileIcons.has(spell)) {
+          fetch(icon)
+            .then((response) => {
+              if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
+              return response.blob();
+            })
+            .then((blob) => {
+              if (!blob) return;
+              const iconImage = new Image();
+              iconImage.onload = () => { cache.projectileIcons.set(spell, iconImage); };
+              iconImage.src = URL.createObjectURL(blob);
+            })
+            .catch(() => {});
+        }
+
+        cache.projectiles.push({
+          startX: sourcePos.x,
+          startY: sourcePos.y,
+          targetPlayerId: player_id,
+          targetPos: { x: targetX, y: targetY },
+          currentX: sourcePos.x,
+          currentY: sourcePos.y,
+          startTime: performance.now(),
+          duration: time_to_travel * 1000,
+          spell: spell || 'unknown',
+          isThrown: true,
+          isEntityTarget: false,
+          particles: Array.isArray(data?.particles) ? data.particles : [],
+          particleArrays: {} as Record<string, any[]>,
+          lastEmitTime: {} as Record<string, number>,
+        });
+        break;
+      }
+
+      if (!target_id) break;
 
       // Source could be a player or entity
       const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
@@ -962,7 +1083,7 @@ socket.onmessage = async (event) => {
           }
         }
       } else {
-        // New NPC — spawn it in the game world
+        // New NPC - spawn it in the game world
         createNPC({
           id: updatedNpc.id,
           name: updatedNpc.name || "",
@@ -1215,7 +1336,7 @@ socket.onmessage = async (event) => {
           });
         } else {
           // Bounds-only: drop loaded chunks now outside the bounds so trimmed-away
-          // empty expansion disappears (no re-fetch — keeps in-memory edits).
+          // empty expansion disappears (no re-fetch - keeps in-memory edits).
           const keys = Array.from(window.mapData.loadedChunks.keys()) as string[];
           for (const key of keys) {
             const chunk = window.mapData.loadedChunks.get(key);
@@ -1665,8 +1786,6 @@ socket.onmessage = async (event) => {
 
       const existingInPending = cache.pendingPlayers?.get(data.id);
 
-      if (data.effects) console.log("[VANISH-DBG] SPAWN_PLAYER hasEffects=", data.effects.length, "username=", data.username, "existingInCache=", !!existingByUsername, "existingInPending=", !!existingInPending);
-
       if (!existingByUsername && !existingInPending) {
         if (data.id === cachedPlayerId) {
           const pendingWeather = (window as any).__pendingWeather;
@@ -1737,7 +1856,6 @@ socket.onmessage = async (event) => {
             ...e,
             endTime: nowMs + (Number(e.remaining) || 0) * 1000,
           }));
-          console.log("[VANISH-DBG] Object.assign path set activeEffects=", existingByUsername.activeEffects.length, "effects=", JSON.stringify(existingByUsername.activeEffects.map((e: any) => e.id)));
         }
         if (data.id === cachedPlayerId && loaded) {
           const pendingWeather = (window as any).__pendingWeather;
@@ -1775,7 +1893,6 @@ socket.onmessage = async (event) => {
             ...e,
             endTime: nowMs + (Number(e.remaining) || 0) * 1000,
           }));
-          console.log("[VANISH-DBG] pendingPlayer path set activeEffects=", existingInPending.activeEffects.length, "effects=", JSON.stringify(existingInPending.activeEffects.map((e: any) => e.id)));
         }
       }
 
@@ -2396,6 +2513,10 @@ socket.onmessage = async (event) => {
           if (cache?.entities) cache.entities = [];
           if (cache?.npcs) cache.npcs = [];
           if (cache?.projectiles) cache.projectiles = [];
+          cache.activeGroundAoeZones = {};
+          cache.groundAoeCastingPreviews = {};
+          cache.groundTargetingSpell = null;
+          document.body.style.cursor = '';
 
           const { resetCameraInitialized } = await import('./renderer.js');
           resetCameraInitialized();
@@ -2517,6 +2638,9 @@ socket.onmessage = async (event) => {
             type: spell.type,
             effects: spell.effects,
             spriteUrl: spell.spriteUrl,
+            aoe_radius: spell.aoe_radius,
+            ground_aoe: spell.ground_aoe,
+            ground_duration: spell.ground_duration,
           };
 
           createSpellIconImage(spell.spriteUrl, (iconImage) => {
@@ -2536,6 +2660,16 @@ socket.onmessage = async (event) => {
           });
 
           slot.addEventListener("click", () => {
+            const spellName = slot.dataset.spellName;
+            const spellData = cache.spells[spellName || ''];
+            if (!spellName) return;
+            const cd = spellCooldowns.get(spellName);
+            if (cd && performance.now() < cd.end) return;
+            if (spellData && spellData.ground_aoe) {
+              cache.groundTargetingSpell = spellName;
+              document.body.style.cursor = 'crosshair';
+              return;
+            }
             const target = Array.from(cache?.players).find(p => p?.targeted) || null;
             sendRequest({
               type: "HOTBAR",
@@ -2555,6 +2689,9 @@ socket.onmessage = async (event) => {
             damage: spell.damage,
             type: spell.type,
             effects: spell.effects,
+            aoe_radius: spell.aoe_radius,
+            ground_aoe: spell.ground_aoe,
+            ground_duration: spell.ground_duration,
           }));
 
           grid.appendChild(slot);
@@ -2619,7 +2756,14 @@ socket.onmessage = async (event) => {
         type: spell.type,
         effects: spell.effects,
         spriteUrl: spell.spriteUrl,
-      };
+            aoe_radius: spell.aoe_radius,
+            range: spell.range,
+            ground_aoe: spell.ground_aoe,
+            ground_duration: spell.ground_duration,
+            is_thrown: spell.is_thrown,
+            charge_distance: spell.charge_distance,
+            teleport_behind: spell.teleport_behind,
+          };
 
       const slot = document.createElement("div");
       slot.classList.add("slot", "ui", "common");
@@ -2637,6 +2781,16 @@ socket.onmessage = async (event) => {
         }
       });
       slot.addEventListener("click", () => {
+        const spellName = slot.dataset.spellName;
+        const spellData = cache.spells[spellName || ''];
+        if (!spellName) return;
+        const cd = spellCooldowns.get(spellName);
+        if (cd && performance.now() < cd.end) return;
+        if (spellData && spellData.ground_aoe) {
+          cache.groundTargetingSpell = spellName;
+          document.body.style.cursor = 'crosshair';
+          return;
+        }
         const target = Array.from(cache?.players).find(p => p?.targeted) || null;
         sendRequest({ type: "HOTBAR", data: { spell: slot.dataset.spellName, target } });
       });
@@ -4140,7 +4294,7 @@ socket.onmessage = async (event) => {
           ...e,
           endTime: nowMs + (Number(e.remaining) || 0) * 1000,
         }));
-        // Vanish state is derived from active effects — this keeps the client
+        // Vanish state is derived from active effects - this keeps the client
         // in sync without needing a separate packet (like stealth's STEALTH packet).
         effectsTarget.isVanished = effectsList.some((e: any) => e.id?.startsWith && e.id.startsWith("vanish:"));
       } else if (!cache.pendingEffects.has(effectsTargetId)) {

@@ -99,7 +99,7 @@ class NpcEditorBridge {
       if (q && label.toLowerCase().indexOf(q) === -1 && (!npc.name || npc.name.toLowerCase().indexOf(q) === -1)) continue;
       const item = document.createElement("div");
       item.className = "editor-item" + (npc.id === this.selectedNpcId ? " active" : "");
-      item.innerHTML = '<span class="editor-item-label">' + label + '</span><span class="editor-item-icon">(' + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "—") + ')</span>';
+      item.innerHTML = '<span class="editor-item-label">' + label + '</span><span class="editor-item-icon">(' + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "-") + ')</span>';
       item.addEventListener("click", () => this.selectNpc(npc));
       this.npcListEl.appendChild(item);
     }
@@ -125,7 +125,7 @@ class NpcEditorBridge {
     let el = document.getElementById("ne-display-id");
     if (el) el.textContent = npc.id === null ? "Unsaved" : "#" + npc.id;
     el = document.getElementById("ne-display-pos");
-    if (el) el.textContent = "(" + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "—") + ")";
+    if (el) el.textContent = "(" + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "-") + ")";
     v("inp-quest", npc.quest != null ? npc.quest : "");
     v("inp-direction", npc.position?.direction || npc.direction || "down");
     v("inp-hidden", npc.hidden || false);

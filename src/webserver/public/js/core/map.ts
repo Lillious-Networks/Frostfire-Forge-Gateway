@@ -229,7 +229,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     const assetServerUrl = metadata?.assetServerUrl || "";
     (window as any).__assetServerUrl = assetServerUrl;
 
-    await clearMapCache(mapName);
     progressBar.style.width = "10%";
 
     const images = await loadTilesets(tilesets);
@@ -241,9 +240,9 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 
     // Dynamic chunk sizing: maintain consistent chunk pixel size (~1024px²) regardless of tile size
     const CHUNK_SIZE_CONFIG: { [key: number]: number } = {
-      16: 64,   // 16px tiles → 64 tile chunks = 1024×1024px
-      32: 32,   // 32px tiles → 32 tile chunks = 1024×1024px
-      64: 16,   // 64px tiles → 16 tile chunks = 1024×1024px
+      16: 64,   // 16px tiles → 64 tile chunks = 1024�-1024px
+      32: 32,   // 32px tiles → 32 tile chunks = 1024�-1024px
+      64: 16,   // 64px tiles → 16 tile chunks = 1024�-1024px
     };
     const CHUNK_SIZE = CHUNK_SIZE_CONFIG[tilewidth] || 32; // Default to 32 if tile size not in config
     const chunksX = Math.ceil(mapWidth / CHUNK_SIZE);
@@ -1402,7 +1401,7 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
   chunkData.shadowLayers = canvases.length > 0 ? canvases : undefined;
 }
 
-// True when any shadow layer has a tile in the chunk's outermost tile ring —
+// True when any shadow layer has a tile in the chunk's outermost tile ring -
 // only then can this chunk's content affect a neighbor's baked silhouette apron.
 function hasShadowTilesNearBorder(chunkData: ChunkData): boolean {
   const shadowLayerNames = window.mapData?.shadowLayerNames;

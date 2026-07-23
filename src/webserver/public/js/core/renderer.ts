@@ -1020,6 +1020,164 @@ function renderMap(phase: 'below' | 'above' = 'below') {
   ctx.restore();
 }
 
+function renderGroundAoeZones(ctx: CanvasRenderingContext2D, deltaTime: number) {
+  const now = performance.now();
+  const mouseX = (window as any).mouseWorldX;
+  const mouseY = (window as any).mouseWorldY;
+
+  // Render ground targeting cursor
+  if (cache.groundTargetingSpell) {
+    const spellData = cache.spells[cache.groundTargetingSpell];
+    const radius = (spellData && spellData.aoe_radius) || 100;
+    const spellRange = (spellData && spellData.range) || 800;
+
+    if (mouseX !== undefined && mouseY !== undefined && radius > 0) {
+      const currentPlayer = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+      let outOfRange = false;
+      if (currentPlayer && spellRange > 0) {
+        const px = currentPlayer.position?.x ?? currentPlayer.renderPosition?.x ?? 0;
+        const py = currentPlayer.position?.y ?? currentPlayer.renderPosition?.y ?? 0;
+        const dist = Math.sqrt((mouseX - px) ** 2 + (mouseY - py) ** 2);
+        outOfRange = dist > spellRange;
+      }
+
+      const pulse = 0.6 + 0.4 * Math.sin(now * 0.005);
+      const isHeal = spellData?.damage < 0;
+
+      ctx.save();
+      ctx.lineWidth = 3;
+
+      // Outer glow
+      ctx.globalAlpha = 0.15 * pulse;
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, radius + 8, 0, Math.PI * 2);
+      if (outOfRange) {
+        ctx.fillStyle = 'rgba(255, 40, 40, 0.15)';
+        ctx.strokeStyle = 'rgba(255, 40, 40, 0.3)';
+      } else if (isHeal) {
+        ctx.fillStyle = 'rgba(80, 255, 80, 0.15)';
+        ctx.strokeStyle = 'rgba(80, 255, 80, 0.3)';
+      } else {
+        ctx.fillStyle = 'rgba(255, 140, 20, 0.15)';
+        ctx.strokeStyle = 'rgba(255, 140, 20, 0.3)';
+      }
+      ctx.fill();
+      ctx.stroke();
+
+      // Main circle fill
+      ctx.globalAlpha = 0.25;
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+      if (outOfRange) {
+        ctx.fillStyle = 'rgba(255, 30, 30, 0.25)';
+      } else if (isHeal) {
+        ctx.fillStyle = 'rgba(80, 255, 80, 0.2)';
+      } else {
+        ctx.fillStyle = 'rgba(255, 140, 20, 0.25)';
+      }
+      ctx.fill();
+
+      // Main circle stroke
+      ctx.globalAlpha = pulse * 0.9;
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+      if (outOfRange) {
+        ctx.strokeStyle = 'rgba(255, 40, 40, 0.9)';
+      } else if (isHeal) {
+        ctx.strokeStyle = 'rgba(80, 255, 80, 0.8)';
+      } else {
+        ctx.strokeStyle = 'rgba(255, 150, 30, 0.85)';
+      }
+      ctx.stroke();
+
+      // Dashed range indicator when targeting
+      ctx.globalAlpha = 0.2;
+      ctx.setLineDash([6, 12]);
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, radius, 0, Math.PI * 2);
+      if (outOfRange) {
+        ctx.strokeStyle = 'rgba(255, 40, 40, 0.5)';
+      } else {
+        ctx.strokeStyle = 'rgba(255, 150, 30, 0.35)';
+      }
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+  }
+
+  // Render casting previews (half-transparent)
+  for (const casterId in cache.groundAoeCastingPreviews) {
+    const preview = cache.groundAoeCastingPreviews[casterId];
+    if (!preview || !preview.radius) continue;
+
+    // Filled circle with half transparency (0.35)
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(preview.x, preview.y, preview.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(220, 150, 40, 0.4)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    const pulse = 0.6 + 0.2 * Math.sin(now * 0.004);
+    ctx.strokeStyle = `rgba(220, 150, 40, ${pulse})`;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Render active ground AoE zones (full opacity)
+  for (const zoneId in cache.activeGroundAoeZones) {
+    const zone = cache.activeGroundAoeZones[zoneId];
+    if (!zone || !zone.radius) continue;
+
+    const elapsed = (now - zone.createdAt) / 1000;
+    const remaining = Math.max(0, zone.duration - elapsed);
+    const progress = zone.duration > 0 ? remaining / zone.duration : 1;
+
+    const isHeal = zone.damageType === 'heal';
+    const baseColor = isHeal ? [80, 220, 80] : [220, 80, 40];
+
+    // Filled circle with edge fade
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.25)`;
+    ctx.fill();
+
+    // Gradient fill for depth
+    const gradient = ctx.createRadialGradient(zone.x, zone.y, zone.radius * 0.3, zone.x, zone.y, zone.radius);
+    gradient.addColorStop(0, `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.05)`);
+    gradient.addColorStop(0.6, `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.15)`);
+    gradient.addColorStop(1, `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.3)`);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Pulsing border
+    const borderPulse = 0.6 + 0.4 * Math.sin(now * 0.003 + zoneId.charCodeAt(0));
+    ctx.globalAlpha = borderPulse * (0.5 + 0.3 * progress);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, ${borderPulse})`;
+    ctx.stroke();
+
+    // Fade the zone as it expires (last 20% of duration)
+    if (progress < 0.2) {
+      ctx.globalAlpha = progress / 0.2;
+      ctx.beginPath();
+      ctx.arc(zone.x, zone.y, zone.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${baseColor[0]}, ${baseColor[1]}, ${baseColor[2]}, 0.1)`;
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
 function animationLoop() {
   if (!ctx) return;
   globalFrameId++;
@@ -1323,6 +1481,8 @@ function animationLoop() {
     }
   }
 
+  renderGroundAoeZones(ctx, deltaTime);
+
   const npcEditor = (window as any).npcEditor;
 
   if (wireframeDebugCheckbox.checked) {
@@ -1388,7 +1548,10 @@ function animationLoop() {
       let endX: number;
       let endY: number;
 
-      if ((projectile as any).isEntityTarget) {
+      if ((projectile as any).isThrown) {
+        endX = projectile.targetPos ? projectile.targetPos.x : projectile.currentX;
+        endY = projectile.targetPos ? projectile.targetPos.y : projectile.currentY;
+      } else if ((projectile as any).isEntityTarget) {
         // Target is an entity
         const targetEntity = cache.entities.find((e: any) => e.id === (projectile as any).targetEntityId);
         if (!targetEntity) {
@@ -1410,6 +1573,30 @@ function animationLoop() {
 
       projectile.currentX = projectile.startX + (endX - projectile.startX) * progress;
       projectile.currentY = projectile.startY + (endY - projectile.startY) * progress;
+
+      let arcHeight = 0;
+      let shadowX = projectile.currentX;
+      let shadowY = projectile.currentY;
+      if ((projectile as any).isThrown) {
+        arcHeight = 80 * 4 * progress * (1 - progress);
+        shadowX = projectile.startX + (endX - projectile.startX) * progress;
+        shadowY = projectile.startY + (endY - projectile.startY) * progress;
+        projectile.currentY = shadowY - arcHeight;
+      }
+
+      // --- Render shadow for thrown projectiles ---
+      if ((projectile as any).isThrown && arcHeight > 0) {
+        ctx.save();
+        const shadowScale = 1 - (arcHeight / 80) * 0.5;
+        const shadowAlpha = 0.1 + (arcHeight / 80) * 0.25;
+        ctx.globalAlpha = shadowAlpha;
+        ctx.beginPath();
+        ctx.ellipse(shadowX, shadowY, 8 * shadowScale, 4 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
 
       // --- Emit and update projectile trail particles ---
       const particles = projectile.particles as any[] | undefined;
@@ -1540,17 +1727,26 @@ function animationLoop() {
         const icon = cache.projectileIcons.get(projectile.spell);
 
         if (icon && icon.complete && icon.naturalWidth > 0) {
-
           const dx = endX - projectile.currentX;
           const dy = endY - projectile.currentY;
           const angle = Math.atan2(dy, dx) + Math.PI / 2;
 
-          const iconSize = 24;
+          let iconSize = 24;
           ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
           ctx.shadowBlur = 8;
 
           ctx.translate(projectile.currentX, projectile.currentY);
-          ctx.rotate(angle);
+
+          if ((projectile as any).isThrown) {
+            const heightScale = 1 - (arcHeight / 80) * 0.3;
+            iconSize = Math.max(16, 24 * heightScale);
+            ctx.scale(heightScale, heightScale);
+            const tumble = progress * Math.PI * 2;
+            ctx.rotate(tumble);
+          } else {
+            ctx.rotate(angle);
+          }
+
           ctx.drawImage(
             icon,
             -iconSize / 2,
@@ -2117,6 +2313,32 @@ function animationLoop() {
     for (const p of visiblePlayers) {
       if (p.showDebuffs) {
         p.showDebuffs(ctx);
+      }
+      // Render stunned indicator above stunned players
+      if (Array.isArray(p.activeEffects)) {
+        const isStunned = p.activeEffects.some((e: any) => e.id?.startsWith && e.id.startsWith("stun:") && e.endTime > Date.now());
+        if (isStunned) {
+          const now = performance.now();
+          const sx = p.renderPosition?.x ?? p.position.x;
+          const frameH = 64;
+          const sy = (p.renderPosition?.y ?? p.position.y) - frameH / 2 + 4;
+          ctx.save();
+          for (let i = 0; i < 3; i++) {
+            const angle = (now * 0.002 + i * Math.PI * 2 / 3) % (Math.PI * 2);
+            const radius = 10;
+            const sx2 = sx + Math.cos(angle) * radius;
+            const sy2 = sy + Math.sin(angle) * radius * 0.6;
+            const starSize = 3 + Math.sin(now * 0.005 + i) * 1;
+            ctx.fillStyle = '#ffd700';
+            ctx.beginPath();
+            ctx.arc(sx2, sy2, starSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ff8c00';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
       }
     }
 

@@ -293,7 +293,7 @@ function resizeGameCanvas() {
 
   // Snapshot the current frame before resizing. Reassigning canvas.width/height
   // clears the backing store, so without this the canvas's black CSS background
-  // shows through for a frame before the render loop repaints — seen as black
+  // shows through for a frame before the render loop repaints - seen as black
   // flicker while dragging to resize on PC.
   let snapshot: HTMLCanvasElement | null = null;
   if (ctx && prevWidth > 0 && prevHeight > 0) {
@@ -623,6 +623,23 @@ canvas.addEventListener("touchend", (e) => {
   }
 });
 
+canvas.addEventListener("mousemove", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+
+  let mapCenterOffsetX = 0;
+  if (window.mapData) {
+    const mapWidth = window.mapData.width * window.mapData.tilewidth;
+    if (mapWidth < window.innerWidth) {
+      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+  }
+
+  (window as any).mouseWorldX = Math.floor(screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX);
+  (window as any).mouseWorldY = Math.floor(screenY - window.innerHeight / 2 + getCameraY());
+});
+
 document.addEventListener("click", (event) => {
 
   if (!getIsLoaded()) return;
@@ -630,7 +647,6 @@ document.addEventListener("click", (event) => {
   if ((window as any).tileEditor?.isActive) return;
   if ((event.target as HTMLElement)?.closest(".ui")) return;
 
-  // Don't untarget when clicking on entity editor UI
   const entityEditorContainer = document.getElementById("entity-editor-container");
   if (entityEditorContainer && entityEditorContainer.contains(event.target as Node)) return;
 
@@ -643,7 +659,6 @@ document.addEventListener("click", (event) => {
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  // Account for map centering offset for small maps
   let mapCenterOffsetX = 0;
   const mapCenterOffsetY = 0;
   if (window.mapData) {
@@ -655,6 +670,34 @@ document.addEventListener("click", (event) => {
 
   const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
   const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
+
+  if (cache.groundTargetingSpell) {
+    const spellName = cache.groundTargetingSpell;
+    cache.groundTargetingSpell = null;
+    document.body.style.cursor = '';
+
+    const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
+    if (currentPlayer) {
+      const formattedSpellName = spellName.split('_').map((word: string) =>
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ');
+      currentPlayer.castingSpell = formattedSpellName;
+      currentPlayer.castingStartTime = performance.now();
+      currentPlayer.castingDuration = 2000;
+      currentPlayer.castingInterrupted = false;
+      currentPlayer.groundAoeTarget = { x: Math.floor(worldX), y: Math.floor(worldY) };
+    }
+
+    sendRequest({
+      type: "HOTBAR",
+      data: {
+        spell: spellName,
+        groundX: Math.floor(worldX),
+        groundY: Math.floor(worldY),
+      }
+    });
+    return;
+  }
 
   // Clear previous target
   const prevPlayer = Array.from(cache.players).find(player => player.targeted);
@@ -811,7 +854,7 @@ document.addEventListener("click", (e) => {
   if (!isTouchDevice) return;
 
   const target = e.target as HTMLElement;
-  // Don't close if clicking radial menu items — they toggle panels themselves
+  // Don't close if clicking radial menu items - they toggle panels themselves
   if (target.closest(".radial-item") || target.closest(".radial-menu-btn") || target.closest("#radial-menu")) return;
 
   const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #friends-list-container.open, #guild-container.open, #admin-panel-container.open");

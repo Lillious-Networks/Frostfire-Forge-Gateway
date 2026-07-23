@@ -241,7 +241,7 @@ setInterval(tickBuffTimers, 1000);
 
 // --- Hotbar spell cooldown clock + "ready" flash ---
 const READY_FLASH_MS = 600;
-const spellCooldowns = new Map<string, { start: number; end: number }>();
+export const spellCooldowns = new Map<string, { start: number; end: number }>();
 let cooldownRaf = 0;
 
 function startSpellCooldown(spellName: string) {
@@ -300,10 +300,24 @@ function tickSpellCooldowns() {
         flashSlotReady(slot);
       } else {
         const overlay = getCooldownOverlay(slot);
-        const deg = progress * 360;
-        overlay.style.background = `conic-gradient(transparent ${deg}deg, rgba(0, 0, 0, 0.6) ${deg}deg)`;
+        overlay.style.background = `conic-gradient(transparent ${progress * 360}deg, rgba(0, 0, 0, 0.6) ${progress * 360}deg)`;
       }
     });
+
+    const grid = spellBookUI.querySelector("#grid");
+    if (grid) {
+      grid.querySelectorAll(".slot").forEach((slot: Element) => {
+        const el = slot as HTMLDivElement;
+        if (el.dataset.spellName !== spellName) return;
+        if (finished) {
+          const overlay = el.querySelector(".cooldown-overlay") as HTMLDivElement | null;
+          if (overlay) overlay.remove();
+        } else {
+          const overlay = getCooldownOverlay(el);
+          overlay.style.background = `conic-gradient(transparent ${progress * 360}deg, rgba(0, 0, 0, 0.6) ${progress * 360}deg)`;
+        }
+      });
+    }
 
     if (finished) {
       spellCooldowns.delete(spellName);
@@ -315,17 +329,35 @@ function tickSpellCooldowns() {
   cooldownRaf = active ? requestAnimationFrame(tickSpellCooldowns) : 0;
 }
 
+export function refreshSpellbookCooldowns() {
+  if (spellCooldowns.size > 0 && !cooldownRaf) {
+    cooldownRaf = requestAnimationFrame(tickSpellCooldowns);
+  } else if (spellCooldowns.size > 0) {
+    tickSpellCooldowns();
+  }
+}
+
 // --- Spell lockout (e.g. from an interrupt): grey out all hotbar spells ---
 let spellLockoutTimeout = 0;
 
 function startSpellLockout(durationSec: number) {
   const cache = Cache.getInstance();
   const durationMs = Math.max(0, Number(durationSec) || 0) * 1000;
+
+  const getAllSpellSlots = (): HTMLDivElement[] => {
+    const slots: HTMLDivElement[] = [...hotbarSlots];
+    const grid = spellBookUI.querySelector("#grid");
+    if (grid) {
+      grid.querySelectorAll(".slot").forEach((s) => slots.push(s as HTMLDivElement));
+    }
+    return slots;
+  };
+
   if (durationMs <= 0) {
     if (spellLockoutTimeout) window.clearTimeout(spellLockoutTimeout);
     spellLockoutTimeout = 0;
     cache.spellLockoutUntil = 0;
-    hotbarSlots.forEach((slot) => {
+    getAllSpellSlots().forEach((slot) => {
       slot.classList.remove("spell-locked");
       if (slot.dataset.spellName) flashSlotReady(slot);
     });
@@ -335,14 +367,14 @@ function startSpellLockout(durationSec: number) {
   if (end <= cache.spellLockoutUntil) return;
   cache.spellLockoutUntil = end;
 
-  hotbarSlots.forEach((slot) => {
+  getAllSpellSlots().forEach((slot) => {
     if (slot.dataset.spellName) slot.classList.add("spell-locked");
   });
 
   if (spellLockoutTimeout) window.clearTimeout(spellLockoutTimeout);
   spellLockoutTimeout = window.setTimeout(() => {
     spellLockoutTimeout = 0;
-    hotbarSlots.forEach((slot) => {
+    getAllSpellSlots().forEach((slot) => {
       slot.classList.remove("spell-locked");
       if (slot.dataset.spellName) flashSlotReady(slot);
     });
@@ -511,14 +543,6 @@ hotbarSlots.forEach((slot, index) => {
 
   slot.addEventListener("contextmenu", (event: MouseEvent) => {
     event.preventDefault();
-
-    if (slot.dataset.spellName) {
-
-      delete slot.dataset.spellName;
-      slot.innerHTML = "";
-
-      saveHotbarConfiguration();
-    }
   });
 });
 

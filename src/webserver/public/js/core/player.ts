@@ -233,7 +233,7 @@ async function createPlayer(data: any) {
             alpha = baseOpacity;
           }
 
-          // World coordinates — rendered inside ctx.translate(offsetX, offsetY)
+          // World coordinates - rendered inside ctx.translate(offsetX, offsetY)
           context.globalAlpha = alpha;
           const cx = this.renderPosition.x + pp.localposition.x;
           const cy = this.renderPosition.y + pp.localposition.y;
@@ -265,7 +265,7 @@ async function createPlayer(data: any) {
       const maxPerRow = 5;
       const timerHeight = 12;
       const rowHeight = iconSize + timerHeight + gap;
-      const baseIconY = this.renderPosition.y - 87;
+      const baseIconY = this.renderPosition.y - 95;
 
       const rows: any[][] = [];
       for (let i = 0; i < active.length; i += maxPerRow) {

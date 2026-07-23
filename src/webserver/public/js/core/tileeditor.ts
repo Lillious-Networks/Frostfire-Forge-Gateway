@@ -3582,7 +3582,7 @@ class TileEditor {
 
     const closeButton = document.createElement("button");
     closeButton.className = 'te-panel-close ui';
-    closeButton.innerText = 'Ã—';
+    closeButton.innerText = '\u00D7';
     closeButton.style.cursor = 'pointer';
     closeButton.onclick = () => {
       if (this.propertiesPanel && this.propertiesPanel.parentNode) {

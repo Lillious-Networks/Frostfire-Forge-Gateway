@@ -24,6 +24,7 @@ class Cache {
     duration: number;
     spell: string;
     isEntityTarget?: boolean;
+    isThrown?: boolean;
     particles?: any[];
     particleArrays?: Record<string, any[]>;
     lastEmitTime?: Record<string, number>;
@@ -35,6 +36,9 @@ class Cache {
   spells: Record<string, any> = {};
   collectables: any[] = [];
   spellLockoutUntil: number = 0;
+  groundTargetingSpell: string | null = null;
+  activeGroundAoeZones: Record<string, any> = {};
+  groundAoeCastingPreviews: Record<string, any> = {};
 
   private constructor() {}
 

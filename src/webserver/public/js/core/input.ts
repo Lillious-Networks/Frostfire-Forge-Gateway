@@ -1,7 +1,7 @@
 import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
-import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer } from "./ui.js";
+import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
 import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
 import { chatInput } from "./chat.js";
@@ -63,6 +63,7 @@ export const keyHandlers = {
   KeyP: () => {
     closeOtherPanels("spellbook");
     toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
+    if (toggleSpellBook) refreshSpellbookCooldowns();
   },
   KeyO: () => {
     closeOtherPanels("friends");
@@ -212,6 +213,16 @@ function cast(hotbar_index: number) {
     const spellName = slot?.dataset?.spellName;
     if (!spellName) return;
 
+    const spellData = cache.spells[spellName];
+    if (spellData && spellData.ground_aoe) {
+      if (spellCooldowns.has(spellName) && performance.now() < spellCooldowns.get(spellName)!.end) {
+        return;
+      }
+      cache.groundTargetingSpell = spellName;
+      document.body.style.cursor = 'crosshair';
+      return;
+    }
+
     // Optimistically set casting state on client before server response
     const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
     if (currentPlayer) {
@@ -266,6 +277,12 @@ function clearKeyCooldown(key: string) {
 function handleEscapeKey() {
   stopMovement();
   chatInput.blur();
+
+  if (cache.groundTargetingSpell) {
+    cache.groundTargetingSpell = null;
+    document.body.style.cursor = '';
+    return;
+  }
 
   // Check if currently casting a spell and cancel it instead of opening pause menu
   const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);

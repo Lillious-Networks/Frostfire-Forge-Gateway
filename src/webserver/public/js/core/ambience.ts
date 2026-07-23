@@ -23,7 +23,7 @@ timeOverrideCheckbox.addEventListener("change", () => {
   updateAmbience();
 });
 
-// Get effective time-of-day — slider overrides server time if touched
+// Get effective time-of-day - slider overrides server time if touched
 function getEffectiveTime(): { hours: number; minutes: number } {
   if (overrideHour !== null && timeOverrideCheckbox.checked) {
     const h = Math.floor(overrideHour);

@@ -1512,7 +1512,8 @@ input::placeholder(:not(#chat-container input)) {
   user-select: none;
 }
 
-#hotbar #grid .slot {
+#hotbar #grid .slot,
+#spell-book-container #grid .slot {
   position: relative;
 }
 
