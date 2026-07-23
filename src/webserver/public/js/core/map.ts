@@ -229,6 +229,15 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     const assetServerUrl = metadata?.assetServerUrl || "";
     (window as any).__assetServerUrl = assetServerUrl;
 
+    const mapVersion = metadata?.mapVersion || '';
+    if (mapVersion) {
+      const cachedVersion = await getCachedMapVersion(mapName);
+      if (cachedVersion !== mapVersion) {
+        await clearMapCache(mapName);
+        await setCachedMapVersion(mapName, mapVersion);
+      }
+    }
+
     progressBar.style.width = "10%";
 
     const images = await loadTilesets(tilesets);
@@ -546,7 +555,7 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
 
 const CACHE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const CACHE_DB_NAME = 'map-chunk-cache';
-const CACHE_DB_VERSION = 1;
+const CACHE_DB_VERSION = 2;
 
 function getCacheKey(mapName: string, chunkX: number, chunkY: number): string {
   return `chunk_${mapName}_${chunkX}_${chunkY}`;
@@ -571,6 +580,9 @@ function getCacheDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('chunks')) {
         const store = db.createObjectStore('chunks', { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('versions')) {
+        db.createObjectStore('versions', { keyPath: 'mapName' });
       }
     };
 
@@ -671,6 +683,35 @@ async function clearMapCache(mapName?: string): Promise<void> {
   } catch (error) {
     console.error("Error clearing map cache:", error);
   }
+}
+
+async function getCachedMapVersion(mapName: string): Promise<string | null> {
+  try {
+    const db = await getCacheDB();
+    const entry = await new Promise<any>((resolve, reject) => {
+      const tx = db.transaction('versions', 'readonly');
+      const store = tx.objectStore('versions');
+      const req = store.get(mapName);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return entry?.version || null;
+  } catch {
+    return null;
+  }
+}
+
+async function setCachedMapVersion(mapName: string, version: string): Promise<void> {
+  try {
+    const db = await getCacheDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('versions', 'readwrite');
+      const store = tx.objectStore('versions');
+      const req = store.put({ mapName, version });
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch { /* ignore */ }
 }
 
 async function isChunkCached(mapName: string, chunkX: number, chunkY: number): Promise<boolean> {
