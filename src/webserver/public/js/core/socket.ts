@@ -429,7 +429,7 @@ socket.onopen = () => {
   initializeConnection();
 };
 
-socket.onclose = (ev: CloseEvent) => {
+socket.onclose = async (ev: CloseEvent) => {
 
   progressBarContainer.style.display = "none";
 
@@ -455,13 +455,10 @@ socket.onclose = (ev: CloseEvent) => {
 
     setTimeout(async () => {
       try {
+        (window as any).__suppressLoadingScreen = true;
         await initializeSocket();
         reconnectAttempts = 0;
-        showNotification(
-          `Reconnected successfully!`,
-          true,
-          false
-        );
+        window.location.reload();
       } catch (error) {
         showNotification(
           `Reconnection failed. Please refresh the page.`,
