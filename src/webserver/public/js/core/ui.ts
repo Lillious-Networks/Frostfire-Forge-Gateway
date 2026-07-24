@@ -1,5 +1,6 @@
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
+const cache = Cache.getInstance();
 import { cast } from "./input.js";
 import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip } from "./tooltip.js";
 import { config } from "../web/global.js";
@@ -1790,18 +1791,35 @@ function castSpell(id: string, spell: string, time: number) {
 }
 
 function saveInventoryConfiguration() {
-  const inventoryConfig: { [key: string]: string | null } = {};
+  flushInventorySlots();
+}
+
+function saveInventorySlots() {
+  const cache = Cache.getInstance();
   const inventorySlots = inventoryGrid.querySelectorAll(".slot");
-
-  inventorySlots.forEach((slot, index) => {
-    const itemName = (slot as HTMLElement).dataset.itemName;
-    inventoryConfig[index.toString()] = itemName || null;
+  inventorySlots.forEach((s, idx) => {
+    const el = s as HTMLElement;
+    if (el.dataset.itemName) {
+      const invItem = (cache.inventory || []).find((i: any) => i.name === el.dataset.itemName);
+      if (invItem) invItem.slot = idx;
+    }
   });
+}
 
-  sendRequest({
-    type: "SAVE_INVENTORY_CONFIG",
-    data: inventoryConfig
+function flushInventorySlots() {
+  const cache = Cache.getInstance();
+  const slots: Array<{ item: string; slot: number; bag_slot: number }> = [];
+  const inventorySlots = inventoryGrid.querySelectorAll(".slot");
+  inventorySlots.forEach((s, idx) => {
+    const el = s as HTMLElement;
+    if (el.dataset.itemName) {
+      const invItem = (cache.inventory || []).find((i: any) => i.name === el.dataset.itemName);
+      slots.push({ item: el.dataset.itemName, slot: idx, bag_slot: invItem?.bag_slot || 0 });
+    }
   });
+  if (slots.length > 0) {
+    sendRequest({ type: "SAVE_INVENTORY_SLOTS", data: { slots } });
+  }
 }
 
 async function loadInventoryConfiguration(inventoryConfig: any, inventoryData: any[]) {
@@ -2212,7 +2230,7 @@ export {
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,
-    saveInventoryConfiguration, loadInventoryConfiguration, setupInventorySlotHandlers, updateCurrencyDisplay, adminPanelContainer,
+    saveInventoryConfiguration, loadInventoryConfiguration, saveInventorySlots, flushInventorySlots, setupInventorySlotHandlers, updateCurrencyDisplay, adminPanelContainer,
     updateAdminMapInput, updateAdminPlayerListWithData,
 };
 
@@ -2244,10 +2262,35 @@ function setupInventorySlotHandlers() {
     slot.addEventListener("dblclick", () => {
       if (slot.dataset.itemType === "equipment" && slot.dataset.itemName) {
         hideItemTooltip();
-        sendRequest({
-          type: "EQUIP_ITEM",
-          data: { item: slot.dataset.itemName, slotIndex: index },
-        });
+        if (slot.dataset.equipmentSlot === "bag") {
+          const bagSlots = document.querySelectorAll("[data-bag-slot]");
+          let chosen: string | null = null;
+          bagSlots.forEach((bs: any) => {
+            if (!chosen && bs.classList.contains("bag-empty")) chosen = bs.dataset.bagSlot;
+          });
+          sendRequest({
+            type: "BAG_EQUIP",
+            data: { item: slot.dataset.itemName, slot: chosen || "slot_1" },
+          });
+        } else {
+          sendRequest({
+            type: "EQUIP_ITEM",
+            data: { item: slot.dataset.itemName, slotIndex: index },
+          });
+          const invItem = (cache.inventory || []).find((i: any) => i.name === slot.dataset.itemName);
+          if (invItem && invItem.quantity > 1) {
+            invItem.quantity -= 1;
+            const ql = slot.querySelector('.quantity-label');
+            if (ql) ql.textContent = `x${invItem.quantity}`;
+          } else {
+            slot.innerHTML = '';
+            slot.dataset.itemName = '';
+            slot.dataset.itemType = '';
+            delete slot.dataset.equipmentSlot;
+            slot.classList.add('empty');
+            slot.draggable = false;
+          }
+        }
       }
     });
 
@@ -2259,10 +2302,35 @@ function setupInventorySlotHandlers() {
         e.preventDefault();
         if (slot.dataset.itemType === "equipment" && slot.dataset.itemName) {
           hideItemTooltip();
-          sendRequest({
-            type: "EQUIP_ITEM",
-            data: { item: slot.dataset.itemName, slotIndex: index },
-          });
+          if (slot.dataset.equipmentSlot === "bag") {
+            const bagSlots = document.querySelectorAll("[data-bag-slot]");
+            let chosen: string | null = null;
+            bagSlots.forEach((bs: any) => {
+              if (!chosen && bs.classList.contains("bag-empty")) chosen = bs.dataset.bagSlot;
+            });
+            sendRequest({
+              type: "BAG_EQUIP",
+              data: { item: slot.dataset.itemName, slot: chosen || "slot_1" },
+            });
+          } else {
+            sendRequest({
+              type: "EQUIP_ITEM",
+              data: { item: slot.dataset.itemName, slotIndex: index },
+            });
+            const invItem = (cache.inventory || []).find((i: any) => i.name === slot.dataset.itemName);
+            if (invItem && invItem.quantity > 1) {
+              invItem.quantity -= 1;
+              const ql = slot.querySelector('.quantity-label');
+              if (ql) ql.textContent = `x${invItem.quantity}`;
+            } else {
+              slot.innerHTML = '';
+              slot.dataset.itemName = '';
+              slot.dataset.itemType = '';
+              delete slot.dataset.equipmentSlot;
+              slot.classList.add('empty');
+              slot.draggable = false;
+            }
+          }
         }
       }
       lastTapTime = now;
@@ -2289,6 +2357,13 @@ function setupInventorySlotHandlers() {
         }
 
         event.dataTransfer.effectAllowed = "move";
+
+        const origImg = slot.style.backgroundImage;
+        slot.style.backgroundImage = "none";
+        slot.style.background = "none";
+        event.dataTransfer.setDragImage(slot, 20, 20);
+        slot.style.backgroundImage = origImg;
+        slot.style.background = "";
         slot.style.opacity = "0.5";
       }
     });
@@ -2303,7 +2378,6 @@ function setupInventorySlotHandlers() {
         if (event.dataTransfer.types.includes("inventory-rearrange-index") ||
             event.dataTransfer.types.includes("equipped-item-slot")) {
           event.dataTransfer.dropEffect = "move";
-          slot.style.border = "2px solid white";
         }
       }
     });
@@ -2430,7 +2504,7 @@ function setupInventorySlotHandlers() {
             removeItemTooltip(sourceSlot);
           }
 
-          saveInventoryConfiguration();
+          flushInventorySlots();
         }
       }
     });

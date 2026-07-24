@@ -589,7 +589,10 @@ if (useSSL) {
     port: httpPort,
     development: false,
     fetch(req: Request) {
-      const url = new URL(req.url);
+      const url = tryParseURL(req.url);
+      if (!url) {
+        return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
+      }
 
       const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
 
@@ -630,6 +633,14 @@ if (useSSL) {
     }
   });
   console.log(`[Gateway] HTTP redirect server running on http://localhost:${httpPort}`);
+}
+
+function tryParseURL(url: string) : URL | null {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
 }
 
 export {}

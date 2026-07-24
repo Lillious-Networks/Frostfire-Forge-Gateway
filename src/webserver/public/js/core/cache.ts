@@ -39,6 +39,7 @@ class Cache {
   groundTargetingSpell: string | null = null;
   activeGroundAoeZones: Record<string, any> = {};
   groundAoeCastingPreviews: Record<string, any> = {};
+  bags: any = {};
 
   private constructor() {}
 

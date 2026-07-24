@@ -865,3 +865,83 @@ document.addEventListener("click", (e) => {
     closeAllPanels();
   }
 });
+
+// Allow dropping items from inventory/equipment onto the game world (canvas)
+canvas.addEventListener("dragover", (e: DragEvent) => {
+  if (e.dataTransfer?.types.includes("inventory-item-name") || e.dataTransfer?.types.includes("equipped-item-name")) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+});
+
+canvas.addEventListener("drop", (e: DragEvent) => {
+  const itemName = e.dataTransfer?.getData("inventory-item-name")
+    || e.dataTransfer?.getData("equipped-item-name");
+  if (!itemName) return;
+
+  e.preventDefault();
+  const from = e.dataTransfer?.getData("equipped-item-name") ? "equipment" : "inventory";
+  const slot = e.dataTransfer?.getData("equipped-item-slot") || null;
+
+  const existing = document.getElementById("delete-item-popup");
+  if (existing) existing.remove();
+
+  const cache = Cache.getInstance();
+  const lowerName = itemName.toLowerCase();
+  const invItem = (cache.inventory || []).find((i: any) => i.name.toLowerCase() === lowerName);
+  const quality = invItem?.quality || "common";
+  const qty = invItem?.quantity || 1;
+  const requiresTyping = quality.toLowerCase() === "legendary" || quality.toLowerCase() === "epic";
+
+  const QUALITY_COLORS: Record<string, string> = {
+    common: '#9d9d9d', uncommon: '#1eff00', rare: '#0070dd',
+    epic: '#a335ee', legendary: '#ff8000',
+  };
+  const qColor = QUALITY_COLORS[quality.toLowerCase()] || QUALITY_COLORS.common;
+
+  const popup = document.createElement("div");
+  popup.id = "delete-item-popup";
+  popup.className = "popup";
+  popup.innerHTML = `
+    <h2>Delete Item</h2>
+    <p>Are you sure you want to destroy <strong style="color:${qColor}">${itemName}</strong>${qty > 1 ? ` (x${qty})` : ""}? This cannot be undone.</p>
+    ${requiresTyping ? `<p style="color:#ff4444;font-size:0.75em;">Type <strong>delete</strong> below to confirm.</p>
+    <input id="delete-confirm-input" type="text" placeholder="delete" autocomplete="off" />` : ""}
+    <div class="button-container">
+      <button id="confirm-delete-item">Delete</button>
+      <button id="cancel-delete-item">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+
+  const confirmBtn = document.getElementById("confirm-delete-item") as HTMLButtonElement;
+  const cancelBtn = document.getElementById("cancel-delete-item") as HTMLButtonElement;
+  const input = document.getElementById("delete-confirm-input") as HTMLInputElement;
+
+  if (requiresTyping && confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = "0.5";
+    input?.addEventListener("input", () => {
+      const ok = input.value.trim().toLowerCase() === "delete";
+      confirmBtn.disabled = !ok;
+      confirmBtn.style.opacity = ok ? "1" : "0.5";
+    });
+  }
+
+  confirmBtn?.addEventListener("click", () => {
+    if (requiresTyping && input?.value.trim().toLowerCase() !== "delete") return;
+    (window as any).sendRequest({ type: "DELETE_ITEM", data: { item: itemName, from, slot } });
+    popup.remove();
+  });
+
+  cancelBtn?.addEventListener("click", () => {
+    popup.remove();
+  });
+
+  popup.addEventListener("keydown", (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") popup.remove();
+    if (ev.key === "Enter" && !confirmBtn.disabled) {
+      confirmBtn.click();
+    }
+  });
+});
