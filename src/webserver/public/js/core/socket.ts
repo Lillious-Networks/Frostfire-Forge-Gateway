@@ -3492,6 +3492,26 @@ socket.onmessage = async (event) => {
       });
       break;
     }
+    case "LOOT_SPAWN": {
+      const lootData = JSON.parse(packet.decode(event.data))["data"];
+      if (!lootData?.id) break;
+      const existing = (cache.loot || []).findIndex((l: any) => l.id === lootData.id);
+      if (existing !== -1) {
+        cache.loot[existing] = lootData;
+      } else {
+        cache.loot.push(lootData);
+      }
+      if (lootData.iconUrl) {
+        import("./loot.js").then(({ preloadLootIcon }) => preloadLootIcon(lootData.iconUrl));
+      }
+      break;
+    }
+    case "LOOT_DESPAWN": {
+      const d = JSON.parse(packet.decode(event.data))["data"];
+      if (!d?.id) break;
+      cache.loot = (cache.loot || []).filter((l: any) => l.id !== d.id);
+      break;
+    }
     case "QUESTLOG": {
 
       break;

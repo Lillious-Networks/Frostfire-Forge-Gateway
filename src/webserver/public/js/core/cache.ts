@@ -40,6 +40,7 @@ class Cache {
   activeGroundAoeZones: Record<string, any> = {};
   groundAoeCastingPreviews: Record<string, any> = {};
   bags: any = {};
+  loot: any[] = [];
 
   private constructor() {}
 

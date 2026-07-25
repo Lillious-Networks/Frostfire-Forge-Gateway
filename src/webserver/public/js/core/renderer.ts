@@ -8,6 +8,7 @@ const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { renderShadows } from './shadows.js';
+import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderLightMap } from './lightmap.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -1222,6 +1223,11 @@ function animationLoop() {
     return;
   }
 
+  const px = currentPlayer.position?.x ?? currentPlayer.renderPosition?.x ?? 0;
+  const py = currentPlayer.position?.y ?? currentPlayer.renderPosition?.y ?? 0;
+  const playerMap = currentPlayer.map || currentPlayer.location?.map || "";
+  (window as any).updateLootPickup?.(px, py, playerMap);
+
   for (const npc of cache.npcs) {
     if ((npc as any).layeredAnimation) {
       updateLayeredAnimation((npc as any).layeredAnimation, deltaTime);
@@ -1447,8 +1453,6 @@ function animationLoop() {
     renderMap('below');
   }
 
-  ctx.save();
-
   // Calculate map size in pixels and centering offset for small maps
   const mapWidth = window.mapData.width * window.mapData.tilewidth;
   let mapCenterOffsetX = 0;
@@ -1538,6 +1542,8 @@ function animationLoop() {
     for (const entity of visibleEntities) {
       entity.show(ctx);
     }
+
+    renderLoot(ctx, cameraX, cameraY, canvas.width, canvas.height, cachedPlayerId);
 
     const now = performance.now();
     for (let i = cache.projectiles.length - 1; i >= 0; i--) {
@@ -2371,6 +2377,8 @@ function animationLoop() {
   if (!(window as any).__firstFrameRendered && window.mapData) {
     (window as any).__firstFrameRendered = true;
   }
+
+  renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
 
   requestAnimationFrame(animationLoop);
 }

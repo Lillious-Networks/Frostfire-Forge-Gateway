@@ -21,6 +21,71 @@ import { createContextMenu, createPartyContextMenu, createGuildContextMenu, crea
 import { closeRadialMenu } from "./mobileui.js";
 let typingTimer: number | null = null;
 
+// Loot pickup state
+let lootKeyDownTime: number | null = null;
+let lootHolding = false;
+export let lootPickupProgress = 0;
+let nearestLootId: string | null = null;
+const LOOT_HOLD_DURATION = 1500;
+const LOOT_HOLD_DELAY = 250;
+const LOOT_PROGRESS_DURATION = LOOT_HOLD_DURATION - LOOT_HOLD_DELAY;
+const LOOT_PICKUP_RADIUS = 100;
+
+export function updateLootPickup(playerX: number, playerY: number, playerMap: string): void {
+  const cache = Cache.getInstance();
+  const lootItems = cache.loot || [];
+  const normalizedMap = (playerMap || "").replace(".json", "").toLowerCase();
+
+  let nearestId: string | null = null;
+  let nearestDist = Infinity;
+
+  for (const loot of lootItems) {
+    if (String(loot.ownerId) !== String(cachedPlayerId)) continue;
+    const lootMap = (loot.map || "").replace(".json", "").toLowerCase();
+    if (lootMap !== normalizedMap) continue;
+    const dx = playerX - loot.x;
+    const dy = playerY - loot.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < nearestDist && dist <= LOOT_PICKUP_RADIUS) {
+      nearestDist = dist;
+      nearestId = loot.id;
+    }
+  }
+
+  nearestLootId = nearestId;
+
+  if (!nearestLootId || !lootKeyDownTime) {
+    if (lootHolding || lootKeyDownTime) {
+      lootKeyDownTime = null;
+      lootHolding = false;
+      lootPickupProgress = 0;
+      (window as any)._lootPickupProgress = 0;
+    }
+    return;
+  }
+
+  const elapsed = performance.now() - lootKeyDownTime;
+
+  if (!lootHolding && elapsed > LOOT_HOLD_DELAY) {
+    lootHolding = true;
+  }
+
+  if (lootHolding) {
+    lootPickupProgress = Math.min((elapsed - LOOT_HOLD_DELAY) / LOOT_PROGRESS_DURATION, 1);
+    (window as any)._lootPickupProgress = lootPickupProgress;
+
+    if (lootPickupProgress >= 1) {
+      lootKeyDownTime = null;
+      lootHolding = false;
+      lootPickupProgress = 0;
+      (window as any)._lootPickupProgress = 0;
+      sendRequest({ type: "BATCH_PICKUP_LOOT", data: {} });
+    }
+  }
+}
+
+(window as any).updateLootPickup = updateLootPickup;
+
 const getActualViewportHeight = () => {
   if (window.visualViewport) {
     return window.visualViewport.height;
@@ -169,6 +234,25 @@ window.addEventListener("keydown", async (e) => {
   );
   if (isTypingInInput && !["Enter", "Escape"].includes(e.code)) return;
 
+  if (e.code === "KeyE") {
+    if (e.repeat) return;
+    const cache = Cache.getInstance();
+    const lootItems = cache.loot || [];
+    let nearOwned = false;
+    for (const loot of lootItems) {
+      if (String(loot.ownerId) !== String(cachedPlayerId)) continue;
+      nearOwned = true;
+      break;
+    }
+    if (nearOwned) {
+      lootKeyDownTime = performance.now();
+      lootHolding = false;
+      lootPickupProgress = 0;
+      (window as any)._lootPickupProgress = 0;
+    }
+    return;
+  }
+
   if (movementKeys.has(e.code)) {
     pressedKeys.add(e.code);
     if (!getIsKeyPressed()) {
@@ -202,6 +286,19 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
     (activeElement as HTMLElement).contentEditable === 'true'
   );
   if (isTypingInInput) return;
+
+  if (e.code === "KeyE") {
+    if (lootKeyDownTime) {
+      if (!lootHolding && nearestLootId) {
+        sendRequest({ type: "PICKUP_LOOT", data: { id: nearestLootId } });
+      }
+      lootKeyDownTime = null;
+      lootHolding = false;
+      lootPickupProgress = 0;
+      (window as any)._lootPickupProgress = 0;
+    }
+    return;
+  }
 
   if (movementKeys.has(e.code)) {
     pressedKeys.delete(e.code);
