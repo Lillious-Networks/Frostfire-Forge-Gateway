@@ -1,9 +1,9 @@
-# BertUI ⚡
+# BertUI
 
 [![Stable: v1.0.0](https://img.shields.io/badge/Stable-v1.0.0-brightgreen)](https://github.com/your-repo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## 🚀 Production Ready (v1.0.3+)
+## Production Ready (v1.0.3+)
 
 BertUI is now **battle-tested in production** with:
 - ✅ Single CSS file optimization (combined from all source CSS)
@@ -14,7 +14,7 @@ BertUI is now **battle-tested in production** with:
 **Live Demo:** https://bertui-docswebsite.vercel.app/
 **The fastest, zero-config React static site generator. Now stable and production-ready.**
 Lightning-fast React development powered by Bun.
-## 📝 Limitations & Notes
+## Limitations & Notes
 
 ### Image Handling
 BertUI automatically serves and copies images from two specific directories:
@@ -23,7 +23,7 @@ BertUI automatically serves and copies images from two specific directories:
 
 **Important:** Images referenced in your JSX/TSX that are located outside these directories (e.g., `../assets/` or absolute paths) will cause compilation errors. Always place project images in `src/images/` or `public/`.
 
-## ⚠️ Important Notice - CSS Animations Temporarily Unavailable
+## Important Notice - CSS Animations Temporarily Unavailable
 
 **The built-in CSS animation utilities have been temporarily removed** due to compatibility issues with `bun.build`. We're working on a solution and they will be back in an upcoming release.
 
@@ -32,17 +32,17 @@ BertUI automatically serves and copies images from two specific directories:
 - You can still use your own CSS animations or external libraries
 - All other BertUI features work normally
 
-**We apologize for any inconvenience caused.** This feature will return soon! 🚀
+**We apologize for any inconvenience caused.** This feature will return soon!
 
 ---
 
 ## Features
 
-- ⚡ **Blazing Fast** - Built on Bun
-- 📁 **File-Based Routing** - Zero config routing
-- 🔥 **Hot Module Replacement** - Instant updates
-- 📦 **Zero Config** - Works out of the box
-- 🚀 **Production Ready** - Optimized builds
+- **Blazing Fast** - Built on Bun
+- **File-Based Routing** - Zero config routing
+- **Hot Module Replacement** - Instant updates
+- **Zero Config** - Works out of the box
+- **Production Ready** - Optimized builds
 
 ## Quick Start
 
@@ -82,7 +82,7 @@ bertui build       # Build for production
 
 BertUI now has **complete file-based routing**! Here's what's included:
 
-### 📁 Features
+### Features
 
 #### ✅ File-Based Routing
 ```
@@ -122,7 +122,7 @@ export default function UserProfile({ params }) {
 - Automatically detects routing mode
 - No breaking changes!
 
-## 📊 How It Works
+## How It Works
 
 1. **Developer creates pages:**
    ```bash
@@ -151,7 +151,7 @@ export default function UserProfile({ params }) {
    - Client-side routing handles navigation
    - HMR updates routes on file changes
 
-## 🎓 Usage Example
+## Usage Example
 
 ```jsx
 // src/pages/index.jsx
@@ -181,20 +181,20 @@ export default function UserProfile({ params }) {
 }
 ```
 
-## 📈 Performance
+## Performance
 
 - **Fast compilation:** Bun's speed + code splitting
 - **Small bundles:** Each route is a separate chunk
 - **Quick HMR:** Only recompiles changed files
 - **Smart routing:** Static routes matched first
 
-## 🐛 Error Handling
+## Error Handling
 
 - Missing routes → Auto 404 page
 - Invalid pages → Compilation error with details
 - Runtime errors → Preserved in dev mode
 
-## 🎯 Next Steps
+## Next Steps
 
 ### Recommended Enhancements:
 1. **Layouts** - Wrap pages with shared layouts
@@ -209,13 +209,13 @@ Update `build.js` to:
 - Create optimized bundles per route
 - Handle dynamic routes appropriately
 
-## 🏁 Conclusion
+## Conclusion
 
 BertUI now has **production-ready file-based routing** that's:
-- ⚡ **Fast** - Built on Bun
-- 🎯 **Simple** - Zero config
-- 💪 **Powerful** - Dynamic routes, params, navigation
-- 🔥 **Modern** - HMR, code splitting, SPA
+- **Fast** - Built on Bun
+- **Simple** - Zero config
+- **Powerful** - Dynamic routes, params, navigation
+- **Modern** - HMR, code splitting, SPA
 
 ## License
 

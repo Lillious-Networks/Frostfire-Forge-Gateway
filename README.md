@@ -2,7 +2,7 @@
   <img src="../../blob/main/logo.png?raw=true">
 </p>
 
-<h1 align="center">🧊🔥 Frostfire Forge Gateway 🔥🧊</h1>
+<h1 align="center">Frostfire Forge Gateway</h1>
 
 <p align="center">
   <strong>Centralized Authentication & Reverse Proxy for Frostfire Forge MMO Platform</strong>
@@ -30,7 +30,7 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 
 ---
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#-overview)
 - [Features](#-features)
@@ -50,7 +50,7 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 
 ---
 
-## 📖 Overview
+## Overview
 
 The Frostfire Forge Gateway is a critical infrastructure component of the Frostfire Forge MMO platform. It acts as the central hub for:
 
@@ -64,7 +64,7 @@ The gateway works in conjunction with the [Frostfire Forge Game Engine](https://
 
 ---
 
-## ✨ Features
+## Features
 
 - **Game Server Authentication & Registration:** Automatic server discovery and registration with heartbeat monitoring
 - **User Authentication:** Login, registration, email verification, password reset
@@ -78,7 +78,7 @@ The gateway works in conjunction with the [Frostfire Forge Game Engine](https://
 
 ---
 
-## 🔧 Requirements
+## Requirements
 
 > [!IMPORTANT]
 > **Required Software**:
@@ -91,7 +91,7 @@ The gateway works in conjunction with the [Frostfire Forge Game Engine](https://
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### Server Design
 
@@ -187,13 +187,13 @@ The reverse proxy (`src/webserver/proxy.ts`) is the only process bound to the pu
 **Notes:**
 
 - The webserver binds to `127.0.0.1` on `WEBSRV_INTERNAL_PORT` (default `8080`) and serves plain HTTP; TLS lives entirely at the proxy.
-- The dynamic IP blacklist is loaded from the database and updated at runtime by the proxy — no restart or config regeneration is required.
+- The dynamic IP blacklist is loaded from the database and updated at runtime by the proxy -- no restart or config regeneration is required.
 - Malicious path rules are defined one-per-line in `src/webserver/config/security.cfg`.
 - All three processes (proxy, webserver, gateway) are started together by `src/start.ts`.
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
 ```bash
 # Database Configuration
@@ -252,7 +252,7 @@ PLAYER_Z_INDEX=4
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Development Setup
 
@@ -285,7 +285,7 @@ bun production
 
 ---
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
 ### Using Docker Compose
 
@@ -318,7 +318,7 @@ npm run docker:prod:down        # Stop prod container
 
 ---
 
-## 📋 Setup Instructions
+## Setup Instructions
 
 ### Database Setup
 
@@ -331,7 +331,8 @@ GRANT ALL PRIVILEGES ON frostfire_forge.* TO 'gateway_user'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-The gateway will create tables automatically on first run.
+> [!IMPORTANT]
+> Run `bun setup` to initialize the database tables before running the engine's `bun setup`.
 
 ### SSL/TLS Setup
 
@@ -357,7 +358,7 @@ GATEWAY_USESSL=true
 
 ---
 
-## 📊 Monitoring Dashboard
+## Monitoring Dashboard
 
 Access the real-time dashboard at `http://localhost:9999/dashboard`
 
@@ -371,7 +372,7 @@ Access the real-time dashboard at `http://localhost:9999/dashboard`
 
 ---
 
-## 🔐 Security
+## Security
 
 ### Edge Filtering (Reverse Proxy)
 
@@ -398,5 +399,5 @@ Access the real-time dashboard at `http://localhost:9999/dashboard`
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by the Frostfire Forge Team</sub>
+  <sub>Built by the Frostfire Forge Team</sub>
 </p>
