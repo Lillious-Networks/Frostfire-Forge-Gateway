@@ -16,12 +16,13 @@ interface LootParticle {
   maxLife: number;
   color: string;
   size: number;
+  hue?: number;
 }
 
 const particles: LootParticle[] = [];
 let lastFrameTime = performance.now();
 
-function spawnParticles(x: number, y: number, color: string, count: number): void {
+function spawnParticles(x: number, y: number, color: string, count: number, isLegendary: boolean = false): void {
   for (let i = 0; i < count; i++) {
     particles.push({
       x: x + (Math.random() - 0.5) * 10,
@@ -30,7 +31,8 @@ function spawnParticles(x: number, y: number, color: string, count: number): voi
       life: 0,
       maxLife: 600 + Math.random() * 800,
       color,
-      size: 1.5 + Math.random() * 2,
+      size: isLegendary ? 3 + Math.random() * 3 : 1.5 + Math.random() * 2,
+      ...(isLegendary ? { hue: Math.random() * 360 } : {}),
     });
   }
 }
@@ -54,7 +56,9 @@ export function renderLoot(
   const delta = now - lastFrameTime;
   lastFrameTime = now;
 
-  const floatOffset = Math.sin(now * 0.002) * 4;
+  const localUsername = playerId ? Array.from(cache.players).find(p => p.id === playerId)?.username : null;
+
+  const floatOffset = Math.round(Math.sin(now * 0.002) * 4);
 
   ctx.save();
   ctx.shadowBlur = 8;
@@ -73,11 +77,33 @@ export function renderLoot(
     if (alpha <= 0) continue;
 
     ctx.globalAlpha = alpha;
-    ctx.shadowColor = p.color;
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
+    if (p.hue !== undefined) {
+      p.hue = (p.hue + 1.2) % 360;
+      const r = p.size;
+      const minibubble = ctx.createRadialGradient(p.x - r * 0.25, p.y - r * 0.25, 0, p.x, p.y, r);
+      minibubble.addColorStop(0, `hsla(${p.hue}, 65%, 70%, 0.8)`);
+      minibubble.addColorStop(0.4, `hsla(${(p.hue + 40) % 360}, 60%, 60%, 0.4)`);
+      minibubble.addColorStop(1, `hsla(${(p.hue + 60) % 360}, 55%, 55%, 0)`);
+      ctx.shadowColor = `hsla(${p.hue}, 70%, 55%, 0.3)`;
+      ctx.fillStyle = minibubble;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      const spark = ctx.createRadialGradient(p.x - r * 0.3, p.y - r * 0.35, 0, p.x - r * 0.3, p.y - r * 0.35, r * 0.4);
+      spark.addColorStop(0, `rgba(255, 255, 255, ${0.7 * alpha})`);
+      spark.addColorStop(1, "transparent");
+      ctx.fillStyle = spark;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.shadowColor = p.color;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
   ctx.globalAlpha = 1;
@@ -88,12 +114,12 @@ export function renderLoot(
 
     const quality = loot.quality?.toLowerCase() || "common";
     const color = QUALITY_COLORS[quality] || QUALITY_COLORS.common;
-    const isOwn = String(loot.ownerId) === String(playerId);
+    const isOwn = String(loot.ownerId) === String(localUsername);
 
-    const iconSize = 24;
+    const iconSize = 30;
     const iconHalf = iconSize / 2;
     const iconX = sx - iconHalf;
-    const iconY = sy - 48 + floatOffset;
+    const iconY = sy - 52 + floatOffset;
 
     const shadowW = 8 + floatOffset * 1.2;
     const shadowH = 3 + floatOffset * 0.6;
@@ -105,17 +131,85 @@ export function renderLoot(
       ctx.fill();
     }
 
-    const backlightRadius = 20 + (isOwn ? 6 : 0);
-    const gradient = ctx.createRadialGradient(sx, iconY + iconHalf, 2, sx, iconY + iconHalf, backlightRadius);
-    gradient.addColorStop(0, color + "66");
-    gradient.addColorStop(0.7, color + "22");
-    gradient.addColorStop(1, "transparent");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(sx - backlightRadius, iconY + iconHalf - backlightRadius, backlightRadius * 2, backlightRadius * 2);
+    const backlightRadius = 30;
+
+    if (quality !== "legendary") {
+      const gradient = ctx.createRadialGradient(sx, iconY + iconHalf, 2, sx, iconY + iconHalf, backlightRadius);
+      gradient.addColorStop(0, color + "66");
+      gradient.addColorStop(0.7, color + "22");
+      gradient.addColorStop(1, "transparent");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(sx - backlightRadius, iconY + iconHalf - backlightRadius, backlightRadius * 2, backlightRadius * 2);
+    }
 
     const img = lootImageCache?.get(loot.iconUrl);
     if (img && img.complete) {
       ctx.drawImage(img, iconX, iconY, iconSize, iconSize);
+    }
+
+    if (quality === "legendary") {
+      const hueOffset = (now * 0.03) % 360;
+      const cx = sx;
+      const cy = iconY + iconHalf;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, backlightRadius, 0, Math.PI * 2);
+      ctx.clip();
+
+      const baseGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, backlightRadius);
+      baseGlow.addColorStop(0, `hsla(${(hueOffset + 0) % 360}, 70%, 65%, 0.02)`);
+      baseGlow.addColorStop(0.15, `hsla(${(hueOffset + 60) % 360}, 70%, 62%, 0.08)`);
+      baseGlow.addColorStop(0.3, `hsla(${(hueOffset + 120) % 360}, 75%, 58%, 0.12)`);
+      baseGlow.addColorStop(0.5, `hsla(${(hueOffset + 180) % 360}, 70%, 62%, 0.12)`);
+      baseGlow.addColorStop(0.7, `hsla(${(hueOffset + 240) % 360}, 75%, 58%, 0.09)`);
+      baseGlow.addColorStop(0.88, `hsla(${(hueOffset + 300) % 360}, 70%, 62%, 0.05)`);
+      baseGlow.addColorStop(1, `hsla(${(hueOffset + 350) % 360}, 70%, 65%, 0.01)`);
+      ctx.fillStyle = baseGlow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, backlightRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      const swirlSegments = 24;
+      for (let i = 0; i < swirlSegments; i++) {
+        const angle = (i / swirlSegments) * Math.PI * 2;
+        const swirlHue = (hueOffset + angle * 25 + Math.sin(angle * 2.5 + hueOffset * 0.02) * 35) % 360;
+        const r1 = backlightRadius * 0.15;
+        const r2 = backlightRadius * 0.95;
+        const grad = ctx.createLinearGradient(
+          cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1,
+          cx + Math.cos(angle) * r2, cy + Math.sin(angle) * r2,
+        );
+        grad.addColorStop(0, `hsla(${swirlHue}, 65%, 62%, 0)`);
+        grad.addColorStop(0.35, `hsla(${swirlHue}, 60%, 60%, 0.045)`);
+        grad.addColorStop(0.7, `hsla(${swirlHue}, 60%, 62%, 0.03)`);
+        grad.addColorStop(1, `hsla(${swirlHue}, 65%, 62%, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, backlightRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const lightX = cx - backlightRadius * 0.3;
+      const lightY = cy - backlightRadius * 0.38;
+      const lightR = backlightRadius * 0.45;
+      const highlight = ctx.createRadialGradient(lightX, lightY, 0, lightX, lightY, lightR);
+      highlight.addColorStop(0, "rgba(255, 255, 255, 0.55)");
+      highlight.addColorStop(0.15, "rgba(255, 255, 255, 0.25)");
+      highlight.addColorStop(0.45, "rgba(255, 255, 255, 0.04)");
+      highlight.addColorStop(1, "transparent");
+      ctx.fillStyle = highlight;
+      ctx.beginPath();
+      ctx.arc(cx, cy, backlightRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, backlightRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
 
     if (loot.quantity > 1) {
@@ -164,7 +258,7 @@ export function renderLoot(
     const timerKey = `${loot.id}_particles`;
     const lastSpawn = particleSpawnTimers.get(timerKey) || 0;
     if (now - lastSpawn > 200) {
-      spawnParticles(sx, sy - 30 + floatOffset, color, isOwn ? 3 : 1);
+      spawnParticles(sx, sy - 30 + floatOffset, color, isOwn ? 3 : 1, quality === "legendary");
       particleSpawnTimers.set(timerKey, now);
     }
   }
@@ -199,11 +293,14 @@ export function renderLootInteractionHint(
   const lootItems = cache.loot || [];
   if (!playerId) return;
 
+  const localUsername = Array.from(cache.players).find(p => p.id === playerId)?.username;
+  if (!localUsername) return;
+
   let nearestLoot: any = null;
   let nearestDist = Infinity;
 
   for (const loot of lootItems) {
-    if (String(loot.ownerId) !== String(playerId)) continue;
+    if (String(loot.ownerId) !== String(localUsername)) continue;
     const dx = loot.x - cameraX;
     const dy = loot.y - cameraY;
     const dist = Math.sqrt(dx * dx + dy * dy);

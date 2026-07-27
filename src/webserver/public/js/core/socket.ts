@@ -4662,4 +4662,4 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed };
+export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, itemsByName };

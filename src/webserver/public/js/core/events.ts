@@ -1,8 +1,9 @@
-import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId } from "./socket.js";
+import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName } from "./socket.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getCameraX, getCameraY } from "./renderer.js";
 import { chatInput, pauseMenu, optionsMenu, fpsSlider, musicSlider, effectsSlider, mutedCheckbox, canvas, ctx, friendsList } from "./ui.js";
+import { showItemTooltip, hideItemTooltip } from "./tooltip.js";
 import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, getLastSentDirection, setLastSentDirection,
     getLastTypingPacket, setLastTypingPacket, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys, movementKeys,
     pressedKeys,
@@ -35,12 +36,13 @@ export function updateLootPickup(playerX: number, playerY: number, playerMap: st
   const cache = Cache.getInstance();
   const lootItems = cache.loot || [];
   const normalizedMap = (playerMap || "").replace(".json", "").toLowerCase();
+  const localUsername = Array.from(cache.players).find(p => p.id === cachedPlayerId)?.username;
 
   let nearestId: string | null = null;
   let nearestDist = Infinity;
 
   for (const loot of lootItems) {
-    if (String(loot.ownerId) !== String(cachedPlayerId)) continue;
+    if (String(loot.ownerId) !== String(localUsername)) continue;
     const lootMap = (loot.map || "").replace(".json", "").toLowerCase();
     if (lootMap !== normalizedMap) continue;
     const dx = playerX - loot.x;
@@ -238,9 +240,10 @@ window.addEventListener("keydown", async (e) => {
     if (e.repeat) return;
     const cache = Cache.getInstance();
     const lootItems = cache.loot || [];
+    const localUsername = Array.from(cache.players).find(p => p.id === cachedPlayerId)?.username;
     let nearOwned = false;
     for (const loot of lootItems) {
-      if (String(loot.ownerId) !== String(cachedPlayerId)) continue;
+      if (String(loot.ownerId) !== String(localUsername)) continue;
       nearOwned = true;
       break;
     }
@@ -735,6 +738,32 @@ canvas.addEventListener("mousemove", (event) => {
 
   (window as any).mouseWorldX = Math.floor(screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX);
   (window as any).mouseWorldY = Math.floor(screenY - window.innerHeight / 2 + getCameraY());
+
+  const worldX = (window as any).mouseWorldX;
+  const worldY = (window as any).mouseWorldY;
+  const floatOffset = Math.round(Math.sin(performance.now() * 0.002) * 4);
+  const lootItems = cache.loot || [];
+  let hoveredLoot: any = null;
+
+  for (const loot of lootItems) {
+    const iconCenterX = loot.x;
+    const iconCenterY = loot.y - 52 + floatOffset;
+    const dx = worldX - iconCenterX;
+    const dy = worldY - iconCenterY;
+    if (dx * dx + dy * dy < 24 * 24) {
+      hoveredLoot = loot;
+      break;
+    }
+  }
+
+  if (hoveredLoot) {
+    const itemData = itemsByName.get(hoveredLoot.item) || { name: hoveredLoot.item, quality: hoveredLoot.quality };
+    showItemTooltip(canvas, { ...itemData, quantity: hoveredLoot.quantity, quality: hoveredLoot.quality }, event.clientX, event.clientY, event.shiftKey);
+    (window as any).__lootTooltipVisible = true;
+  } else if ((window as any).__lootTooltipVisible) {
+    hideItemTooltip();
+    (window as any).__lootTooltipVisible = false;
+  }
 });
 
 document.addEventListener("click", (event) => {

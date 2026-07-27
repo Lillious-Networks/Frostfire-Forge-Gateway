@@ -1151,15 +1151,42 @@ body {
   transition: border ease-in-out 0.2s;
 }
 
-.legendary {
-  border: 2px solid rgba(235, 156, 52, 0.6);
-  background: rgba(235, 156, 52, 0.1);
-  transition: border ease-in-out 0.2s;
+#inventory #grid .slot.legendary,
+#equipment-left-column .slot.legendary,
+#equipment-right-column .slot.legendary,
+#equipment-bottom-center .slot.legendary {
+  position: relative;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background-clip: padding-box;
+  overflow: visible;
 }
 
-.legendary:hover {
-  border: 2px solid rgba(235, 156, 52, 0.8);
-  transition: border ease-in-out 0.2s;
+#inventory #grid .slot.legendary::before,
+#equipment-left-column .slot.legendary::before,
+#equipment-right-column .slot.legendary::before,
+#equipment-bottom-center .slot.legendary::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 6px;
+  padding: 2px;
+  background: linear-gradient(135deg, #ff6b6b, #ffb347, #ffe66d, #51cf66, #45b7d1, #9b59b6, #ff6b6b);
+  background-size: 300% 300%;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  z-index: 1;
+  pointer-events: none;
+  animation: rainbow-shift-gradient 4s ease-in-out infinite;
+}
+
+#inventory #grid .slot.legendary:hover::before,
+#equipment-left-column .slot.legendary:hover::before,
+#equipment-right-column .slot.legendary:hover::before,
+#equipment-bottom-center .slot.legendary:hover::before {
+  filter: brightness(1.2);
 }
 
 .glow {
@@ -1183,6 +1210,12 @@ body {
     -webkit-box-shadow: 0 0 0px rgba(255, 255, 0, 0.3);
     box-shadow: 0 0 0px rgba(255, 255, 0, 0.3);
   }
+}
+
+@keyframes rainbow-shift-gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 #chat-container {
@@ -6113,8 +6146,14 @@ body.tiny-landscape .notification {
 }
 
 #tooltip-name.legendary {
-  color: #eb9c34;
-  background: linear-gradient(to left, transparent 0%, rgba(235, 156, 52, 0.15) 100%);
+  background: linear-gradient(135deg, #ff6b6b, #ffb347, #ffe66d, #51cf66, #45b7d1, #9b59b6, #ff6b6b);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: none;
+  animation: rainbow-shift-gradient 4s ease-in-out infinite;
 }
 
 /* ===============================================
