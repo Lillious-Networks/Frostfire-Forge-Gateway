@@ -1,6 +1,5 @@
 import query from "../controllers/sqldatabase";
 import { verify, randomBytes } from "../modules/hash";
-const defaultMap = (process.env.DEFAULT_MAP || "overworld.json").replace(".json", "");
 import log from "../modules/logger";
 
 const player = {
@@ -64,7 +63,7 @@ const player = {
         password_hash,
         req.ip,
         req.headers["cf-ipcountry"],
-        defaultMap,
+        "",
         "0,0",
         guest ? 1 : 0,
       ]

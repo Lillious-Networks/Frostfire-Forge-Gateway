@@ -30,7 +30,11 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+      - "443:443"
+      - "443:443/udp"
       - "9999:9999"
+      - "9443:9443"
+      - "9443:9443/udp"
     environment:
       DATABASE_HOST: mysql-dev
       DATABASE_PORT: 3306

@@ -13,7 +13,6 @@ const settings = {
   guest_mode: {
     enabled: process.env.GUEST_MODE_ENABLED === "true" || process.env.GUEST_MODE_ENABLED === "1"
   },
-  default_map: process.env.DEFAULT_MAP || "overworld.json",
 };
 import crypto from "crypto";
 import animator_html from "./public/animator.html";
@@ -23,6 +22,7 @@ import game_html from "./public/game.html";
 import map_editor_html from "./public/map-editor.html";
 import particleeditor_html from "./public/particleeditor.html";
 import npceditor_html from "./public/npceditor.html";
+import looteditor_html from "./public/looteditor.html";
 import forgotpassword_html from "./public/forgot-password.html";
 import realmselection_html from "./public/realm-selection.html";
 import manageprofile_html from "./public/manage-profile.html";
@@ -80,6 +80,7 @@ const routes = {
   "/map-editor": map_editor_html,
   "/particle-editor": particleeditor_html,
   "/npc-editor": npceditor_html,
+  "/loot-editor": looteditor_html,
   "/animator": animator_html,
   "/login": (req: Request, server: any) => login(req, server),
   "/verify": (req: Request) => authenticate(req),
@@ -271,6 +272,7 @@ Bun.serve({
       "/map-editor": routes["/map-editor"],
       "/particle-editor": routes["/particle-editor"],
       "/npc-editor": routes["/npc-editor"],
+      "/loot-editor": routes["/loot-editor"],
       "/animator": routes["/animator"],
       "/login": routes["/login"],
       "/verify": routes["/verify"],

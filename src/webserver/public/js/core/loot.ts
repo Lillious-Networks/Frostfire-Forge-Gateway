@@ -350,3 +350,71 @@ export function renderLootInteractionHint(
 
   ctx.restore();
 }
+
+export function renderLootChests(
+  ctx: CanvasRenderingContext2D,
+  cameraX: number, cameraY: number,
+  _playerId: string | null,
+): void {
+  const cache = Cache.getInstance();
+  const chests = cache.lootChests || [];
+  if (chests.length === 0) return;
+
+  const now = performance.now();
+  const fo = Math.round(Math.sin(now * 0.0015) * 3);
+  ctx.save();
+  for (const c of chests) {
+    const sx = c.x, sy = c.y;
+    const sz = 44, h = sz / 2, x = sx - h, y = sy - 56 + fo;
+    const sw = 10 + fo * 1.2, sh = 4 + fo * 0.6, sy2 = sy - 6 + fo;
+    if (sw > 0 && sh > 0) { ctx.beginPath(); ctx.ellipse(sx, sy2, sw, sh, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill(); }
+    const gs = 36;
+    const g = ctx.createRadialGradient(sx, sy - 36, 2, sx, sy - 36, gs);
+    g.addColorStop(0, "rgba(255,215,0,0.12)"); g.addColorStop(0.7, "rgba(255,215,0,0.03)"); g.addColorStop(1, "transparent");
+    ctx.fillStyle = g; ctx.fillRect(sx - gs, sy - 36 - gs, gs * 2, gs * 2);
+    const img = lootImageCache?.get(c.iconUrl);
+    if (img && img.complete) { ctx.drawImage(img, x, y, sz, sz); }
+    ctx.font = "bold 9px 'Comic Relief', sans-serif"; ctx.textAlign = "center";
+    ctx.fillStyle = "#FFD700"; ctx.shadowColor = "rgba(0,0,0,0.8)"; ctx.shadowBlur = 3;
+    ctx.fillText("F", sx, y - 8);
+    ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+}
+
+export function renderChestInteractionHint(
+  ctx: CanvasRenderingContext2D,
+  cameraX: number, cameraY: number,
+  canvasWidth: number, canvasHeight: number,
+  progress: number, playerId: string | null,
+): void {
+  if (progress < 0) return;
+  const cache = Cache.getInstance();
+  const chests = cache.lootChests || [];
+  if (!playerId || chests.length === 0) return;
+  let nc: any = null, nd = Infinity;
+  for (const c of chests) {
+    const d = Math.sqrt((c.x - cameraX) ** 2 + (c.y - cameraY) ** 2);
+    if (d < nd && d <= 120) { nd = d; nc = { x: c.x, y: c.y }; }
+  }
+  if (!nc) return;
+  ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.lineWidth = 2;
+  const dpr = window.devicePixelRatio || 1;
+  const rx = (nc.x - cameraX + canvasWidth / (dpr * 2)) * dpr;
+  const ry = (nc.y - 72 - cameraY + canvasHeight / (dpr * 2)) * dpr;
+  const rr = 15 * dpr;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (progress > 0) {
+    ctx.beginPath(); ctx.arc(rx, ry, rr + 4 * dpr, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.strokeStyle = "#FFD700"; ctx.lineWidth = 3 * dpr; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(rx, ry, rr, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fill();
+  ctx.strokeStyle = "rgba(255,215,0,0.8)"; ctx.lineWidth = 2 * dpr; ctx.stroke();
+  ctx.fillStyle = "#FFD700"; ctx.font = `bold ${12 * dpr}px 'Comic Relief', sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("F", rx, ry);
+  ctx.restore();
+}
+
+(window as any).renderLootChests = renderLootChests;
+(window as any).renderChestInteractionHint = renderChestInteractionHint;

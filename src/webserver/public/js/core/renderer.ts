@@ -1227,6 +1227,7 @@ function animationLoop() {
   const py = currentPlayer.position?.y ?? currentPlayer.renderPosition?.y ?? 0;
   const playerMap = currentPlayer.map || currentPlayer.location?.map || "";
   (window as any).updateLootPickup?.(px, py, playerMap);
+  (window as any).updateChestInteraction?.(px, py, playerMap);
 
   for (const npc of cache.npcs) {
     if ((npc as any).layeredAnimation) {
@@ -1544,6 +1545,8 @@ function animationLoop() {
     }
 
     renderLoot(ctx, cameraX, cameraY, canvas.width, canvas.height, cachedPlayerId);
+
+    (window as any).renderLootChests?.(ctx, cameraX, cameraY, cachedPlayerId);
 
     const now = performance.now();
     for (let i = cache.projectiles.length - 1; i >= 0; i--) {
@@ -2379,6 +2382,8 @@ function animationLoop() {
   }
 
   renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
+
+  (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
 
   requestAnimationFrame(animationLoop);
 }

@@ -51,3 +51,5 @@ src/webserver/public/tilesets/*
 !src/webserver/public/tilesets/MysticalValley_Environment.png
 !src/webserver/public/tilesets/MysticalValley_Structures.png
 whitelist.txt
+
+AGENTS.md

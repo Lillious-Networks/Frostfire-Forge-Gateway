@@ -14,10 +14,20 @@ if (security.length > 0) {
   log.warn("No security rules found");
 }
 
-const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "../certs/webserver/cert.pem");
-const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "../certs/webserver/key.pem");
-const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "../certs/webserver/cert.ca-bundle");
+const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "../../certs/webserver/cert.pem");
+const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "../../certs/webserver/key.pem");
+const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "../../certs/webserver/cert.ca-bundle");
 const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
+
+if (process.env.WEBSRV_USESSL === "true") {
+  if (!_https) {
+    console.error("[Gateway Proxy] SSL requested but certificates not found.");
+    console.error(`  Cert path: ${_cert} (exists: ${fs.existsSync(_cert)})`);
+    console.error(`  Key path:  ${_key} (exists: ${fs.existsSync(_key)})`);
+  } else {
+    console.log(`[Gateway Proxy] SSL enabled (HTTP/3 + HTTP/1.1 fallback)`);
+  }
+}
 
 const publicPort = _https ? (parseInt(process.env.WEBSRV_PORTSSL || "") || 443) : (parseInt(process.env.WEBSRV_PORT || "") || 80);
 const internalPort = parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080;
@@ -47,7 +57,20 @@ Bun.serve({
     }
     log.debug(`Received request: ${req.method} ${req.url} from ${ip}`);
 
-    if (req.method === "CONNECT" || req.method === "TRACE" || req.method === "TRACK" || req.method === "OPTIONS") {
+    // Handle CORS preflight
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
+
+    if (req.method === "CONNECT" || req.method === "TRACE" || req.method === "TRACK") {
       return new Response("Forbidden", { status: 403 });
     }
 
@@ -104,7 +127,8 @@ Bun.serve({
           ? fs.readFileSync(_cert) + "\n" + fs.readFileSync(_ca)
           : fs.readFileSync(_cert),
         key: fs.readFileSync(_key),
-      }
+      },
+      http3: true,
     }
   : {}),
 });

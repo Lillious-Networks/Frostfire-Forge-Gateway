@@ -3512,6 +3512,37 @@ socket.onmessage = async (event) => {
       cache.loot = (cache.loot || []).filter((l: any) => l.id !== d.id);
       break;
     }
+    case "LOOT_CHEST_SPAWN": {
+      const d = JSON.parse(packet.decode(event.data))["data"];
+      if (!d?.id) break;
+      const ex = (cache.lootChests || []).findIndex((c: any) => c.id === d.id);
+      if (ex !== -1) { cache.lootChests[ex] = d; }
+      else { cache.lootChests = cache.lootChests || []; cache.lootChests.push(d); }
+      if (d.iconUrl) { import("./loot.js").then(({ preloadLootIcon }) => preloadLootIcon(d.iconUrl)); }
+      break;
+    }
+    case "LOOT_CHEST_DESPAWN": {
+      const d = JSON.parse(packet.decode(event.data))["data"];
+      if (!d?.id) break;
+      cache.lootChests = (cache.lootChests || []).filter((c: any) => c.id !== d.id);
+      break;
+    }
+    case "LOOT_CHEST_CONTENTS": {
+      const d = JSON.parse(packet.decode(event.data))["data"];
+      if (!d?.chestId || !d?.items) break;
+      import("./lootWindow.js").then(({ showLootChestPopup }) => { showLootChestPopup(d.chestId, d.items); });
+      break;
+    }
+    case "TOGGLE_LOOT_EDITOR": {
+      import('./looteditor.js').then((module) => { module.default.toggle(); });
+      break;
+    }
+    case "LOOT_TABLE_LIST": {
+      const d = JSON.parse(packet.decode(event.data))["data"];
+      if (!d?.tables) break;
+      import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables); });
+      break;
+    }
     case "QUESTLOG": {
 
       break;
@@ -4663,3 +4694,4 @@ window.addEventListener('beforeunload', () => {
 });
 
 export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, itemsByName };
+(window as any).itemsByName = itemsByName;

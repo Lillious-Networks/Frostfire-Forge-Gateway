@@ -32,6 +32,15 @@ const LOOT_HOLD_DELAY = 250;
 const LOOT_PROGRESS_DURATION = LOOT_HOLD_DURATION - LOOT_HOLD_DELAY;
 const LOOT_PICKUP_RADIUS = 100;
 
+let chestKeyDownTime: number | null = null;
+let chestHolding = false;
+export let chestInteractionProgress = 0;
+let nearestChestId: string | null = null;
+const CHEST_HOLD_DURATION = 1500;
+const CHEST_HOLD_DELAY = 250;
+const CHEST_PROGRESS_DURATION = CHEST_HOLD_DURATION - CHEST_HOLD_DELAY;
+const CHEST_INTERACTION_RADIUS = 120;
+
 export function updateLootPickup(playerX: number, playerY: number, playerMap: string): void {
   const cache = Cache.getInstance();
   const lootItems = cache.loot || [];
@@ -86,7 +95,36 @@ export function updateLootPickup(playerX: number, playerY: number, playerMap: st
   }
 }
 
+export function updateChestInteraction(playerX: number, playerY: number, playerMap: string): void {
+  const cache = Cache.getInstance();
+  const chests = cache.lootChests || [];
+  const nmap = (playerMap || "").replace(".json", "").toLowerCase();
+  let nearestId: string | null = null, nearestDist = Infinity;
+  for (const c of chests) {
+    if ((c.map || "").replace(".json", "").toLowerCase() !== nmap) continue;
+    const d = Math.sqrt((playerX - c.x) ** 2 + (playerY - c.y) ** 2);
+    if (d < nearestDist && d <= CHEST_INTERACTION_RADIUS) { nearestDist = d; nearestId = c.id; }
+  }
+  nearestChestId = nearestId;
+  if (!nearestChestId || !chestKeyDownTime) {
+    if (chestHolding || chestKeyDownTime) { chestKeyDownTime = null; chestHolding = false; chestInteractionProgress = 0; (window as any).chestInteractionProgress = 0; }
+    return;
+  }
+  const elapsed = performance.now() - chestKeyDownTime;
+  if (!chestHolding && elapsed > CHEST_HOLD_DELAY) { chestHolding = true; }
+  if (chestHolding) {
+    chestInteractionProgress = Math.min((elapsed - CHEST_HOLD_DELAY) / CHEST_PROGRESS_DURATION, 1);
+    (window as any).chestInteractionProgress = chestInteractionProgress;
+    if (chestInteractionProgress >= 1) {
+      chestKeyDownTime = null; chestHolding = false; chestInteractionProgress = 0; (window as any).chestInteractionProgress = 0;
+      sendRequest({ type: "OPEN_LOOT_CHEST", data: { chestId: nearestChestId } });
+    }
+  }
+}
+
 (window as any).updateLootPickup = updateLootPickup;
+(window as any).updateChestInteraction = updateChestInteraction;
+(window as any).chestInteractionProgress = 0;
 
 const getActualViewportHeight = () => {
   if (window.visualViewport) {
@@ -256,6 +294,17 @@ window.addEventListener("keydown", async (e) => {
     return;
   }
 
+  if (e.code === "KeyF") {
+    if (e.repeat) return;
+    const cache = Cache.getInstance();
+    if ((cache.lootChests || []).length > 0) {
+      chestKeyDownTime = performance.now();
+      chestHolding = false;
+      chestInteractionProgress = 0;
+    }
+    return;
+  }
+
   if (movementKeys.has(e.code)) {
     pressedKeys.add(e.code);
     if (!getIsKeyPressed()) {
@@ -299,6 +348,18 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
       lootHolding = false;
       lootPickupProgress = 0;
       (window as any)._lootPickupProgress = 0;
+    }
+    return;
+  }
+
+  if (e.code === "KeyF") {
+    if (chestKeyDownTime) {
+      if (!chestHolding && nearestChestId) {
+        sendRequest({ type: "OPEN_LOOT_CHEST", data: { chestId: nearestChestId } });
+      }
+      chestKeyDownTime = null;
+      chestHolding = false;
+      chestInteractionProgress = 0;
     }
     return;
   }

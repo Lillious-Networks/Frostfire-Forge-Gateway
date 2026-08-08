@@ -41,6 +41,7 @@ class Cache {
   groundAoeCastingPreviews: Record<string, any> = {};
   bags: any = {};
   loot: any[] = [];
+  lootChests: any[] = [];
 
   private constructor() {}
 
