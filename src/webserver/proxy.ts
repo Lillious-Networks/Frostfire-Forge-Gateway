@@ -46,6 +46,7 @@ Bun.serve({
   port: publicPort,
   development: false,
   reusePort: false,
+  http3: true,
   async fetch(req: Request, server: any) {
     const ip = server.requestIP(req)?.address;
     const url = tryParseURL(req.url);
