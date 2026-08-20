@@ -71,17 +71,231 @@
             -webkit-backdrop-filter: blur(10px);
         }
 
-        .home-button:hover {
-            border-color: #22c55e;
-            background: rgba(34, 197, 94, 0.1);
-            box-shadow: 0 8px 24px rgba(34, 197, 94, 0.2);
-        }
-
         .header-controls {
             position: fixed;
             top: 20px;
             right: 20px;
             z-index: 1000;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .filter-select, .record-button {
+            background: rgba(30, 41, 59, 0.8);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            padding: 8px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .filter-select {
+            appearance: none;
+            -webkit-appearance: none;
+            padding-right: 28px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2322c55e'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+        }
+
+        .record-button {
+            min-width: 80px;
+        }
+
+        .record-button.recording {
+            background: rgba(239, 68, 68, 0.3);
+            border-color: rgba(239, 68, 68, 0.6);
+            color: #fca5a5;
+        }
+
+        .recording-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #fca5a5;
+            font-size: 12px;
+            font-weight: 600;
+            padding-right: 4px;
+        }
+
+        .recording-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef4444;
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        .replay-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .replay-controls input[type="range"] {
+            width: 180px;
+            accent-color: #22c55e;
+        }
+
+        #replay-label {
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 600;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .overlay-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .overlay-header h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .replay-timeline {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(34, 197, 94, 0.15);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+
+        .replay-timeline-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .replay-timeline-header span {
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .replay-timeline-bar {
+            position: relative;
+            height: 40px;
+            cursor: pointer;
+        }
+
+        .replay-timeline-track {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 2px;
+            transform: translateY(-50%);
+        }
+
+        .replay-timeline-fill {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            height: 4px;
+            background: #22c55e;
+            border-radius: 2px;
+            transform: translateY(-50%);
+        }
+
+        .replay-timeline-thumb {
+            position: absolute;
+            top: 50%;
+            width: 16px;
+            height: 16px;
+            background: #22c55e;
+            border: 2px solid #0f172a;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+            pointer-events: none;
+        }
+
+        .replay-timeline-ticks {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            color: #64748b;
+            font-size: 10px;
+        }
+
+        .replay-timeline-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .replay-timeline-btn {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 600;
+        }
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            padding: 8px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .overlay-graphs {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .overlay-graph-card {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            border-radius: 16px;
+            padding: 16px;
+        }
+
+        .overlay-graph-card h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .overlay-graph-card svg {
+            width: 100%;
+            height: 220px;
         }
 
         .logout-button {
@@ -95,13 +309,6 @@
             font-weight: 600;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-        }
-
-        .logout-button:hover {
-            background: rgba(34, 197, 94, 0.25);
-            border-color: rgba(34, 197, 94, 0.5);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(34, 197, 94, 0.2);
         }
 
         .container {
@@ -140,14 +347,8 @@
             transition: all 0.3s ease;
         }
 
-        .graph-card:hover {
-            border-color: rgba(34, 197, 94, 0.4);
-            box-shadow: 0 25px 50px -12px rgba(34, 197, 94, 0.15);
-            transform: translateY(-4px);
-        }
-
         .graph-card h3 {
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 700;
             color: #fff;
             margin-bottom: 12px;
@@ -159,7 +360,7 @@
             border-radius: 10px;
             border: 1px solid rgba(34, 197, 94, 0.1);
             padding: 10px;
-            height: 180px;
+            height: 280px;
             position: relative;
         }
 
@@ -262,7 +463,7 @@
         }
 
         .overview-value {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 700;
             color: #fff;
         }
@@ -307,29 +508,6 @@
             overflow: hidden;
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-        }
-
-        .server-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, #22c55e, #16a34a);
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .server-card:hover {
-            border-color: rgba(34, 197, 94, 0.5);
-            box-shadow: 0 12px 48px rgba(34, 197, 94, 0.25);
-            transform: translateY(-6px);
-            background: rgba(15, 23, 42, 0.7);
-        }
-
-        .server-card:hover::before {
-            opacity: 1;
         }
 
         .server-card.degraded {
@@ -433,11 +611,6 @@
             transition: all 0.3s ease;
         }
 
-        .server-card:hover .metric {
-            background: rgba(34, 197, 94, 0.1);
-            border-color: rgba(34, 197, 94, 0.25);
-        }
-
         .metric-label {
             font-size: 10px;
             color: #cbd5e1;
@@ -509,6 +682,15 @@
             50% { opacity: 0.5; }
         }
 
+        @keyframes recording-border {
+            0%, 100% { box-shadow: inset 0 0 0 3px rgba(239, 68, 68, 0.6); }
+            50% { box-shadow: inset 0 0 0 3px rgba(239, 68, 68, 0.1); }
+        }
+
+        body.recording-active {
+            animation: recording-border 1s ease-in-out infinite;
+        }
+
         .updating {
             animation: pulse 1.5s ease-in-out infinite;
         }
@@ -530,8 +712,6 @@
             border: 2px solid rgba(15, 23, 42, 0.2);
         }
 
-        ::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(180deg, rgba(34, 197, 94, 0.9) 0%, rgba(134, 239, 172, 0.9) 100%);
         }
 
         /* Responsive Design */
@@ -568,7 +748,7 @@
             }
 
             .overview-label {
-                font-size: 10px;
+            font-size: 11px;
                 padding: 3px 8px;
             }
 
@@ -703,6 +883,16 @@
     </div>
 
     <div class="header-controls">
+        <div id="recording-indicator" class="recording-indicator" style="display:none">
+            <span class="recording-dot"></span>
+            <span id="recording-count">0s</span>
+        </div>
+        <select class="filter-select" id="server-filter">
+            <option value="all">All Servers</option>
+        </select>
+        <button class="record-button" id="record-button" onclick="toggleRecording()">Record</button>
+        <button class="record-button" id="import-button" onclick="document.getElementById('import-file').click()">Import</button>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
         <button class="logout-button" onclick="logout()">Logout</button>
     </div>
 
@@ -736,23 +926,23 @@
 
         <div class="graphs-section">
             <div class="graph-card">
-                <h3>CPU Usage</h3>
+                <h3>CPU Usage <span id="cpu-current" style="color:#22c55e;font-size:14px;font-weight:400">-</span></h3>
                 <div class="graph-container">
-                    <svg class="graph-svg" id="cpu-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
+                    <svg class="graph-svg" id="cpu-graph" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet"></svg>
                 </div>
                 <div class="graph-legend" id="cpu-legend"></div>
             </div>
             <div class="graph-card">
-                <h3>RAM Usage (MB)</h3>
+                <h3>RAM Usage <span id="ram-current" style="color:#22c55e;font-size:14px;font-weight:400">-</span></h3>
                 <div class="graph-container">
-                    <svg class="graph-svg" id="ram-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
+                    <svg class="graph-svg" id="ram-graph" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet"></svg>
                 </div>
                 <div class="graph-legend" id="ram-legend"></div>
             </div>
             <div class="graph-card">
-                <h3>Latency</h3>
+                <h3>Latency <span id="latency-current" style="color:#22c55e;font-size:14px;font-weight:400">-</span></h3>
                 <div class="graph-container">
-                    <svg class="graph-svg" id="latency-graph" viewBox="0 0 400 150" preserveAspectRatio="none"></svg>
+                    <svg class="graph-svg" id="latency-graph" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet"></svg>
                 </div>
                 <div class="graph-legend" id="latency-legend"></div>
             </div>
@@ -795,81 +985,144 @@
             }
             const history = map.get(serverId);
             history.push(value);
-            if (history.length > historySize) {
-                history.shift();
+            if (map !== replayCpuHistory && map !== replayRamHistory && map !== replayLatHistory) {
+                if (history.length > historySize) history.shift();
             }
         }
 
-        function drawGraph(svgId, dataMap, maxValue = 100) {
+        function getMaxValue(dataMap, buffer = 1.1) {
+            let max = 0;
+            for (const [, data] of dataMap) {
+                for (const v of data) {
+                    if (v > max) max = v;
+                }
+            }
+            return Math.max(max * buffer, 1);
+        }
+
+        function drawGraph(svgId, dataMap, maxValue, unit = '', fixedMax = false) {
             const svg = document.getElementById(svgId);
             svg.innerHTML = '';
 
+            const hasData = Array.from(dataMap.values()).some(d => d.length > 0);
+            if (!hasData) {
+                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', '200');
+                text.setAttribute('y', '75');
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('fill', '#475569');
+                text.setAttribute('font-size', '16');
+                text.setAttribute('font-family', 'Inter, sans-serif');
+                text.textContent = 'Waiting for data...';
+                svg.appendChild(text);
+                return;
+            }
+
             const width = 400;
-            const height = 150;
-            const paddingLeft = 35;
-            const paddingRight = 5;
-            const paddingTop = 5;
-            const paddingBottom = 5;
+            const height = 300;
+            const padLeft = 45;
+            const padRight = 15;
+            const padTop = 15;
+            const padBottom = 30;
+            const plotW = width - padLeft - padRight;
+            const plotH = height - padTop - padBottom;
 
-            // Draw grid lines and Y-axis labels
-            for (let i = 0; i <= 4; i++) {
-                const y = paddingTop + (height - paddingTop - paddingBottom) * (i / 4);
-                const value = maxValue - (maxValue * (i / 4));
+            const autoMax = getMaxValue(dataMap);
+            const effectiveMax = fixedMax ? maxValue : Math.max(maxValue, autoMax);
+            const gridLines = 4;
 
-                // Grid line
+            // Grid lines and Y-axis labels
+            for (let i = 0; i <= gridLines; i++) {
+                const y = padTop + plotH * (i / gridLines);
+                const value = effectiveMax - effectiveMax * (i / gridLines);
+
                 const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', paddingLeft);
+                line.setAttribute('x1', padLeft);
                 line.setAttribute('y1', y);
-                line.setAttribute('x2', width - paddingRight);
+                line.setAttribute('x2', width - padRight);
                 line.setAttribute('y2', y);
-                line.setAttribute('stroke', 'rgba(255, 255, 255, 0.05)');
+                line.setAttribute('stroke', 'rgba(255,255,255,0.06)');
                 line.setAttribute('stroke-width', '1');
                 svg.appendChild(line);
 
-                // Y-axis label
                 const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                label.setAttribute('x', paddingLeft - 8);
-                label.setAttribute('y', y + 4);
+                label.setAttribute('x', padLeft - 6);
+                label.setAttribute('y', y + 3);
                 label.setAttribute('text-anchor', 'end');
-                label.setAttribute('fill', '#6b7280');
-                label.setAttribute('font-size', '10');
+                label.setAttribute('fill', '#64748b');
+                label.setAttribute('font-size', '12');
                 label.setAttribute('font-family', 'Inter, sans-serif');
-                label.textContent = Math.round(value);
+                label.textContent = value >= 1000 ? (value / 1000).toFixed(1) + 'k' : Math.round(value);
                 svg.appendChild(label);
             }
 
-            // Draw lines for each server
+            // X-axis time labels
+            for (let i = 0; i <= 4; i++) {
+                const x = padLeft + plotW * (i / 4);
+                const secs = Math.round((historySize - 1) * (1 - i / 4));
+                const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                label.setAttribute('x', x);
+                label.setAttribute('y', height - 2);
+                label.setAttribute('text-anchor', 'middle');
+                label.setAttribute('fill', '#64748b');
+                label.setAttribute('font-size', '11');
+                label.setAttribute('font-family', 'Inter, sans-serif');
+                label.textContent = secs > 0 ? '-' + secs + 's' : 'now';
+                svg.appendChild(label);
+            }
+
             for (const [serverId, data] of dataMap) {
                 if (data.length < 2) continue;
 
                 const color = getServerColor(serverId);
-                const points = data.map((value, index) => {
-                    const x = paddingLeft + (width - paddingLeft - paddingRight) * (index / (historySize - 1));
-                    const y = height - paddingBottom - (height - paddingTop - paddingBottom) * (value / maxValue);
-                    return `${x},${y}`;
-                }).join(' ');
 
-                // Add a subtle shadow/glow effect
-                const glowPolyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-                glowPolyline.setAttribute('points', points);
-                glowPolyline.setAttribute('fill', 'none');
-                glowPolyline.setAttribute('stroke', color);
-                glowPolyline.setAttribute('stroke-width', '4');
-                glowPolyline.setAttribute('opacity', '0.2');
-                glowPolyline.setAttribute('stroke-linecap', 'round');
-                glowPolyline.setAttribute('stroke-linejoin', 'round');
-                svg.appendChild(glowPolyline);
+                let pathD = '';
+                let areaD = '';
+                const stepX = plotW / (historySize - 1);
 
-                // Main line
-                const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-                polyline.setAttribute('points', points);
-                polyline.setAttribute('fill', 'none');
-                polyline.setAttribute('stroke', color);
-                polyline.setAttribute('stroke-width', '2');
-                polyline.setAttribute('opacity', '0.9');
-                polyline.setAttribute('stroke-linecap', 'round');
-                polyline.setAttribute('stroke-linejoin', 'round');
-                svg.appendChild(polyline);
+                for (let i = 0; i < data.length; i++) {
+                    const x = padLeft + i * stepX;
+                    const y = padTop + plotH * (1 - data[i] / effectiveMax);
+                    if (i === 0) {
+                        pathD = `M${x},${y}`;
+                        areaD = `M${x},${padTop + plotH} L${x},${y}`;
+                    } else {
+                        pathD += ` L${x},${y}`;
+                        areaD += ` L${x},${y}`;
+                    }
+                }
+                const lastX = padLeft + (data.length - 1) * stepX;
+                areaD += ` L${lastX},${padTop + plotH} Z`;
+
+                // Fill area
+                const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                area.setAttribute('d', areaD);
+                area.setAttribute('fill', color);
+                area.setAttribute('opacity', '0.08');
+                svg.appendChild(area);
+
+                // Line
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathD);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', color);
+                path.setAttribute('stroke-width', '1.5');
+                path.setAttribute('stroke-linecap', 'round');
+                path.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(path);
+
+                // Current value dot
+                if (data.length > 0) {
+                    const lastVal = data[data.length - 1];
+                    const dotX = padLeft + (data.length - 1) * stepX;
+                    const dotY = padTop + plotH * (1 - lastVal / effectiveMax);
+                    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    dot.setAttribute('cx', dotX);
+                    dot.setAttribute('cy', dotY);
+                    dot.setAttribute('r', '3');
+                    dot.setAttribute('fill', color);
+                    svg.appendChild(dot);
+                }
             }
         }
 
@@ -944,6 +1197,7 @@
             const serversWithStatus = data.servers.map(server => {
                 const cpuPercentage = server.cpuUsage || 0;
                 const ramUsageMB = server.ramUsage || 0;
+                const latencyMs = server.latency || 0;
                 const connectionsPercentage = ((server.activeConnections / server.maxConnections) * 100);
 
                 const status = getServerStatus(cpuPercentage, connectionsPercentage);
@@ -952,25 +1206,34 @@
                 else if (status === 'degraded') degradedCount++;
                 else if (status === 'alert') alertCount++;
 
-                // Add data points to history
-                addDataPoint(cpuHistory, server.id, cpuPercentage);
-                addDataPoint(ramHistory, server.id, ramUsageMB);
-                addDataPoint(latencyHistory, server.id, server.latency || 0);
+                if (cpuPercentage > 0) addDataPoint(cpuHistory, server.id, cpuPercentage);
+                if (ramUsageMB > 0) addDataPoint(ramHistory, server.id, ramUsageMB);
+                if (server.latency != null) addDataPoint(latencyHistory, server.id, server.latency);
 
                 return { ...server, calculatedStatus: status, cpuPercentage, ramUsageMB, connectionsPercentage };
             });
 
             // Update graphs
-            const maxLatency = Math.max(...Array.from(latencyHistory.values()).flat(), 100);
-            const maxRam = Math.max(...Array.from(ramHistory.values()).flat(), 500);
-            drawGraph('cpu-graph', cpuHistory, 100);
-            drawGraph('ram-graph', ramHistory, maxRam);
-            drawGraph('latency-graph', latencyHistory, maxLatency);
+            drawGraph('cpu-graph', getFilteredData(cpuHistory), 100, '%', true);
+            drawGraph('ram-graph', getFilteredData(ramHistory), 512, 'MB');
+            drawGraph('latency-graph', getFilteredData(latencyHistory), 100, 'ms');
+
+            // Update current value labels
+            const latestCpu = Array.from(cpuHistory.values()).map(a => a[a.length-1]).filter(v => v !== undefined);
+            const latestRam = Array.from(ramHistory.values()).map(a => a[a.length-1]).filter(v => v !== undefined);
+            const latestLat = Array.from(latencyHistory.values()).map(a => a[a.length-1]).filter(v => v != null);
+            if (latestCpu.length) document.getElementById('cpu-current').textContent = Math.round(latestCpu[latestCpu.length-1]) + '%';
+            if (latestRam.length) document.getElementById('ram-current').textContent = Math.round(latestRam[latestRam.length-1]) + 'MB';
+            if (latestLat.length) document.getElementById('latency-current').textContent = Math.round(latestLat[latestLat.length-1]) + 'ms';
 
             // Update legends
-            updateLegend('cpu-legend', cpuHistory);
-            updateLegend('ram-legend', ramHistory);
-            updateLegend('latency-legend', latencyHistory);
+            updateLegend('cpu-legend', getFilteredData(cpuHistory));
+            updateLegend('ram-legend', getFilteredData(ramHistory));
+            updateLegend('latency-legend', getFilteredData(latencyHistory));
+
+            updateFilterDropdown(data.servers.map(s => s.id));
+
+            recordSnapshot(serversWithStatus);
 
             // Calculate total connections across all servers
             const totalConnections = data.servers.reduce((sum, server) => sum + (server.activeConnections || 0), 0);
@@ -988,6 +1251,11 @@
                 const connClass = server.connectionsPercentage > 80 ? 'danger' : server.connectionsPercentage > 60 ? 'warning' : '';
                 const serverColor = getServerColor(server.id);
 
+                const cpuDisplay = server.cpuPercentage > 0 ? server.cpuPercentage.toFixed(1) + '%' : '-';
+                const ramDisplay = server.ramUsageMB > 0 ? server.ramUsageMB.toFixed(0) + ' MB' : '-';
+                const latencyDisplay = server.latency != null ? server.latency + 'ms' : '-';
+                const cpuBarWidth = server.cpuPercentage > 0 ? server.cpuPercentage : 0;
+
                 return `
                     <div class="server-card ${server.calculatedStatus}">
                         <div class="server-info">
@@ -1002,12 +1270,12 @@
                         <div class="server-metrics">
                             <div class="metric">
                                 <span class="metric-label">CPU Usage</span>
-                                <span class="metric-value">${server.cpuPercentage.toFixed(1)}%</span>
-                                <div class="metric-bar"><div class="metric-bar-fill ${cpuClass}" style="width: ${server.cpuPercentage}%"></div></div>
+                                <span class="metric-value">${cpuDisplay}</span>
+                                <div class="metric-bar"><div class="metric-bar-fill ${cpuClass}" style="width: ${cpuBarWidth}%"></div></div>
                             </div>
                             <div class="metric">
                                 <span class="metric-label">Memory</span>
-                                <span class="metric-value">${server.ramUsageMB.toFixed(0)}MB</span>
+                                <span class="metric-value">${ramDisplay}</span>
                                 <div class="metric-bar"><div class="metric-bar-fill" style="width: ${Math.min((server.ramUsageMB / 8192) * 100, 100)}%"></div></div>
                             </div>
                             <div class="metric">
@@ -1017,7 +1285,7 @@
                             </div>
                             <div class="metric">
                                 <span class="metric-label">Latency</span>
-                                <span class="metric-value">${server.latency}ms</span>
+                                <span class="metric-value">${latencyDisplay}</span>
                             </div>
                         </div>
                     </div>
@@ -1050,6 +1318,398 @@
                 console.error('Logout error:', error);
             }
             window.location.href = '/';
+        }
+
+        let recording = false;
+        const recordedData = [];
+        let recordingStartTime = 0;
+
+        function toggleRecording() {
+            recording = !recording;
+            const btn = document.getElementById('record-button');
+            const indicator = document.getElementById('recording-indicator');
+            if (recording) {
+                recordedData.length = 0;
+                recordingStartTime = Date.now();
+                btn.textContent = 'Stop';
+                btn.classList.add('recording');
+                indicator.style.display = 'flex';
+                document.body.classList.add('recording-active');
+                updateRecordingTimer();
+            } else {
+                btn.textContent = 'Record';
+                btn.classList.remove('recording');
+                indicator.style.display = 'none';
+                document.body.classList.remove('recording-active');
+                if (recordedData.length > 0) exportData();
+            }
+        }
+
+        function updateRecordingTimer() {
+            if (!recording) return;
+            const elapsed = Math.round((Date.now() - recordingStartTime) / 1000);
+            document.getElementById('recording-count').textContent = elapsed + 's';
+            setTimeout(updateRecordingTimer, 1000);
+        }
+
+        function recordSnapshot(servers) {
+            if (!recording) return;
+            const hasCpu = servers.some(s => s.cpuUsage > 0);
+            if (!hasCpu && recordedData.length === 0) return;
+            recordedData.push({
+                timestamp: new Date().toISOString(),
+                elapsed: Math.round((Date.now() - recordingStartTime) / 1000),
+                servers: servers.map(s => ({
+                    id: s.id,
+                    cpu: s.cpuUsage || 0,
+                    ram: s.ramUsage || 0,
+                    latency: s.latency || 0,
+                    connections: s.activeConnections || 0,
+                    status: s.calculatedStatus
+                }))
+            });
+        }
+
+        function exportData() {
+            const blob = new Blob([JSON.stringify(recordedData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'gateway-stats-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        let replayData = null;
+        let replayIndex = 0;
+        let replayTimer = null;
+        let replayCpuHistory = new Map();
+        let replayRamHistory = new Map();
+        let replayLatHistory = new Map();
+        let replayColorMap = new Map();
+        let replayColorIndex = 0;
+
+        function getReplayColor(id) {
+            if (!replayColorMap.has(id)) {
+                replayColorMap.set(id, serverColors[replayColorIndex % serverColors.length]);
+                replayColorIndex++;
+            }
+            return replayColorMap.get(id);
+        }
+
+        function handleImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    replayData = JSON.parse(e.target.result);
+                    if (!Array.isArray(replayData)) throw new Error('Invalid');
+                    openReplayOverlay();
+                } catch (err) {
+                    showError('Invalid JSON file');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function openReplayOverlay() {
+            if (!replayData || replayData.length === 0) return;
+            const existing = document.getElementById('replay-overlay');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'replay-overlay';
+            overlay.className = 'overlay';
+            overlay.innerHTML = `
+                <div class="overlay-header">
+                    <h2>Replay — ${replayData.length} frames (${replayData.length}s)</h2>
+                    <button onclick="closeReplayOverlay()">Close</button>
+                </div>
+                <div class="replay-timeline">
+                    <div class="replay-timeline-header">
+                        <span id="replay-time-label">00:00 / ${formatReplayTime(replayData.length)}</span>
+                        <div class="replay-timeline-controls">
+                            <button class="replay-timeline-btn" onclick="replaySkip(-10)">&lt;&lt;</button>
+                            <button class="replay-timeline-btn" id="replay-play-btn" onclick="toggleReplayPlay()">Pause</button>
+                            <button class="replay-timeline-btn" onclick="replaySkip(10)">&gt;&gt;</button>
+                            <select id="replay-speed" onchange="changeReplaySpeed()" style="background:rgba(30,41,59,0.8);color:#22c55e;border:1px solid rgba(34,197,94,0.3);padding:6px 10px;border-radius:8px;font-size:11px;cursor:pointer">
+                                <option value="100">10x</option>
+                                <option value="250">4x</option>
+                                <option value="500">2x</option>
+                                <option value="1000" selected>1x</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="replay-timeline-bar" id="replay-timeline-bar" onmousedown="timelineMouseDown(event)">
+                        <div class="replay-timeline-track"></div>
+                        <div class="replay-timeline-fill" id="replay-timeline-fill"></div>
+                        <div class="replay-timeline-thumb" id="replay-timeline-thumb"></div>
+                    </div>
+                    <div class="replay-timeline-ticks" id="replay-ticks"></div>
+                </div>
+                <div class="overlay-graphs">
+                    <div class="overlay-graph-card">
+                        <h3>CPU Usage</h3>
+                        <svg id="replay-cpu-graph" viewBox="0 0 400 250" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
+                    <div class="overlay-graph-card">
+                        <h3>RAM Usage</h3>
+                        <svg id="replay-ram-graph" viewBox="0 0 400 250" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
+                    <div class="overlay-graph-card">
+                        <h3>Latency</h3>
+                        <svg id="replay-latency-graph" viewBox="0 0 400 250" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
+                </div>
+                <div id="replay-analysis" style="max-width:1200px;width:100%;margin:0 auto"></div>
+            `;
+            document.body.appendChild(overlay);
+
+            replayIndex = 0;
+            applyReplayFrame();
+            updateTimeline();
+            renderReplayAnalysis();
+            startReplayTimer();
+        }
+
+        function changeReplaySpeed() {
+            startReplayTimer();
+        }
+
+        let replayPaused = false;
+
+        function formatReplayTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        }
+
+        function updateTimeline() {
+            if (!replayData) return;
+            const pct = (replayIndex / (replayData.length - 1)) * 100;
+            document.getElementById('replay-timeline-fill').style.width = pct + '%';
+            document.getElementById('replay-timeline-thumb').style.left = pct + '%';
+            document.getElementById('replay-time-label').textContent = formatReplayTime(replayIndex) + ' / ' + formatReplayTime(replayData.length);
+
+            const ticks = document.getElementById('replay-ticks');
+            const count = Math.min(10, replayData.length);
+            let html = '';
+            for (let i = 0; i <= count; i++) {
+                const idx = Math.round((replayData.length - 1) * (i / count));
+                html += '<span>' + formatReplayTime(idx) + '</span>';
+            }
+            ticks.innerHTML = html;
+        }
+
+        function timelineMouseDown(e) {
+            seekTimeline(e);
+            document.addEventListener('mousemove', timelineMouseMove);
+            document.addEventListener('mouseup', timelineMouseUp);
+        }
+
+        function timelineMouseMove(e) { seekTimeline(e); }
+
+        function timelineMouseUp() {
+            document.removeEventListener('mousemove', timelineMouseMove);
+            document.removeEventListener('mouseup', timelineMouseUp);
+        }
+
+        function seekTimeline(e) {
+            if (!replayData) return;
+            const bar = document.getElementById('replay-timeline-bar');
+            const rect = bar.getBoundingClientRect();
+            const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            replayIndex = Math.round(pct * (replayData.length - 1));
+            applyReplayFrame();
+            updateTimeline();
+        }
+
+        function replaySkip(offset) {
+            if (!replayData) return;
+            replayIndex = Math.max(0, Math.min(replayData.length - 1, replayIndex + offset));
+            applyReplayFrame();
+            updateTimeline();
+        }
+
+        function toggleReplayPlay() {
+            replayPaused = !replayPaused;
+            const btn = document.getElementById('replay-play-btn');
+            if (replayPaused) {
+                btn.textContent = 'Play';
+                if (replayTimer) clearInterval(replayTimer);
+            } else {
+                btn.textContent = 'Pause';
+                if (!replayData || replayIndex >= replayData.length - 1) return;
+                startReplayTimer();
+            }
+        }
+
+        function startReplayTimer() {
+            if (replayTimer) clearInterval(replayTimer);
+            replayPaused = false;
+            const btn = document.getElementById('replay-play-btn');
+            if (btn) btn.textContent = 'Pause';
+            const speed = parseInt(document.getElementById('replay-speed')?.value || '1000');
+            replayTimer = setInterval(() => {
+                if (!replayData || replayIndex >= replayData.length - 1) {
+                    clearInterval(replayTimer);
+                    if (btn) btn.textContent = 'Play';
+                    return;
+                }
+                replayIndex++;
+                applyReplayFrame();
+                updateTimeline();
+            }, speed);
+        }
+
+        function closeReplayOverlay() {
+            if (replayTimer) clearInterval(replayTimer);
+            const overlay = document.getElementById('replay-overlay');
+            if (overlay) overlay.remove();
+        }
+
+        function applyReplayFrame() {
+            if (!replayData) return;
+            const label = document.getElementById('replay-frame-label');
+            if (label) label.textContent = (replayIndex + 1) + ' / ' + replayData.length;
+
+            replayCpuHistory.clear(); replayRamHistory.clear(); replayLatHistory.clear();
+            for (let i = 0; i <= replayIndex; i++) {
+                const frame = replayData[i];
+                for (const s of frame.servers) {
+                    addDataPoint(replayCpuHistory, s.id, s.cpu);
+                    addDataPoint(replayRamHistory, s.id, s.ram);
+                    addDataPoint(replayLatHistory, s.id, s.latency);
+                }
+            }
+            drawReplayGraph('replay-cpu-graph', replayCpuHistory, 100, true);
+            drawReplayGraph('replay-ram-graph', replayRamHistory, 512, false);
+            drawReplayGraph('replay-latency-graph', replayLatHistory, 100, false);
+            updateTimeline();
+        }
+
+        function drawReplayGraph(svgId, dataMap, maxValue, fixedMax) {
+            const svg = document.getElementById(svgId);
+            if (!svg) return;
+            svg.innerHTML = '';
+
+            const hasData = Array.from(dataMap.values()).some(d => d.length > 0);
+            if (!hasData) return;
+
+            const W = 400, H = 250, PL = 45, PR = 15, PT = 15, PB = 30;
+            const PW = W - PL - PR, PH = H - PT - PB;
+
+            const autoMax = replayGetMax(dataMap);
+            const effectiveMax = fixedMax ? maxValue : Math.max(maxValue, autoMax);
+
+            for (let i = 0; i <= 4; i++) {
+                const y = PT + PH * (i / 4);
+                const val = effectiveMax - effectiveMax * (i / 4);
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', PL); line.setAttribute('y1', y);
+                line.setAttribute('x2', W - PR); line.setAttribute('y2', y);
+                line.setAttribute('stroke', 'rgba(255,255,255,0.06)'); line.setAttribute('stroke-width', '1');
+                svg.appendChild(line);
+                const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                lbl.setAttribute('x', PL - 6); lbl.setAttribute('y', y + 3);
+                lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('fill', '#64748b');
+                lbl.setAttribute('font-size', '11');
+                lbl.textContent = val >= 1000 ? (val/1000).toFixed(1)+'k' : Math.round(val);
+                svg.appendChild(lbl);
+            }
+
+            for (const [id, data] of dataMap) {
+                if (data.length < 2) continue;
+                const color = getReplayColor(id);
+                let pathD = '', areaD = '';
+                const stepX = data.length > 1 ? PW / (data.length - 1) : PW;
+                for (let i = 0; i < data.length; i++) {
+                    const x = PL + i * stepX;
+                    const y = PT + PH * (1 - data[i] / effectiveMax);
+                    if (i === 0) { pathD = `M${x},${y}`; areaD = `M${x},${PT+PH} L${x},${y}`; }
+                    else { pathD += ` L${x},${y}`; areaD += ` L${x},${y}`; }
+                }
+                areaD += ` L${PL + (data.length-1)*stepX},${PT+PH} Z`;
+                const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                area.setAttribute('d', areaD); area.setAttribute('fill', color);
+                area.setAttribute('opacity', '0.08'); svg.appendChild(area);
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', pathD); path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', color); path.setAttribute('stroke-width', '1.5');
+                path.setAttribute('stroke-linecap', 'round'); path.setAttribute('stroke-linejoin', 'round');
+                svg.appendChild(path);
+                if (data.length > 0) {
+                    const lv = data[data.length-1];
+                    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    dot.setAttribute('cx', PL + (data.length-1)*stepX);
+                    dot.setAttribute('cy', PT + PH * (1 - lv / effectiveMax));
+                    dot.setAttribute('r', '3'); dot.setAttribute('fill', color);
+                    svg.appendChild(dot);
+                }
+            }
+        }
+
+        function replayGetMax(dataMap) {
+            let max = 0;
+            for (const [, data] of dataMap) for (const v of data) if (v > max) max = v;
+            return Math.max(max * 1.1, 1);
+        }
+
+        function renderReplayAnalysis() {
+            if (!replayData) return;
+            const allServers = new Map();
+            for (const frame of replayData) {
+                for (const s of frame.servers) {
+                    if (!allServers.has(s.id)) allServers.set(s.id, { cpu: [], ram: [], lat: [] });
+                    const e = allServers.get(s.id);
+                    e.cpu.push(s.cpu); e.ram.push(s.ram); e.lat.push(s.latency);
+                }
+            }
+            const a = arr => arr.length ? (arr.reduce((x,y)=>x+y,0)/arr.length).toFixed(1) : '-';
+            const lo = arr => arr.length ? Math.min(...arr).toFixed(1) : '-';
+            const hi = arr => arr.length ? Math.max(...arr).toFixed(1) : '-';
+
+            let html = '<div class="servers-section" style="margin-top:16px"><h2>Analysis</h2>';
+            html += '<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px">';
+            html += '<thead><tr style="color:#94a3b8;text-align:left">';
+            html += '<th style="padding:8px">Server</th><th style="padding:8px">CPU (min/avg/max)</th><th style="padding:8px">RAM MB (min/avg/max)</th><th style="padding:8px">Latency ms (min/avg/max)</th>';
+            html += '</tr></thead><tbody>';
+            for (const [id, data] of allServers) {
+                html += `<tr style="border-top:1px solid rgba(34,197,94,0.1)">
+                    <td style="padding:10px 8px;font-weight:600;color:#fff">${id}</td>
+                    <td style="padding:10px 8px;color:#86efac">${lo(data.cpu)} / ${a(data.cpu)} / ${hi(data.cpu)}</td>
+                    <td style="padding:10px 8px;color:#86efac">${lo(data.ram)} / ${a(data.ram)} / ${hi(data.ram)}</td>
+                    <td style="padding:10px 8px;color:#86efac">${lo(data.lat)} / ${a(data.lat)} / ${hi(data.lat)}</td>
+                </tr>`;
+            }
+            html += '</tbody></table></div>';
+            const section = document.getElementById('replay-analysis');
+            if (section) section.innerHTML = html;
+        }
+
+        function updateFilterDropdown(serverIds) {
+            const select = document.getElementById('server-filter');
+            const currentValue = select.value;
+            select.innerHTML = '<option value="all">All Servers</option>';
+            serverIds.forEach(id => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = id;
+                select.appendChild(opt);
+            });
+            if ([...select.options].some(o => o.value === currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        function getFilteredData(dataMap) {
+            const filter = document.getElementById('server-filter').value;
+            if (filter === 'all') return dataMap;
+            const filtered = new Map();
+            if (dataMap.has(filter)) filtered.set(filter, dataMap.get(filter));
+            return filtered;
         }
 
         fetchStats();

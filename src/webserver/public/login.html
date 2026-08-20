@@ -5,63 +5,139 @@
     <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Frostfire Forge - Gateway Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./css/frontend.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+            background-color: #0f172a;
+            color: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            padding: 2.5rem;
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            max-width: 400px;
+            width: 100%;
+            margin: 0 1rem;
+        }
+
+        .login-title {
+            font-family: 'Clash Display', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            color: #fff;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #f1f5f9;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input[type="password"] {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            color: #f1f5f9;
+            padding: 0.875rem 1rem;
+            border-radius: 10px;
+            font-family: 'Space Mono', monospace;
+            font-size: 0.875rem;
+        }
+
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #22c55e;
+            background: rgba(34, 197, 94, 0.05);
+        }
+
+        input[type="password"]::placeholder {
+            color: #6b7280;
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 0.875rem 1.5rem;
+            background: #22c55e;
+            color: #0f172a;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Clash Display', sans-serif;
+            font-size: 0.875rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+        }
+
+        .login-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #fca5a5;
+            padding: 0.875rem 1rem;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <div class="login-wrapper">
-            <!-- Hero Section -->
-            <div class="hero-section">
-                <div class="hero-content">
-                    <div class="hero-badge">Gateway Access</div>
-                    <h1 class="hero-title">Secure Gateway <span class="hero-title-green">Control</span></h1>
-                    <p class="hero-description">Manage your Frostfire Forge infrastructure with enterprise-grade security and real-time monitoring.</p>
+    <div class="login-card">
+        <h2 class="login-title">Gateway Login</h2>
 
-                    <div class="features-list">
-                        <div class="feature-item">
-                            <div class="feature-icon">✓</div>
-                            <div class="feature-text">Military-grade encryption</div>
-                        </div>
-                        <div class="feature-item">
-                            <div class="feature-icon">✓</div>
-                            <div class="feature-text">24/7 monitoring & alerts</div>
-                        </div>
-                    </div>
-                </div>
+        <div id="error-message" class="error-message"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="auth-key">Authentication Key</label>
+                <input
+                    type="password"
+                    id="auth-key"
+                    name="auth-key"
+                    placeholder="Enter your gateway auth key"
+                    autocomplete="off"
+                    required
+                >
             </div>
 
-            <!-- Login Section -->
-            <div class="login-section">
-                <div class="login-card">
-                    <div class="login-header">
-                        <h2 class="login-title">Gateway Login</h2>
-                        <p class="login-subtitle">Enter your authentication key to access the dashboard</p>
-                    </div>
-
-                    <div id="error-message" class="error-message"></div>
-
-                    <form id="login-form">
-                        <div class="form-group">
-                            <label for="auth-key">Authentication Key</label>
-                            <input
-                                type="password"
-                                id="auth-key"
-                                name="auth-key"
-                                placeholder="Enter your gateway auth key"
-                                autocomplete="off"
-                                required
-                            >
-                        </div>
-
-                        <button type="submit" class="login-button" id="login-button">
-                            Access Gateway
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
+            <button type="submit" class="login-button" id="login-button">
+                Access Gateway
+            </button>
+        </form>
     </div>
-
 
     <script>
         const form = document.getElementById('login-form');
