@@ -14,16 +14,16 @@ if (security.length > 0) {
   log.warn("No security rules found");
 }
 
-const _cert = process.env.WEBSRV_CERT_PATH || path.join(import.meta.dir, "../../certs/webserver/cert.pem");
-const _key = process.env.WEBSRV_KEY_PATH || path.join(import.meta.dir, "../../certs/webserver/key.pem");
-const _ca = process.env.WEBSRV_CA_PATH || path.join(import.meta.dir, "../../certs/webserver/cert.ca-bundle");
-const _https = process.env.WEBSRV_USESSL === "true" && fs.existsSync(_cert) && fs.existsSync(_key);
+const _cert = process.env.TLS_CERT_PATH;
+const _key = process.env.TLS_KEY_PATH;
+const _ca = process.env.TLS_CA_PATH;
+const _https = process.env.WEBSRV_USESSL === "true" && !!_cert && !!_key && fs.existsSync(_cert) && fs.existsSync(_key);
 
 if (process.env.WEBSRV_USESSL === "true") {
   if (!_https) {
     console.error("[Gateway Proxy] SSL requested but certificates not found.");
-    console.error(`  Cert path: ${_cert} (exists: ${fs.existsSync(_cert)})`);
-    console.error(`  Key path:  ${_key} (exists: ${fs.existsSync(_key)})`);
+    console.error(`  Cert path: ${_cert || "(TLS_CERT_PATH not set)"} (exists: ${!!_cert && fs.existsSync(_cert)})`);
+    console.error(`  Key path:  ${_key || "(TLS_KEY_PATH not set)"} (exists: ${!!_key && fs.existsSync(_key)})`);
   } else {
     console.log(`[Gateway Proxy] SSL enabled (HTTP/3 + HTTP/1.1 fallback)`);
   }
@@ -123,7 +123,7 @@ Bun.serve({
   },
   ...(_https ? {
       tls: {
-        cert: fs.existsSync(_ca)
+        cert: _ca && fs.existsSync(_ca)
           ? fs.readFileSync(_cert) + "\n" + fs.readFileSync(_ca)
           : fs.readFileSync(_cert),
         key: fs.readFileSync(_key),

@@ -199,8 +199,8 @@ The reverse proxy (`src/webserver/proxy.ts`) is the only process bound to the pu
 # Database Configuration
 DATABASE_ENGINE=mysql
 DATABASE_HOST=localhost
-DATABASE_NAME=frostfire_forge
-DATABASE_USER=root
+DATABASE_NAME=frostfire_gateway
+DATABASE_USER=gateway_user
 DATABASE_PASSWORD=your_password
 DATABASE_PORT=3306
 SQL_SSL_MODE=DISABLED
@@ -209,23 +209,19 @@ SQL_SSL_MODE=DISABLED
 GATEWAY_PORT=9999
 GATEWAY_PORTSSL=9443
 GATEWAY_USESSL=false
-GATEWAY_CERT_PATH=./src/certs/gateway/cert.pem
-GATEWAY_KEY_PATH=./src/certs/gateway/key.pem
-GATEWAY_CA_PATH=./src/certs/gateway/cert.ca-bundle
 GATEWAY_AUTH_KEY=your-uuid-key-here
 GATEWAY_GAME_SERVER_SECRET=your-shared-secret
+
+# TLS Certificates (shared by the Gateway and Webserver)
+TLS_CERT_PATH=./src/certs/cert.pem
+TLS_KEY_PATH=./src/certs/key.pem
+TLS_CA_PATH=./src/certs/cert.ca-bundle
 
 # Webserver
 WEBSRV_PORT=80
 WEBSRV_PORTSSL=443
 WEBSRV_INTERNAL_PORT=8080
 WEBSRV_USESSL=false
-WEBSRV_CERT_PATH=./src/certs/webserver/cert.pem
-WEBSRV_KEY_PATH=./src/certs/webserver/key.pem
-WEBSRV_CA_PATH=./src/certs/webserver/cert.ca-bundle
-
-# CORS Configuration (Security)
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost,http://127.0.0.1,http://127.0.0.1:8000
 
 # Asset Server Configuration
 ASSET_SERVER_URL="http://127.0.0.1:8000"
@@ -243,11 +239,17 @@ HEARTBEAT_INTERVAL=30000
 SERVER_TIMEOUT=90000
 SESSION_TIMEOUT=300000
 GUEST_MODE_ENABLED=true
-DEFAULT_MAP=overworld.json
-TWO_FA_ENABLED=false
 DOMAIN=http://localhost
 GAME_NAME=Frostfire Forge
+GATEWAY_URL=http://localhost:9999
 PLAYER_Z_INDEX=4
+
+# Client Configuration (injected into the game client at startup)
+GATEWAY_ENABLED=true
+VERSION=
+# Optional: pin the game server certificate hash (base64 SHA-256 of the DER cert).
+# Leave empty to fetch it automatically from the game server, or set to "off" to disable pinning.
+GAME_WT_CERT_HASH=
 ```
 
 ---
@@ -258,7 +260,7 @@ PLAYER_Z_INDEX=4
 
 **Option 1: Use prebuilt Docker image:**
 ```bash
-docker run -d --name frostfire-gateway-dev -p 80:80 -p 9999:9999 ghcr.io/lillious-networks/frostfire-forge-gateway-dev:latest
+docker run -d --name frostfire-gateway-dev -p 80:80 -p 443:443 -p 443:443/udp -p 9999:9999 -p 9443:9443 -p 9443:9443/udp ghcr.io/lillious-networks/frostfire-forge-gateway-dev:latest
 ```
 
 **Option 2: Build and run from source:**
@@ -300,20 +302,20 @@ docker compose -f src/docker/docker-compose.dev.yml logs -f
 docker compose -f src/docker/docker-compose.dev.yml down
 ```
 
-### NPM Commands
+### Docker Commands
 
 ```bash
 # Development
-npm run docker:dev              # Start dev container
-npm run docker:dev:logs         # View logs
-npm run docker:dev:rebuild      # Rebuild and restart
-npm run docker:dev:down         # Stop dev container
+bun run docker:dev              # Start dev container
+bun run docker:dev:logs         # View logs
+bun run docker:dev:rebuild      # Rebuild and restart
+bun run docker:dev:down         # Stop dev container
 
 # Production
-npm run docker:prod             # Start prod container
-npm run docker:prod:logs        # View logs
-npm run docker:prod:rebuild     # Rebuild and restart
-npm run docker:prod:down        # Stop prod container
+bun run docker:prod             # Start prod container
+bun run docker:prod:logs        # View logs
+bun run docker:prod:rebuild     # Rebuild and restart
+bun run docker:prod:down        # Stop prod container
 ```
 
 ---
@@ -336,25 +338,25 @@ FLUSH PRIVILEGES;
 
 ### SSL/TLS Setup
 
-Place your certificates in the following directories:
+The Gateway and Webserver share a single certificate (they always run on the same server):
 
 ```
 src/certs/
-├── webserver/
-│   ├── cert.pem           # Server certificate
-│   ├── key.pem            # Private key
-│   └── cert.ca-bundle     # Full CA chain (optional)
-└── gateway/
-    ├── cert.pem           # Server certificate
-    ├── key.pem            # Private key
-    └── cert.ca-bundle     # Full CA chain (optional)
+├── cert.pem           # Server certificate
+├── key.pem            # Private key
+└── cert.ca-bundle     # Full CA chain (optional)
 ```
 
 Then update the following environment variables:
 ```bash
 WEBSRV_USESSL=true
 GATEWAY_USESSL=true
+TLS_CERT_PATH=./src/certs/cert.pem
+TLS_KEY_PATH=./src/certs/key.pem
+TLS_CA_PATH=./src/certs/cert.ca-bundle
 ```
+
+Both services read `TLS_CERT_PATH`, `TLS_KEY_PATH`, and `TLS_CA_PATH`. If these variables are not set (or the files are missing), SSL is disabled and the services serve plain HTTP instead. The CA bundle is optional - when missing, only the leaf certificate is served.
 
 ---
 

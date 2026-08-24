@@ -132,8 +132,59 @@ import { createNPC, reinitNpcSprite } from "./npc.ts";
 import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
 import { createCachedImage } from "./images.ts";
+import { encodeFrame, FrameDecoder, decodeCloseReason } from "./wtframing.ts";
 
-let socket: WebSocket;
+let socket: WebTransport;
+let streamWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+let streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+let streamDecoder: FrameDecoder = new FrameDecoder();
+let transportReady: boolean = false;
+let connectionToken: any = null;
+let pendingAuthResolve: (() => void) | null = null;
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function fetchServerCertHash(server: any): Promise<string | undefined> {
+  try {
+    const protocol = server.useSSL ? "https" : "http";
+    const url = `${protocol}://${normalizeGameHost(server.publicHost)}:${server.port}/wt-cert-hash`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const data = await response.json();
+    if (data && data.algorithm === "sha-256" && typeof data.value === "string" && data.value.length > 0) {
+      return data.value;
+    }
+  } catch (error) {
+    console.warn("Failed to fetch WebTransport certificate hash:", error);
+  }
+
+  return undefined;
+}
+
+async function buildWebTransportOptions(server: any): Promise<any> {
+  const configured = (config as any)?.GAME_WT_CERT_HASH;
+
+  if (typeof configured === "string" && configured.length > 0 && !configured.startsWith("__VAR.")) {
+    if (configured === "off") return undefined;
+    return { serverCertificateHashes: [{ algorithm: "sha-256", value: base64ToBytes(configured) }] };
+  }
+
+  const hash = await fetchServerCertHash(server);
+  if (!hash) return undefined;
+
+  return { serverCertificateHashes: [{ algorithm: "sha-256", value: base64ToBytes(hash) }] };
+}
 
 let sentRequests: number = 0,
   receivedResponses: number = 0;
@@ -250,7 +301,18 @@ function rebuildInventoryGrid() {
 
 function sendRequest(data: any) {
   sentRequests++;
-  socket.send(packet.encode(JSON.stringify(data)));
+  sendRawFrame(packet.encode(JSON.stringify(data)));
+}
+
+function sendRawFrame(bytes: Uint8Array) {
+  if (!streamWriter) return;
+  try {
+    streamWriter.write(encodeFrame(bytes)).catch((error) => {
+      console.error("Frame write failed:", error);
+    });
+  } catch (error) {
+    console.error("Frame write failed:", error);
+  }
 }
 
 // Make sendRequest available globally for dynamically imported modules
@@ -289,8 +351,8 @@ function createSpellIconImage(src: string | null | undefined, onReady: (img: HTM
 export function requestMapChunkViaWS(mapName: string, chunkX: number, chunkY: number, chunkSize: number): Promise<any> {
   return new Promise((resolve, reject) => {
 
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      reject(new Error("WebSocket not connected"));
+    if (!streamWriter || !transportReady) {
+      reject(new Error("WebTransport not connected"));
       return;
     }
 
@@ -314,8 +376,8 @@ export function requestMapChunkViaWS(mapName: string, chunkX: number, chunkY: nu
 export function requestTilesetViaWS(tilesetName: string): Promise<any> {
   return new Promise((resolve, reject) => {
 
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      reject(new Error("WebSocket not connected"));
+    if (!streamWriter || !transportReady) {
+      reject(new Error("WebTransport not connected"));
       return;
     }
 
@@ -337,6 +399,10 @@ export function requestTilesetViaWS(tilesetName: string): Promise<any> {
 
 let cachedPlayerId: string | null = null;
 let sessionActive: boolean = false;
+
+let lastServerActivity = 0;
+let watchdogTimer: ReturnType<typeof setInterval> | null = null;
+let closeHandled = false;
 
 let snapshotRevision: number | null = null;
 let snapshotApplied: boolean = false;
@@ -409,9 +475,13 @@ const setupEquipmentSlotHandlers = () => {
   });
 };
 
-async function connectThroughGateway(): Promise<WebSocket | undefined> {
+function normalizeGameHost(host: string): string {
+  if (host === "localhost") return "127.0.0.1";
+  return host;
+}
 
-  let connectionToken;
+async function connectThroughGateway(): Promise<WebTransport | undefined> {
+
   try {
     const tokenResponse = await fetch('/api/gateway/connection-token');
     if (!tokenResponse.ok) {
@@ -420,6 +490,10 @@ async function connectThroughGateway(): Promise<WebSocket | undefined> {
     connectionToken = await tokenResponse.json();
   } catch (error) {
     console.error("Error obtaining connection token:", error);
+  }
+
+  if (!connectionToken) {
+    throw new Error('Failed to obtain connection token from gateway');
   }
 
   const selectedServerId = localStorage.getItem('selectedServerId');
@@ -438,11 +512,14 @@ async function connectThroughGateway(): Promise<WebSocket | undefined> {
 
       if (server) {
 
-        const wsProtocol = server.useSSL ? 'wss://' : 'ws://';
-        const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : wsProtocol}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
+        if (!server.wtPort) {
+          throw new Error('Game server does not advertise a WebTransport port');
+        }
 
-        const gameServerWs = new WebSocket(gameServerWsUrl);
-        return gameServerWs;
+        const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
+        const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
+        await gameTransport.ready;
+        return gameTransport;
       } else {
 
         localStorage.removeItem('selectedServerId');
@@ -472,11 +549,14 @@ async function connectThroughGateway(): Promise<WebSocket | undefined> {
 
     const server = healthyServers[0];
 
-    const wsProtocol = server.useSSL ? 'wss://' : 'ws://';
-    const gameServerWsUrl = `${server.publicHost.startsWith('ws') ? '' : wsProtocol}${server.publicHost}:${server.wsPort}?token=${connectionToken.token}&timestamp=${connectionToken.timestamp}&expiresAt=${connectionToken.expiresAt}&signature=${connectionToken.signature}`;
+    if (!server.wtPort) {
+      throw new Error('Game server does not advertise a WebTransport port');
+    }
 
-    const gameServerWs = new WebSocket(gameServerWsUrl);
-    return gameServerWs;
+    const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
+    const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
+    await gameTransport.ready;
+    return gameTransport;
   } catch (error) {
     console.error("Error connecting through gateway:", error);
   }
@@ -489,46 +569,89 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 async function initializeSocket() {
 
   if (isReconnecting) {
-    return;
+    throw new Error('Connection attempt already in progress');
   }
 
   isReconnecting = true;
 
-  const gatewayUrl = config.GATEWAY_URL;
-
-  if (!gatewayUrl) {
-    isReconnecting = false;
-    throw new Error('Gateway URL not configured');
-  }
-
   try {
-    socket = (await connectThroughGateway()) as WebSocket;
-  } catch (error) {
-    isReconnecting = false;
-    throw error;
-  }
+    transportReady = false;
 
-  if (!socket) {
-    isReconnecting = false;
-    window.location.href = "/";
-    throw new Error('Failed to establish WebSocket connection');
-  }
+    const gatewayUrl = config.GATEWAY_URL;
 
-  socket.binaryType = "arraybuffer";
+    if (!gatewayUrl) {
+      throw new Error('Gateway URL not configured');
+    }
+
+    socket = (await connectThroughGateway()) as WebTransport;
+
+    if (!socket) {
+      // Only bounce to the login/home screen on the initial connection.
+      // During reconnection attempts the caller handles retries itself.
+      if (reconnectAttempts === 0) {
+        window.location.href = "/";
+      }
+      throw new Error('Failed to establish WebTransport connection');
+    }
+
+    await setupTransport();
+
+    startInventoryFlushInterval();
+  } finally {
+    isReconnecting = false;
+  }
+}
+
+async function setupTransport() {
+
+  const bidi = await socket.createBidirectionalStream();
+  streamWriter = bidi.writable.getWriter();
+  streamReader = bidi.readable.getReader();
+  streamDecoder = new FrameDecoder();
+
   setupSocketHandlers();
 
-  if (socket.readyState === WebSocket.OPEN) {
-    initializeConnection();
-  }
+  receiveLoop();
+  receiveDatagrams();
 
-  startInventoryFlushInterval();
+  await authenticateConnection();
 
-  isReconnecting = false;
+  transportReady = true;
+  initializeConnection();
+}
+
+function authenticateConnection(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    pendingAuthResolve = resolve;
+
+    const authData = {
+      token: connectionToken.token,
+      timestamp: connectionToken.timestamp,
+      expiresAt: connectionToken.expiresAt,
+      signature: connectionToken.signature,
+      useragent: window.navigator.userAgent || "unknown",
+      origin: window.location.origin,
+    };
+
+    sendRawFrame(packet.encode(JSON.stringify({
+      type: "AUTH_CONNECT",
+      data: authData,
+    })));
+
+    setTimeout(() => {
+      if (pendingAuthResolve) {
+        pendingAuthResolve = null;
+        reject(new Error("Authentication timeout"));
+      }
+    }, 10000);
+  });
 }
 
 function initializeConnection() {
 
   reconnectAttempts = 0;
+  closeHandled = false;
+  lastServerActivity = performance.now();
 
   if (cache?.players) {
     cache.players.clear();
@@ -544,72 +667,106 @@ function initializeConnection() {
   pendingMovements = [];
   pendingSpriteAnimations = [];
 
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+  }
+  watchdogTimer = setInterval(checkConnectionWatchdog, 1000);
+
   sendRequest({
     type: "PING",
     data: null,
   });
 }
 
-function setupSocketHandlers() {
-socket.onopen = () => {
-  initializeConnection();
-};
+// If the game server dies without closing the QUIC session, `socket.closed`
+// may not resolve until the idle timeout (2+ minutes). Track inbound activity:
+// the server pushes SERVER_TIME every second, so a 5 second silence means the
+// connection is dead and we should surface "connection lost" immediately.
+function checkConnectionWatchdog() {
+  if (!sessionActive || !transportReady) return;
+  if (performance.now() - lastServerActivity < 5000) return;
 
-socket.onclose = async (ev: CloseEvent) => {
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
+  }
+
+  try {
+    socket.close({ closeCode: 1, reason: "connection-timeout" });
+  } catch (error) {
+    // The session may already be unusable; the close call is best-effort
+  }
+
+  handleSocketClose({ closeCode: 1, reason: "connection-timeout" });
+}
+
+function setupSocketHandlers() {
+  socket.closed.then((info: any) => {
+    handleSocketClose(info);
+  }).catch(() => {
+    // Expected on session close (e.g. logout or server shutdown) - the
+    // "Connection lost" rejection is not a real error.
+    handleSocketClose({ closeCode: 1, reason: "" });
+  });
+}
+
+async function handleSocketClose(info: any) {
+
+  if (closeHandled) return;
+  closeHandled = true;
+
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
+  }
 
   progressBarContainer.style.display = "none";
 
-  const wasUnexpected = ev.code !== 1000 && ev.code !== 1001;
+  const rawCode = info?.closeCode ?? 1;
+  const parsed = decodeCloseReason(info?.reason || "");
+  const displayCode = parsed.code !== 0 && parsed.code !== 1 ? parsed.code : rawCode;
+  const wasUnexpected = rawCode !== 0;
 
   if (wasUnexpected && config.GATEWAY_ENABLED === 'true') {
-    reconnectAttempts++;
-
-    if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-      showNotification(
-        `Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts. Please refresh the page.`,
-        false,
-        true
-      );
-      return;
-    }
-
-    showNotification(
-      `Connection lost (${ev.code}). Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`,
-      false,
-      false
-    );
-
-    setTimeout(async () => {
-      try {
-        (window as any).__suppressLoadingScreen = true;
-        await initializeSocket();
-        reconnectAttempts = 0;
-        window.location.reload();
-      } catch (error) {
-        showNotification(
-          `Reconnection failed. Please refresh the page.`,
-          false,
-          true
-        );
-      }
-    }, 2000);
+    await attemptReconnect(displayCode);
   } else {
     showNotification(
-      `You have been disconnected from the server: ${ev.code}`,
+      `You have been disconnected from the server: ${displayCode}`,
       false,
       true
     );
   }
-};
+}
 
-socket.onerror = (ev: Event) => {
-  progressBarContainer.style.display = "none";
+async function attemptReconnect(displayCode: number) {
+  for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+    reconnectAttempts = attempt;
+
+    showNotification(
+      `Connection lost (${displayCode}). Reconnecting (${attempt}/${MAX_RECONNECT_ATTEMPTS})...`,
+      false,
+      false
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    try {
+      (window as any).__suppressLoadingScreen = true;
+      await initializeSocket();
+      reconnectAttempts = 0;
+      window.location.reload();
+      return;
+    } catch (error) {
+      // Retry after the next delay
+    }
+  }
+
   showNotification(
-    `An error occurred while connecting to the server: ${ev.type}`,
+    `Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts. Please refresh the page.`,
     false,
     true
   );
-};
+}
 
 async function handleLoadPlayersPacket(data: any) {
 
@@ -809,32 +966,69 @@ async function handleLoadPlayersPacket(data: any) {
   }
 }
 
-socket.onmessage = async (event) => {
-  receivedResponses++;
-  if (!(event.data instanceof ArrayBuffer)) return;
-
-  const bytes = new Uint8Array(event.data);
+function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any } {
   const FIRST_BYTE = bytes[0];
 
-  let type: string;
-  let data: any;
-
   if (FIRST_BYTE === 0x01) {
-    type = "BATCH_MOVEXY";
-    data = bytes;
+    return { type: "BATCH_MOVEXY", data: bytes };
   } else if (FIRST_BYTE === 0x02) {
-    type = "MOVEXY";
-    data = bytes;
+    return { type: "MOVEXY", data: bytes };
   } else if (FIRST_BYTE === 0x03) {
-    type = "MOVE_ENTITY_BINARY";
-    data = bytes;
+    return { type: "MOVE_ENTITY_BINARY", data: bytes };
   } else {
-    const decoded = JSON.parse(packet.decode(event.data));
-    data = decoded["data"];
-    type = decoded["type"];
+    const decoded = JSON.parse(packet.decode(bytes));
+    return { type: decoded["type"], data: decoded["data"] };
   }
+}
+
+async function receiveLoop() {
+  if (!streamReader) return;
+
+  try {
+    while (true) {
+      const { value, done } = await streamReader.read();
+      if (done) break;
+
+      const frames = streamDecoder.push(new Uint8Array(value));
+      for (const frame of frames) {
+        const decoded = decodeIncomingBytes(frame);
+        await dispatchMessage(decoded.type, decoded.data, frame);
+      }
+    }
+  } catch {
+    // Expected on session close (e.g. logout or server shutdown)
+  }
+}
+
+async function receiveDatagrams() {
+  try {
+    const reader = socket.datagrams.readable.getReader();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      const bytes = new Uint8Array(value);
+      const decoded = decodeIncomingBytes(bytes);
+      await dispatchMessage(decoded.type, decoded.data, bytes);
+    }
+  } catch {
+    // Expected on session close (e.g. logout or server shutdown)
+  }
+}
+
+async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
+  receivedResponses++;
+  lastServerActivity = performance.now();
 
   switch (type) {
+    case "AUTH_CONNECT_SUCCESS": {
+      if (pendingAuthResolve) {
+        const resolve = pendingAuthResolve;
+        pendingAuthResolve = null;
+        resolve();
+      }
+      break;
+    }
     case "SERVER_TIME": {
       sendRequest({ type: "TIME_SYNC" });
       if (!data) return;
@@ -2681,8 +2875,8 @@ socket.onmessage = async (event) => {
       break;
     case "LOGIN_SUCCESS":
       {
-        const connectionId = JSON.parse(packet.decode(event.data))["data"];
-        const chatDecryptionKey = JSON.parse(packet.decode(event.data))[
+        const connectionId = JSON.parse(packet.decode(bytes))["data"];
+        const chatDecryptionKey = JSON.parse(packet.decode(bytes))[
           "chatDecryptionKey"
         ];
         sessionStorage.setItem("connectionId", connectionId);
@@ -2725,8 +2919,8 @@ socket.onmessage = async (event) => {
       }
       break;
     case "SPELLS": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
-      const slots = JSON.parse(packet.decode(event.data))["slots"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
+      const slots = JSON.parse(packet.decode(bytes))["slots"];
 
       const grid = spellBookUI.querySelector("#grid");
       if (!grid) return;
@@ -2865,7 +3059,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "LEARN_SPELL": {
-      const spell = JSON.parse(packet.decode(event.data))["data"];
+      const spell = JSON.parse(packet.decode(bytes))["data"];
       const grid = spellBookUI.querySelector("#grid");
       if (!grid || !spell?.name) break;
 
@@ -2937,7 +3131,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "UNLEARN_SPELL": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       const name = data?.name;
       if (!name) break;
 
@@ -2964,8 +3158,8 @@ socket.onmessage = async (event) => {
     }
     case "COLLECTABLES":
       {
-        const data = JSON.parse(packet.decode(event.data))["data"];
-        const slots = JSON.parse(packet.decode(event.data))["slots"];
+        const data = JSON.parse(packet.decode(bytes))["data"];
+        const slots = JSON.parse(packet.decode(bytes))["slots"];
 
         const grid = collectablesUI.querySelector("#grid");
         if (!grid) return;
@@ -3023,7 +3217,7 @@ socket.onmessage = async (event) => {
         break;
       }
     case "ADD_INVENTORY_ITEM": {
-      const item = JSON.parse(packet.decode(event.data))["data"];
+      const item = JSON.parse(packet.decode(bytes))["data"];
       if (!item?.name) break;
 
       const existingInCache = (cache.inventory || []).find((i: any) => i.name.toLowerCase() === item.name.toLowerCase());
@@ -3102,7 +3296,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "REMOVE_INVENTORY_ITEM": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       const name = data?.name;
       if (!name) break;
 
@@ -3125,7 +3319,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "ADD_COLLECTABLE": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       if (!data?.item) break;
 
       cache.collectables.push(data);
@@ -3163,7 +3357,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "REMOVE_COLLECTABLE": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       const item = data?.item;
       if (!item) break;
 
@@ -3184,7 +3378,7 @@ socket.onmessage = async (event) => {
     }
     case "EQUIPMENT": {
 
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       cache.equipment = data;
 
@@ -3401,8 +3595,8 @@ socket.onmessage = async (event) => {
     }
     case "INVENTORY":
       {
-        const data = JSON.parse(packet.decode(event.data))["data"];
-        const slots = JSON.parse(packet.decode(event.data))["slots"];
+        const data = JSON.parse(packet.decode(bytes))["data"];
+        const slots = JSON.parse(packet.decode(bytes))["slots"];
 
         // Ensure all items have iconUrl (convert from icon if needed)
         const assetServerUrl = data.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || config.ASSET_SERVER_URL;
@@ -3422,7 +3616,7 @@ socket.onmessage = async (event) => {
       }
       break;
     case "BAGS": {
-      const bagData = JSON.parse(packet.decode(event.data))["data"];
+      const bagData = JSON.parse(packet.decode(bytes))["data"];
       if (!bagData) break;
       cache.bags = bagData;
       rebuildInventoryGrid();
@@ -3493,7 +3687,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "LOOT_SPAWN": {
-      const lootData = JSON.parse(packet.decode(event.data))["data"];
+      const lootData = JSON.parse(packet.decode(bytes))["data"];
       if (!lootData?.id) break;
       const existing = (cache.loot || []).findIndex((l: any) => l.id === lootData.id);
       if (existing !== -1) {
@@ -3507,13 +3701,13 @@ socket.onmessage = async (event) => {
       break;
     }
     case "LOOT_DESPAWN": {
-      const d = JSON.parse(packet.decode(event.data))["data"];
+      const d = JSON.parse(packet.decode(bytes))["data"];
       if (!d?.id) break;
       cache.loot = (cache.loot || []).filter((l: any) => l.id !== d.id);
       break;
     }
     case "LOOT_CHEST_SPAWN": {
-      const d = JSON.parse(packet.decode(event.data))["data"];
+      const d = JSON.parse(packet.decode(bytes))["data"];
       if (!d?.id) break;
       const ex = (cache.lootChests || []).findIndex((c: any) => c.id === d.id);
       if (ex !== -1) { cache.lootChests[ex] = d; }
@@ -3522,13 +3716,13 @@ socket.onmessage = async (event) => {
       break;
     }
     case "LOOT_CHEST_DESPAWN": {
-      const d = JSON.parse(packet.decode(event.data))["data"];
+      const d = JSON.parse(packet.decode(bytes))["data"];
       if (!d?.id) break;
       cache.lootChests = (cache.lootChests || []).filter((c: any) => c.id !== d.id);
       break;
     }
     case "LOOT_CHEST_CONTENTS": {
-      const d = JSON.parse(packet.decode(event.data))["data"];
+      const d = JSON.parse(packet.decode(bytes))["data"];
       if (!d?.chestId || !d?.items) break;
       import("./lootWindow.js").then(({ showLootChestPopup }) => { showLootChestPopup(d.chestId, d.items); });
       break;
@@ -3538,7 +3732,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "LOOT_TABLE_LIST": {
-      const d = JSON.parse(packet.decode(event.data))["data"];
+      const d = JSON.parse(packet.decode(bytes))["data"];
       if (!d?.tables) break;
       import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables); });
       break;
@@ -3648,7 +3842,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "CLIENTCONFIG": {
-      const data = JSON.parse(packet.decode(event.data))["data"][0];
+      const data = JSON.parse(packet.decode(bytes))["data"][0];
       fpsSlider.value = data.fps;
       document.getElementById(
         "limit-fps-label"
@@ -3695,7 +3889,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "SELECTPLAYER": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       if (!data || !data.id) {
         const target = Array.from(cache.players).find((p) => p.targeted);
@@ -3722,7 +3916,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "NOCLIP": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       const currentPlayer = Array.from(cache.players).find(
         (player) => player.id === cachedPlayerId || player.id === cachedPlayerId
       );
@@ -3741,7 +3935,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "STEALTH": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       const currentPlayer = Array.from(cache.players).find(
         (player) => player.id === cachedPlayerId || player.id === cachedPlayerId
       );
@@ -3775,7 +3969,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "UPDATESTATS": {
-      const { target, stats, isCrit, username, damage, entity, absorb } = JSON.parse(packet.decode(event.data))["data"];
+      const { target, stats, isCrit, username, damage, entity, absorb } = JSON.parse(packet.decode(bytes))["data"];
 
       let t;
 
@@ -3901,7 +4095,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "REVIVE": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       const target = Array.from(cache.players).find(
         (player) => player.id === data.target
       );
@@ -3934,7 +4128,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "UPDATE_XP": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       if (data.id === cachedPlayerId) {
         updateXp(data.xp, data.level, data.max_xp);
@@ -3942,7 +4136,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "INSPECTPLAYER": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const previousShownId = statUI.getAttribute("data-id");
 
@@ -4180,12 +4374,12 @@ socket.onmessage = async (event) => {
       break;
     }
     case "NOTIFY": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
       showNotification(data.message, true, false);
       break;
     }
     case "WHISPER": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const escapedMessage = data.message
         .replace(/</g, "&lt;")
@@ -4208,7 +4402,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "PARTY_CHAT": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const escapedMessage = data.message
         .replace(/</g, "&lt;")
@@ -4246,7 +4440,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "GUILD_CHAT": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const escapedMessage = data.message
         .replace(/</g, "&lt;")
@@ -4284,7 +4478,7 @@ socket.onmessage = async (event) => {
       break;
     }
     case "CURRENCY": {
-      const data = JSON.parse(packet.decode(event.data))["data"];
+      const data = JSON.parse(packet.decode(bytes))["data"];
 
       if (!cachedPlayerId) break;
 
@@ -4458,7 +4652,7 @@ socket.onmessage = async (event) => {
     default:
       break;
   }
-};
+}
 
 if (version) {
   const versionText = document.createElement("div");
@@ -4515,8 +4709,6 @@ function showNotification(
       }
     }, timeout);
   }
-}
-
 }
 
 let loaded: boolean = false;

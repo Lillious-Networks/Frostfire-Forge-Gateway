@@ -20,7 +20,19 @@ src/logs/
 # Compiled client-side JavaScript
 src/webserver/public/js/web/*.js
 
-# SSL/TLS Certificates
+# SSL/TLS Certificates (shared by the Gateway and Webserver)
+src/certs/*.crt
+src/certs/*.key
+src/certs/*.pem
+src/certs/*.srl
+src/certs/*.csr
+src/certs/*.der
+src/certs/*.p12
+src/certs/*.pfx
+src/certs/*.jks
+src/certs/*.jceks
+src/certs/*.ca-bundle
+
 src/certs/gateway/*.crt
 src/certs/gateway/*.key
 src/certs/gateway/*.pem

@@ -109,7 +109,7 @@ class LootEditorBridge {
   private selectTable(t: any) { this.selectedTableId = t.id; const fresh = this.tables.find((x: any) => x.id === t.id); this.selectedTableData = fresh || t; this.populateForm(this.selectedTableData); this.send({ type: "selectTable", id: t.id }); this.renderTables(); }
 
   private populateForm(t: any) {
-    const el = document.getElementById("le-display-id"); if (el) el.textContent = t.id ? `#${t.id}` : "—";
+    const el = document.getElementById("le-display-id"); if (el) el.textContent = t.id ? `#${t.id}` : "-";
     this.nameInput.value = t.name || "";
     this.renderItems();
   }

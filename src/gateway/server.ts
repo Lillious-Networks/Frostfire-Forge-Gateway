@@ -2,7 +2,8 @@
 const useSSL = process.env.GATEWAY_USESSL === "true" || process.env.GATEWAY_USESSL === "1";
 const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
-const serverPort = useSSL ? httpsPort : httpPort;
+let sslEnabled = false;
+let serverPort = httpPort;
 // Import all types from types.d.ts
 
 const config: GatewayConfig = {
@@ -153,7 +154,7 @@ const serverConfig: any = {
     if (url.pathname === "/register" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, host, publicHost, port, wsPort, useSSL, maxConnections, authKey, description, whitelisted } = body;
+        const { id, host, publicHost, port, wtPort, wtEnabled, useSSL, maxConnections, authKey, description, whitelisted } = body;
 
         if (authKey !== config.authKey) {
           console.warn(`[Gateway] Registration attempt with invalid auth key from ${host}`);
@@ -163,7 +164,7 @@ const serverConfig: any = {
           });
         }
 
-        if (!id || !host || !port || !wsPort) {
+        if (!id || !host || !port) {
           return new Response(JSON.stringify({ error: "Missing required fields" }), {
             status: 400,
             headers: { "Content-Type": "application/json" }
@@ -179,7 +180,8 @@ const serverConfig: any = {
           host,
           publicHost: publicHost || host,
           port,
-          wsPort,
+          wtPort: typeof wtPort === "number" ? wtPort : undefined,
+          wtEnabled: wtEnabled === true || typeof wtPort === "number",
           useSSL: useSSL === true,
           lastHeartbeat: Date.now(),
           activeConnections: existingServer?.activeConnections || 0,
@@ -190,9 +192,9 @@ const serverConfig: any = {
         gameServers.set(id, server);
 
         if (isReRegistration) {
-          console.log(`[Gateway] Server re-registered: ${id} (${host}:${port}, ${useSSL ? 'wss' : 'ws'}:${wsPort})`);
+          console.log(`[Gateway] Server re-registered: ${id} (${host}:${port}, https:${wtPort || "-"})`);
         } else {
-          console.log(`[Gateway] Server registered: ${id} (${host}:${port}, ${useSSL ? 'wss' : 'ws'}:${wsPort})`);
+          console.log(`[Gateway] Server registered: ${id} (${host}:${port}, https:${wtPort || "-"})`);
         }
 
         return new Response(JSON.stringify({ success: true, serverId: id }), {
@@ -445,7 +447,8 @@ const serverConfig: any = {
           description: s.description || '',
           publicHost: s.publicHost,
           port: s.port,
-          wsPort: s.wsPort,
+          wtPort: s.wtPort,
+          wtEnabled: s.wtEnabled === true,
           useSSL: s.useSSL,
           activeConnections: s.activeConnections,
           maxConnections: s.maxConnections,
@@ -554,36 +557,45 @@ const serverConfig: any = {
 };
 
 if (useSSL) {
-  const certPath = process.env.GATEWAY_CERT_PATH || "./certs/gateway/cert.pem";
-  const keyPath = process.env.GATEWAY_KEY_PATH || "./certs/gateway/key.pem";
-  const caPath = process.env.GATEWAY_CA_PATH || "./certs/gateway/cert.ca-bundle";
+  const certPath = process.env.TLS_CERT_PATH;
+  const keyPath = process.env.TLS_KEY_PATH;
+  const caPath = process.env.TLS_CA_PATH;
 
-  try {
+  if (!certPath || !keyPath) {
+    console.warn(`[Gateway] GATEWAY_USESSL is enabled but TLS_CERT_PATH and TLS_KEY_PATH are not set. Serving plain HTTP instead.`);
+  } else {
+    try {
 
-    const cert = await Bun.file(certPath).text();
-    const ca = await Bun.file(caPath).text();
-    const fullChain = cert + "\n" + ca;
+      const cert = await Bun.file(certPath).text();
+      const ca = caPath ? (await Bun.file(caPath).text().catch(() => "")).trim() : "";
+      const fullChain = ca ? cert + "\n" + ca : cert;
 
-    serverConfig.tls = {
-      cert: fullChain,
-      key: Bun.file(keyPath),
-    };
-    serverConfig.http3 = true;
-    console.log(`[Gateway] SSL enabled with cert: ${certPath} and CA bundle: ${caPath}`);
-  } catch (error) {
-    console.error(`[Gateway] Failed to load SSL certificates. Falling back to HTTP.`);
-    console.error(`[Gateway] Make sure ${certPath}, ${keyPath}, and ${caPath} exist.`);
-    console.error(`[Gateway] Error: ${error}`);
+      serverConfig.tls = {
+        cert: fullChain,
+        key: Bun.file(keyPath),
+      };
+      serverConfig.http3 = true;
+      sslEnabled = true;
+      serverPort = httpsPort;
+      console.log(`[Gateway] SSL enabled with cert: ${certPath}${ca ? ` and CA bundle: ${caPath}` : ""}`);
+    } catch (error) {
+      console.error(`[Gateway] Failed to load SSL certificates. Falling back to HTTP.`);
+      console.error(`[Gateway] Make sure ${certPath} and ${keyPath} exist.`);
+      console.error(`[Gateway] Error: ${error}`);
+    }
   }
 }
 
+config.port = serverPort;
+serverConfig.port = serverPort;
+
 Bun.serve(serverConfig);
 
-const protocol = useSSL ? 'https' : 'http';
+const protocol = sslEnabled ? 'https' : 'http';
 console.log(`[Gateway] Gateway Server running on ${protocol}://localhost:${config.port}`);
 console.log(`[Gateway] Waiting for game servers to register...`);
 
-if (useSSL) {
+if (sslEnabled) {
   const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
   Bun.serve({
     hostname: "0.0.0.0",
@@ -608,7 +620,8 @@ if (useSSL) {
             description: s.description || '',
             publicHost: s.publicHost,
             port: s.port,
-            wsPort: s.wsPort,
+            wtPort: s.wtPort,
+            wtEnabled: s.wtEnabled === true,
             useSSL: s.useSSL,
             activeConnections: s.activeConnections,
             maxConnections: s.maxConnections,

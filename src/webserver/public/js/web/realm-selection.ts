@@ -22,7 +22,7 @@ function isMobileDevice(): boolean {
 async function measureServerPing(server: any): Promise<number | null> {
     try {
         const protocol = server.useSSL ? 'https' : 'http';
-        const url = `${protocol}://${server.publicHost}:${server.wsPort}/ping`;
+        const url = `${protocol}://${server.publicHost}:${server.port}/ping`;
 
         const start = performance.now();
         const response = await fetch(url, {

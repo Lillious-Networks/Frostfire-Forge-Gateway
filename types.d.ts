@@ -7,7 +7,8 @@ interface GameServer {
   host: string;
   publicHost: string;
   port: number;
-  wsPort: number;
+  wtPort?: number;
+  wtEnabled?: boolean;
   useSSL: boolean;
   lastHeartbeat: number;
   activeConnections: number;
