@@ -3,7 +3,7 @@ import log from "../modules/logger";
 import sendEmail, { buildEmailBody, buildLinkAction, buildCodeAction } from "../services/email";
 import player from "../systems/player";
 import verify, { shuffle } from "../services/verification";
-import { hash, randomBytes } from "../modules/hash";
+import { hash, randomBytes, hashGuestPassword } from "../modules/hash";
 import query from "../controllers/sqldatabase";
 import { generateSecret, generateTotpUri, verifyTOTP } from "../services/totp";
 import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verifyAttestation, generateAssertionOptions, verifyAssertion } from "../services/webauthn";
@@ -372,7 +372,9 @@ async function createGuestAccount(req: Request) {
     const domain = process.env.DOMAIN?.replace(/^https?:\/\//, "");
     const guest_email = `${guest_username}@${domain}`;
     const guest_password = `guest_${randomBytes(12)}`;
-    const guest_password_hash = await hash(guest_password);
+    // Guests never log in with a password - use a cheap hash instead of Argon2
+    // (which pins a core during benchmark login ramps).
+    const guest_password_hash = hashGuestPassword(guest_password);
 
     const user = await player.register(guest_username.toLowerCase(), guest_password_hash, guest_email, req, true) as any;
     if (!user) {

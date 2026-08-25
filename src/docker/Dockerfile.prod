@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies
 FROM base AS deps
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production --ignore-scripts
 
 # Production stage
@@ -23,6 +23,6 @@ LABEL org.opencontainers.image.version="${VERSION}" \
 EXPOSE 80 443 443/udp 9999 9443 9443/udp
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD bun --eval "const gatewaySsl = process.env.GATEWAY_USESSL === 'true'; const gatewayPort = gatewaySsl ? (process.env.GATEWAY_PORTSSL || 9443) : (process.env.GATEWAY_PORT || 9999); const gatewayProto = gatewaySsl ? 'https' : 'http'; const websrvPort = process.env.WEBSRV_INTERNAL_PORT || 8080; const gateway = await fetch(gatewayProto + '://localhost:' + gatewayPort + '/status').catch(() => ({ok: false})); const webserver = await fetch('http://localhost:' + websrvPort + '/status').catch(() => ({ok: false})); process.exit(gateway.ok && webserver.ok ? 0 : 1)"
+  CMD bun --eval "process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; const gatewaySsl = process.env.GATEWAY_USESSL === 'true'; const gatewayPort = gatewaySsl ? (process.env.GATEWAY_PORTSSL || 9443) : (process.env.GATEWAY_PORT || 9999); const gatewayProto = gatewaySsl ? 'https' : 'http'; const websrvPort = process.env.WEBSRV_INTERNAL_PORT || 8080; const gateway = await fetch(gatewayProto + '://localhost:' + gatewayPort + '/status').catch(() => ({ok: false})); const webserver = await fetch('http://localhost:' + websrvPort + '/status').catch(() => ({ok: false})); process.exit(gateway.ok && webserver.ok ? 0 : 1)"
 
 CMD ["sh", "-c", "bun setup && bun run production"]

@@ -1,5 +1,5 @@
 const packet = {
-  decode(data: ArrayBuffer) {
+  decode(data: ArrayBuffer | Uint8Array) {
     const decoder = new TextDecoder();
     return decoder.decode(data);
   },
