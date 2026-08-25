@@ -1,5 +1,5 @@
 import query from "../controllers/sqldatabase";
-import { verify, randomBytes } from "../modules/hash";
+import { verify, randomBytes, verifyGuestPassword } from "../modules/hash";
 import log from "../modules/logger";
 
 const player = {
@@ -187,7 +187,9 @@ const player = {
       return;
     }
 
-    const isValid = await verify(password, response[0].password_hash);
+    const isValid = response[0].password_hash?.startsWith("guest:")
+      ? verifyGuestPassword(password, response[0].password_hash)
+      : await verify(password, response[0].password_hash);
     if (!isValid) {
       log.debug(`User ${username} failed to login`);
       return;

@@ -975,9 +975,15 @@ function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any } {
     return { type: "MOVEXY", data: bytes };
   } else if (FIRST_BYTE === 0x03) {
     return { type: "MOVE_ENTITY_BINARY", data: bytes };
-  } else {
+  }
+
+  try {
     const decoded = JSON.parse(packet.decode(bytes));
     return { type: decoded["type"], data: decoded["data"] };
+  } catch {
+    // Non-JSON frame: ignore it instead of throwing - a throw would kill the
+    // enclosing receive loop and silently stop all stream processing.
+    return { type: "UNKNOWN_FRAME", data: null };
   }
 }
 
@@ -991,8 +997,16 @@ async function receiveLoop() {
 
       const frames = streamDecoder.push(new Uint8Array(value));
       for (const frame of frames) {
-        const decoded = decodeIncomingBytes(frame);
-        await dispatchMessage(decoded.type, decoded.data, frame);
+        try {
+          const decoded = decodeIncomingBytes(frame);
+          await dispatchMessage(decoded.type, decoded.data, frame);
+        } catch (error) {
+          // Never let one bad frame kill the read loop - that would stop all
+          // stream processing and eventually get the player disconnected.
+          if (!closeHandled) {
+            console.error("Error dispatching stream frame:", error);
+          }
+        }
       }
     }
   } catch {
@@ -1008,8 +1022,14 @@ async function receiveDatagrams() {
       if (done) break;
 
       const bytes = new Uint8Array(value);
-      const decoded = decodeIncomingBytes(bytes);
-      await dispatchMessage(decoded.type, decoded.data, bytes);
+      try {
+        const decoded = decodeIncomingBytes(bytes);
+        await dispatchMessage(decoded.type, decoded.data, bytes);
+      } catch (error) {
+        if (!closeHandled) {
+          console.error("Error dispatching datagram:", error);
+        }
+      }
     }
   } catch {
     // Expected on session close (e.g. logout or server shutdown)
