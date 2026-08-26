@@ -496,39 +496,9 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
     throw new Error('Failed to obtain connection token from gateway');
   }
 
-  const selectedServerId = localStorage.getItem('selectedServerId');
-
-  if (selectedServerId) {
-
-    try {
-
-      const response = await fetch('/api/gateway/servers');
-      if (!response.ok) {
-        throw new Error('Failed to fetch server list');
-      }
-
-      const data = await response.json();
-      const server = data.servers.find((s: any) => s.id === selectedServerId);
-
-      if (server) {
-
-        if (!server.wtPort) {
-          throw new Error('Game server does not advertise a WebTransport port');
-        }
-
-        const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
-        const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
-        await gameTransport.ready;
-        return gameTransport;
-      } else {
-
-        localStorage.removeItem('selectedServerId');
-      }
-    } catch (error) {
-      localStorage.removeItem('selectedServerId');
-    }
-  }
-
+  // Meshed realms form one logical world, so there is no server pinning: the
+  // gateway rotates the server list per request and we walk it in order,
+  // connecting to the first healthy realm that accepts the handshake.
   try {
     const response = await fetch('/api/gateway/servers');
     if (!response.ok) {
@@ -547,16 +517,21 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
       throw new Error('No healthy game servers available');
     }
 
-    const server = healthyServers[0];
+    let lastError: unknown = null;
+    for (const server of healthyServers) {
+      if (!server.wtPort) continue;
 
-    if (!server.wtPort) {
-      throw new Error('Game server does not advertise a WebTransport port');
+      try {
+        const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
+        const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
+        await gameTransport.ready;
+        return gameTransport;
+      } catch (error) {
+        lastError = error;
+      }
     }
 
-    const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
-    const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
-    await gameTransport.ready;
-    return gameTransport;
+    throw lastError ?? new Error('All game servers rejected the connection');
   } catch (error) {
     console.error("Error connecting through gateway:", error);
   }
@@ -2106,7 +2081,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       });
       break;
     case "CONNECTION_COUNT": {
-      onlinecount.innerText = `${data} online`;
+      // Meshed servers report { count, serverId } where count is the combined
+      // global online count. Older servers send a bare number.
+      const payload = typeof data === "object" && data !== null ? data : null;
+      const count = payload?.count ?? data;
+      onlinecount.innerText = `${count} online`;
+
+      const serverIdEl = document.getElementById("server-id");
+      if (serverIdEl) {
+        serverIdEl.innerText = payload?.serverId ? `Server: ${payload.serverId}` : "Server: -";
+      }
       break;
     }
     case "SPAWN_PLAYER": {

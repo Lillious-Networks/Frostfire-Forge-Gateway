@@ -36,7 +36,7 @@ const login_listener = async () => {
         login.removeEventListener('click', login_listener);
         login.addEventListener('click', verify_listener);
     } else if (response.status === 301) {
-        window.location.href = '/realm-selection';
+        window.location.href = '/game';
     } else {
         const body = await response.json();
         window.Notify('error', body.message);
@@ -54,7 +54,7 @@ const verify_listener = async () => {
         redirect: 'manual',
     });
     if (response.status === 301 || response.type === 'opaqueredirect') {
-        window.location.href = '/realm-selection';
+        window.location.href = '/game';
     } else if (response.status === 200) {
         const body = await response.json();
         if (body.requires2FA) {
@@ -71,7 +71,7 @@ const verify_listener = async () => {
             login.removeEventListener('click', verify_listener);
             login.addEventListener('click', login_listener);
         } else if (body.verified) {
-            window.location.href = '/realm-selection';
+            window.location.href = '/game';
         } else {
             window.Notify('error', body.message || 'Verification failed');
         }
@@ -92,7 +92,7 @@ guestLogin.addEventListener('click', async (event) => {
         },
     });
     if (response.status === 301) {
-        window.location.href = '/realm-selection';
+        window.location.href = '/game';
     } else {
         const body = await response.json();
         window.Notify('error', body.message);

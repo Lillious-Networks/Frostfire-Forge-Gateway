@@ -489,6 +489,28 @@ const serverConfig: any = {
     }
 
     const gatewayRoutes = ['/register', '/heartbeat', '/unregister', '/status', '/debug', '/api', '/dashboard'];
+
+    // The webserver owns the client-facing API (server discovery with
+    // round-robin rotation, connection tokens, guest login). The browser loads
+    // its assets through this port, so forward those routes to the webserver
+    // instead of letting them fall through to the game-server proxy.
+    if (url.pathname.startsWith('/api/gateway/') || url.pathname === '/guest-login') {
+      const websrvPort = process.env.WEBSRV_INTERNAL_PORT || "8080";
+      const upstream = `http://127.0.0.1:${websrvPort}`;
+
+      const headers = new Headers(req.headers);
+      headers.delete('host');
+
+      const response = await fetch(`${upstream}${url.pathname}${url.search}`, {
+        method: req.method,
+        headers,
+        body: req.method !== 'GET' && req.method !== 'HEAD' ? await req.arrayBuffer().catch(() => undefined) : undefined,
+      }).catch(() => null);
+
+      if (response) return response;
+      return new Response("Webserver unavailable", { status: 502 });
+    }
+
     const webRoutes = ['/','/login','/logout'];
     const isGatewayRoute = gatewayRoutes.some(route => url.pathname.startsWith(route)) || url.pathname === '/';
     const isWebRoute = webRoutes.some(route => url.pathname === route);

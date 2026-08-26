@@ -14,6 +14,11 @@ const settings = {
     enabled: process.env.GUEST_MODE_ENABLED === "true" || process.env.GUEST_MODE_ENABLED === "1"
   },
 };
+
+// Round-robin rotation cursor for the public server list: clients pick the
+// first healthy entry, so rotating per request distributes connections across
+// all meshed realms instead of pinning everyone to one server.
+let serverListRotation = 0;
 import crypto from "crypto";
 import animator_html from "./public/animator.html";
 import login_html from "./public/index.html";
@@ -117,8 +122,18 @@ const routes = {
 
         const data = await response.json();
 
+        // Meshed realms are one logical world - clients take the first healthy
+        // server from this list, so rotate it per request for global
+        // round-robin distribution (no server pinning).
+        const servers = data.servers || [];
+        if (servers.length > 1) {
+          const rotation = serverListRotation % servers.length;
+          serverListRotation++;
+          servers.push(...servers.splice(0, rotation));
+        }
+
         return new Response(JSON.stringify({
-          servers: data.servers || []
+          servers
         }), {
           status: 200,
           headers: { "Content-Type": "application/json" }

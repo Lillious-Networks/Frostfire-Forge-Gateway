@@ -158,7 +158,7 @@ async function startWebAuthn() {
 
     const verifyBody = await verifyResponse.json();
     if (verifyResponse.ok) {
-      window.location.href = '/realm-selection';
+      window.location.href = '/game';
     } else {
       window.Notify('error', verifyBody.message);
       showMethodPicker();
@@ -192,7 +192,7 @@ document.getElementById('code-submit-btn')?.addEventListener('click', async () =
 
   const body = await response.json();
   if (response.ok) {
-    window.location.href = '/realm-selection';
+    window.location.href = '/game';
   } else {
     window.Notify('error', body.message);
   }
