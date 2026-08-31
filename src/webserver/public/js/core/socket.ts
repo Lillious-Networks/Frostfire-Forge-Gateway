@@ -410,6 +410,170 @@ let animationUpdateBuffer: Array<{id: string, name: string, data: any, revision:
 let pendingMovements: Array<{id: string, _data: any, revision: number}> = [];
 let pendingSpriteAnimations: Array<{id: string, animationState: string, bodySprite: any, headSprite: any, mountSprite: any, armorHelmetSprite: any, armorShoulderguardsSprite: any, armorNeckSprite: any, armorHandsSprite: any, armorChestSprite: any, armorFeetSprite: any, armorLegsSprite: any, armorWeaponSprite: any}> = [];
 
+// Projectiles arrive as unreliable datagrams and can race ahead of the
+// reliable-stream spawn packets for their source/target. Missing participants
+// are buffered here and retried for a short window before being dropped.
+const PENDING_PROJECTILE_TTL_MS = 2000;
+const pendingProjectiles: Array<{ data: any; expiresAt: number }> = [];
+let pendingProjectileTimer: number | null = null;
+
+function startPendingProjectilesProcessor() {
+  if (pendingProjectileTimer !== null) return;
+  pendingProjectileTimer = window.setInterval(() => {
+    const now = performance.now();
+    for (let i = pendingProjectiles.length - 1; i >= 0; i--) {
+      if (pendingProjectiles[i].expiresAt <= now) {
+        pendingProjectiles.splice(i, 1);
+      }
+    }
+
+    if (pendingProjectiles.length === 0) {
+      window.clearInterval(pendingProjectileTimer!);
+      pendingProjectileTimer = null;
+      return;
+    }
+
+    const pending = pendingProjectiles.splice(0, pendingProjectiles.length);
+    for (const entry of pending) {
+      dispatchProjectileData(entry.data, entry.expiresAt);
+    }
+  }, 250);
+}
+
+function queueProjectileForRetry(data: any, expiresAt: number) {
+  if (performance.now() > expiresAt) return;
+  pendingProjectiles.push({ data, expiresAt });
+  startPendingProjectilesProcessor();
+}
+
+function dispatchProjectileData(data: any, expiresAt: number) {
+  const player_id = data?.id;
+  const target_id = data?.target_id;
+  const time_to_travel = data?.time;
+  const spell = data?.spell;
+  const icon = data?.icon;
+  const isEntityTarget = data?.entity || false;
+  const isThrown = data?.isThrown || false;
+
+  if (!player_id || !time_to_travel) return;
+
+  if (isThrown) {
+    const targetX = Number(data?.targetX) || 0;
+    const targetY = Number(data?.targetY) || 0;
+
+    const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
+    const sourcePos = sourcePlayer?.position;
+    if (!sourcePos) {
+      queueProjectileForRetry(data, expiresAt);
+      return;
+    }
+
+    if (icon && spell && !cache.projectileIcons.has(spell)) {
+      fetch(icon)
+        .then((response) => {
+          if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
+          return response.blob();
+        })
+        .then((blob) => {
+          if (!blob) return;
+          const iconImage = new Image();
+          iconImage.onload = () => { cache.projectileIcons.set(spell, iconImage); };
+          iconImage.src = URL.createObjectURL(blob);
+        })
+        .catch(() => {});
+    }
+
+    cache.projectiles.push({
+      startX: sourcePos.x,
+      startY: sourcePos.y,
+      targetPlayerId: player_id,
+      targetPos: { x: targetX, y: targetY },
+      currentX: sourcePos.x,
+      currentY: sourcePos.y,
+      startTime: performance.now(),
+      duration: time_to_travel * 1000,
+      spell: spell || 'unknown',
+      isThrown: true,
+      isEntityTarget: false,
+      particles: Array.isArray(data?.particles) ? data.particles : [],
+      particleArrays: {} as Record<string, any[]>,
+      lastEmitTime: {} as Record<string, number>,
+    });
+    return;
+  }
+
+  if (!target_id) return;
+
+  // Source could be a player or entity
+  const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
+  const sourceEntity = cache.entities.find((e: any) => e.id === player_id);
+  const sourcePos = sourcePlayer?.position || sourceEntity?.position;
+
+  let targetPos: { x: number; y: number } | null;
+
+  if (isEntityTarget) {
+    // Target is an entity
+    const targetEntity = cache.entities.find((e: any) => e.id === target_id);
+    if (!targetEntity) {
+      queueProjectileForRetry(data, expiresAt);
+      return;
+    }
+    targetPos = targetEntity.position;
+  } else {
+    // Target is a player
+    const targetPlayer = Array.from(cache.players).find(p => p.id === target_id);
+    if (!targetPlayer) {
+      queueProjectileForRetry(data, expiresAt);
+      return;
+    }
+    targetPos = targetPlayer.position;
+  }
+
+  if (!sourcePos || !targetPos) {
+    queueProjectileForRetry(data, expiresAt);
+    return;
+  }
+
+  if (icon && spell && !cache.projectileIcons.has(spell)) {
+
+    // Projectiles render nothing when the real icon is missing -
+    // skip caching if the asset server served its fallback icon
+    fetch(icon)
+      .then((response) => {
+        if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
+        return response.blob();
+      })
+      .then((blob) => {
+        if (!blob) return;
+        const iconImage = new Image();
+        iconImage.onload = () => {
+          cache.projectileIcons.set(spell, iconImage);
+        };
+        iconImage.src = URL.createObjectURL(blob);
+      })
+      .catch((error) => {
+        console.error("Error loading projectile icon:", error);
+      });
+  }
+
+  cache.projectiles.push({
+    startX: sourcePos.x,
+    startY: sourcePos.y,
+    targetPlayerId: target_id,
+    targetEntityId: isEntityTarget ? target_id : undefined,
+    targetPos: targetPos,
+    currentX: sourcePos.x,
+    currentY: sourcePos.y,
+    startTime: performance.now(),
+    duration: time_to_travel * 1000,
+    spell: spell || 'unknown',
+    isEntityTarget: isEntityTarget,
+    particles: Array.isArray(data?.particles) ? data.particles : [],
+    particleArrays: {} as Record<string, any[]>,
+    lastEmitTime: {} as Record<string, number>,
+  });
+}
+
 const setupEquipmentSlotHandlers = () => {
   const allEquipmentSlots = [
     ...equipmentLeftColumn.querySelectorAll(".slot"),
@@ -1158,120 +1322,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "PROJECTILE": {
-      const player_id = data?.id;
-      const target_id = data?.target_id;
-      const time_to_travel = data?.time;
-      const spell = data?.spell;
-      const icon = data?.icon;
-      const isEntityTarget = data?.entity || false;
-      const isThrown = data?.isThrown || false;
-
-      if (!player_id || !time_to_travel) break;
-
-      if (isThrown) {
-        const targetX = Number(data?.targetX) || 0;
-        const targetY = Number(data?.targetY) || 0;
-
-        const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
-        const sourcePos = sourcePlayer?.position;
-        if (!sourcePos) break;
-
-        if (icon && spell && !cache.projectileIcons.has(spell)) {
-          fetch(icon)
-            .then((response) => {
-              if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
-              return response.blob();
-            })
-            .then((blob) => {
-              if (!blob) return;
-              const iconImage = new Image();
-              iconImage.onload = () => { cache.projectileIcons.set(spell, iconImage); };
-              iconImage.src = URL.createObjectURL(blob);
-            })
-            .catch(() => {});
-        }
-
-        cache.projectiles.push({
-          startX: sourcePos.x,
-          startY: sourcePos.y,
-          targetPlayerId: player_id,
-          targetPos: { x: targetX, y: targetY },
-          currentX: sourcePos.x,
-          currentY: sourcePos.y,
-          startTime: performance.now(),
-          duration: time_to_travel * 1000,
-          spell: spell || 'unknown',
-          isThrown: true,
-          isEntityTarget: false,
-          particles: Array.isArray(data?.particles) ? data.particles : [],
-          particleArrays: {} as Record<string, any[]>,
-          lastEmitTime: {} as Record<string, number>,
-        });
-        break;
-      }
-
-      if (!target_id) break;
-
-      // Source could be a player or entity
-      const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
-      const sourceEntity = cache.entities.find((e: any) => e.id === player_id);
-      const sourcePos = sourcePlayer?.position || sourceEntity?.position;
-
-      let targetPos: { x: number; y: number } | null;
-
-      if (isEntityTarget) {
-        // Target is an entity
-        const targetEntity = cache.entities.find((e: any) => e.id === target_id);
-        if (!targetEntity) break;
-        targetPos = targetEntity.position;
-      } else {
-        // Target is a player
-        const targetPlayer = Array.from(cache.players).find(p => p.id === target_id);
-        if (!targetPlayer) break;
-        targetPos = targetPlayer.position;
-      }
-
-      if (!sourcePos || !targetPos) break;
-
-      if (icon && spell && !cache.projectileIcons.has(spell)) {
-
-        // Projectiles render nothing when the real icon is missing -
-        // skip caching if the asset server served its fallback icon
-        fetch(icon)
-          .then((response) => {
-            if (!response.ok || response.headers.get("X-Asset-Fallback")) return null;
-            return response.blob();
-          })
-          .then((blob) => {
-            if (!blob) return;
-            const iconImage = new Image();
-            iconImage.onload = () => {
-              cache.projectileIcons.set(spell, iconImage);
-            };
-            iconImage.src = URL.createObjectURL(blob);
-          })
-          .catch((error) => {
-            console.error("Error loading projectile icon:", error);
-          });
-      }
-
-      cache.projectiles.push({
-        startX: sourcePos.x,
-        startY: sourcePos.y,
-        targetPlayerId: target_id,
-        targetEntityId: isEntityTarget ? target_id : undefined,
-        targetPos: targetPos,
-        currentX: sourcePos.x,
-        currentY: sourcePos.y,
-        startTime: performance.now(),
-        duration: time_to_travel * 1000,
-        spell: spell || 'unknown',
-        isEntityTarget: isEntityTarget,
-        particles: Array.isArray(data?.particles) ? data.particles : [],
-        particleArrays: {} as Record<string, any[]>,
-        lastEmitTime: {} as Record<string, number>,
-      });
-
+      // Projectiles are now delivered as unreliable datagrams, which can
+      // overtake the reliable-stream spawn packets for their source/target.
+      // Buffer briefly and retry when the participants aren't in the cache yet.
+      dispatchProjectileData(data, performance.now() + PENDING_PROJECTILE_TTL_MS);
       break;
     }
     case "WEATHER": {
@@ -2757,7 +2811,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       const entity = cache.entities.find((e: any) => e.id === data.id);
       if (entity) {
         entity.health = data.health;
-        entity.maxHealth = data.maxHealth;
+        // Nameplate scaling reads max_health (see entity.ts drawNameplate);
+        // maxHealth was a dead field nobody consumed.
+        if (data.maxHealth != null) {
+          entity.max_health = data.maxHealth;
+        }
       }
       break;
     }
@@ -2871,7 +2929,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
           requestWakeLock();
           const { progressBar } = await import('./ui.js');
           if (progressBar) progressBar.style.width = '100%';
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Brief settle so the first baked frames paint before the loading
+          // screen is removed (was 1000ms - loadMap already bakes synchronously).
+          await new Promise(resolve => setTimeout(resolve, 200));
           hideLoadingScreen();
         }
 

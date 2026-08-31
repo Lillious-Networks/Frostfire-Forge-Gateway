@@ -152,6 +152,64 @@ interface ChunkData {
   segmentCanvases?: HTMLCanvasElement[];
   animatedTiles?: AnimatedTile[];
   shadowLayers?: Array<{ canvas: HTMLCanvasElement; zIndex: number }>;
+  sortedLayers?: Array<{ name: string; zIndex: number; data: number[]; width: number; height: number; locked?: boolean }>;
+}
+
+// True while loadMap is baking the initial chunk set. During this phase the
+// loading screen covers the viewport, so chunk baking runs synchronously
+// (no per-N-tiles setTimeout yields) - the yield cadence that keeps gameplay
+// smooth costs hundreds of milliseconds per chunk when it's not needed.
+let isMapLoading = false;
+
+// Decoded tileset images persist across map changes so warping back to a
+// recently visited map skips the fetch + pako inflate + image decode entirely.
+const tilesetImageCache = new Map<string, Promise<HTMLImageElement>>();
+const TILESET_IMAGE_CACHE_MAX = 8;
+
+interface TilesetTileInfo { tileset: any; image: HTMLImageElement }
+interface AnimatedLookupInfo { tilesetIndex: number; tileset: any; animation: AnimationFrame[]; totalDuration: number }
+
+// O(1) tile-id -> tileset/image lookups are rebuilt per chunk bake today,
+// which is wasted work (tilesets are fixed for the lifetime of a map). Memoize
+// on window.mapData; a new LOAD_MAP assigns a fresh object, so no invalidation
+// is needed.
+function getTilesetLookupMap(): Map<number, TilesetTileInfo> {
+  if (!window.mapData._tilesetLookupMap) {
+    const map = new Map<number, TilesetTileInfo>();
+    for (let i = 0; i < window.mapData.tilesets.length; i++) {
+      const ts = window.mapData.tilesets[i];
+      const img = window.mapData.images[i];
+      if (img && img.complete && img.naturalWidth > 0) {
+        for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
+          map.set(tileIdx, { tileset: ts, image: img });
+        }
+      }
+    }
+    window.mapData._tilesetLookupMap = map;
+  }
+  return window.mapData._tilesetLookupMap;
+}
+
+function getAnimatedTileLookup(): Map<number, AnimatedLookupInfo> {
+  if (!window.mapData._animatedTileLookup) {
+    const map = new Map<number, AnimatedLookupInfo>();
+    for (let i = 0; i < window.mapData.tilesets.length; i++) {
+      const ts = window.mapData.tilesets[i];
+      if (!Array.isArray(ts.tiles)) continue;
+      for (const tile of ts.tiles) {
+        if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
+        const totalDuration = tile.animation.reduce((sum: number, frame: AnimationFrame) => sum + (frame.duration || 0), 0);
+        map.set(ts.firstgid + tile.id, {
+          tilesetIndex: i,
+          tileset: ts,
+          animation: tile.animation,
+          totalDuration,
+        });
+      }
+    }
+    window.mapData._animatedTileLookup = map;
+  }
+  return window.mapData._animatedTileLookup;
 }
 
 export default async function loadMap(metadata: any): Promise<boolean> {
@@ -335,36 +393,48 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       }
     }
 
+    // Nearest chunks first so the spawn area is ready before the outer ring.
+    chunksToLoad.sort((a, b) => {
+      const da = (a.x - spawnChunkX) ** 2 + (a.y - spawnChunkY) ** 2;
+      const db = (b.x - spawnChunkX) ** 2 + (b.y - spawnChunkY) ** 2;
+      return da - db;
+    });
+
     const totalChunks = chunksToLoad.length;
     let loadedCount = 0;
 
-    const chunkPromises = chunksToLoad.map(chunk =>
-      requestChunk(chunk.x, chunk.y).then(chunkData => {
-        if (chunkData && chunkData.canvas) {
-          loadedCount++;
+    isMapLoading = true;
+    try {
+      const chunkPromises = chunksToLoad.map(chunk =>
+        requestChunk(chunk.x, chunk.y).then(chunkData => {
+          if (chunkData && chunkData.canvas) {
+            loadedCount++;
 
-          const chunkProgress = 40 + (loadedCount / totalChunks) * 50;
-          progressBar.style.width = `${chunkProgress}%`;
-        }
-        return chunkData;
-      })
-    );
+            const chunkProgress = 40 + (loadedCount / totalChunks) * 50;
+            progressBar.style.width = `${chunkProgress}%`;
+          }
+          return chunkData;
+        })
+      );
 
-    await Promise.all(chunkPromises);
+      await Promise.all(chunkPromises);
 
-    const allChunksLoaded = chunksToLoad.every(chunk => {
-      const chunkKey = `${chunk.x}-${chunk.y}`;
-      return window.mapData.loadedChunks.has(chunkKey);
-    });
-
-    if (!allChunksLoaded) {
-
-      for (const chunk of chunksToLoad) {
+      const allChunksLoaded = chunksToLoad.every(chunk => {
         const chunkKey = `${chunk.x}-${chunk.y}`;
-        if (!window.mapData.loadedChunks.has(chunkKey)) {
-          await requestChunk(chunk.x, chunk.y);
+        return window.mapData.loadedChunks.has(chunkKey);
+      });
+
+      if (!allChunksLoaded) {
+
+        for (const chunk of chunksToLoad) {
+          const chunkKey = `${chunk.x}-${chunk.y}`;
+          if (!window.mapData.loadedChunks.has(chunkKey)) {
+            await requestChunk(chunk.x, chunk.y);
+          }
         }
       }
+    } finally {
+      isMapLoading = false;
     }
 
     if (window.mapData.loadedChunks.size > 0) {
@@ -428,8 +498,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
 
     }
 
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
     return true;
 }
 
@@ -474,7 +542,7 @@ export async function preloadChunks(data: any): Promise<void> {
           if (chunkData) {
             preloadMapData.loadedChunks.set(chunkKey, chunkData);
             try {
-              await saveChunkToCache(mapName, chunk.x, chunk.y, chunkData);
+              void saveChunkToCache(mapName, chunk.x, chunk.y, chunkData);
             } catch (err) {
               // Cache save error is non-fatal
             }
@@ -511,43 +579,59 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
   const tilesetPromises = tilesets.map(async (tileset) => {
     const name = tileset.image.split("/").pop();
 
+    const cached = tilesetImageCache.get(name);
+    if (cached) return await cached;
+
     const assetServerUrl = (window as any).__assetServerUrl || "";
     if (!assetServerUrl) {
       throw new Error("Asset server URL not configured - cannot load tilesets");
     }
 
-    const response = await fetch(`${assetServerUrl}/tileset?name=${encodeURIComponent(name)}`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch tileset ${name}: ${response.statusText}`);
+    const imagePromise = (async () => {
+      const response = await fetch(`${assetServerUrl}/tileset?name=${encodeURIComponent(name)}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch tileset ${name}: ${response.statusText}`);
+      }
+      const tilesetData = await response.json();
+      const compressedBase64 = tilesetData.data;
+      const compressedBytes = base64ToUint8Array(compressedBase64);
+
+      //@ts-expect-error - Imported via HTML
+      const inflatedBytes = pako.inflate(compressedBytes);
+      const imageBase64 = uint8ArrayToBase64(inflatedBytes);
+
+      return new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+
+        image.onload = () => {
+          if (image.complete && image.naturalWidth > 0) resolve(image);
+          else reject(new Error(`Image loaded but invalid: ${name}`));
+        };
+
+        image.onerror = () => {
+          reject(new Error(`Failed to load tileset image: ${name}`));
+        };
+
+        image.src = `data:image/png;base64,${imageBase64}`;
+
+        setTimeout(() => {
+          if (!image.complete)
+            reject(new Error(`Timeout loading tileset image: ${name}`));
+        }, 15000);
+      });
+    })();
+
+    // Failed decodes must not poison the cache permanently.
+    imagePromise.catch(() => tilesetImageCache.delete(name));
+
+    tilesetImageCache.set(name, imagePromise);
+    if (tilesetImageCache.size > TILESET_IMAGE_CACHE_MAX) {
+      const oldest = tilesetImageCache.keys().next().value;
+      if (oldest !== undefined) tilesetImageCache.delete(oldest);
     }
-    const tilesetData = await response.json();
-    const compressedBase64 = tilesetData.data;
-    const compressedBytes = base64ToUint8Array(compressedBase64);
 
-    //@ts-expect-error - Imported via HTML
-    const inflatedBytes = pako.inflate(compressedBytes);
-    const imageBase64 = uint8ArrayToBase64(inflatedBytes);
-
-    return new Promise<HTMLImageElement>((resolve, reject) => {
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-
-      image.onload = () => {
-        if (image.complete && image.naturalWidth > 0) resolve(image);
-        else reject(new Error(`Image loaded but invalid: ${name}`));
-      };
-
-      image.onerror = () => {
-        reject(new Error(`Failed to load tileset image: ${name}`));
-      };
-
-      image.src = `data:image/png;base64,${imageBase64}`;
-
-      setTimeout(() => {
-        if (!image.complete)
-          reject(new Error(`Timeout loading tileset image: ${name}`));
-      }, 15000);
-    });
+    return await imagePromise;
   });
 
   return Promise.all(tilesetPromises);
@@ -798,13 +882,18 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
           return null;
         }
 
-        await saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);
+        // Cache write is fire-and-forget: blocking the bake on an IndexedDB
+        // transaction adds avoidable latency to every chunk load.
+        void saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);
       } catch (error) {
         return null;
       }
     }
 
-    const { segmentCanvases } = await renderChunkToCanvas(chunkData);
+    // During initial map load the loading screen is up, so bake synchronously
+    // (skipYield) - the per-tile setTimeout yields would otherwise cost
+    // hundreds of milliseconds per chunk. Gameplay-area chunks keep yielding.
+    const { segmentCanvases } = await renderChunkToCanvas(chunkData, isMapLoading);
     chunkData.segmentCanvases = segmentCanvases;
     chunkData.canvas = segmentCanvases[0];
 
@@ -895,38 +984,15 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
   }
 
   const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
+  chunkData.sortedLayers = sortedLayers;
 
-  const TILES_PER_FRAME = 50; // Balanced: render 50 tiles per frame for speed without lag
+  const TILES_PER_FRAME = 300; // Balanced: render 300 tiles per frame for speed without lag
 
-  // Build fast tileset lookup map: tileIndex -> {tileset, image}
-  const tilesetLookupMap = new Map<number, { tileset: any; image: HTMLImageElement }>();
-  for (let i = 0; i < window.mapData.tilesets.length; i++) {
-    const ts = window.mapData.tilesets[i];
-    const img = window.mapData.images[i];
-    if (img && img.complete && img.naturalWidth > 0) {
-      for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
-        tilesetLookupMap.set(tileIdx, { tileset: ts, image: img });
-      }
-    }
-  }
+  // Fast tileset lookup map: tileIndex -> {tileset, image} (memoized per map)
+  const tilesetLookupMap = getTilesetLookupMap();
 
-  // Build animated tile lookup from Tiled tileset `tiles[].animation` definitions.
-  // Keyed by global tile id (firstgid + local id). Empty for maps with no animations.
-  const animatedTileLookup = new Map<number, { tilesetIndex: number; tileset: any; animation: AnimationFrame[]; totalDuration: number }>();
-  for (let i = 0; i < window.mapData.tilesets.length; i++) {
-    const ts = window.mapData.tilesets[i];
-    if (!Array.isArray(ts.tiles)) continue;
-    for (const tile of ts.tiles) {
-      if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
-      const totalDuration = tile.animation.reduce((sum: number, frame: AnimationFrame) => sum + (frame.duration || 0), 0);
-      animatedTileLookup.set(ts.firstgid + tile.id, {
-        tilesetIndex: i,
-        tileset: ts,
-        animation: tile.animation,
-        totalDuration,
-      });
-    }
-  }
+  // Animated tile lookup from Tiled tileset `tiles[].animation` definitions (memoized per map)
+  const animatedTileLookup = getAnimatedTileLookup();
 
   const animatedTiles: AnimatedTile[] = [];
 
@@ -948,10 +1014,13 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
     const ctx = segmentCtxs[segment];
 
     let tileCount = 0;
+    const layerWidth = chunkData.width;
+    const layerData = layer.data;
 
     for (let y = 0; y < chunkData.height; y++) {
-      for (let x = 0; x < chunkData.width; x++) {
-        const tileIndex = layer.data[y * chunkData.width + x];
+      const rowOffset = y * layerWidth;
+      for (let x = 0; x < layerWidth; x++) {
+        const tileIndex = layerData[rowOffset + x];
         if (tileIndex === 0) continue;
 
         const baseGID = getBaseGID(tileIndex);
@@ -1036,29 +1105,11 @@ export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number;
   const tilewidth = window.mapData.tilewidth;
   const tileheight = window.mapData.tileheight;
 
-  const tilesetLookupMap = new Map<number, { tileset: any; image: HTMLImageElement }>();
-  for (let i = 0; i < window.mapData.tilesets.length; i++) {
-    const ts = window.mapData.tilesets[i];
-    const img = window.mapData.images[i];
-    if (img && img.complete && img.naturalWidth > 0) {
-      for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
-        tilesetLookupMap.set(tileIdx, { tileset: ts, image: img });
-      }
-    }
-  }
-
-  const animatedTileLookup = new Map<number, { tilesetIndex: number; tileset: any; animation: AnimationFrame[]; totalDuration: number }>();
-  for (let i = 0; i < window.mapData.tilesets.length; i++) {
-    const ts = window.mapData.tilesets[i];
-    if (!Array.isArray(ts.tiles)) continue;
-    for (const tile of ts.tiles) {
-      if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
-      const totalDuration = tile.animation.reduce((sum: number, frame: AnimationFrame) => sum + (frame.duration || 0), 0);
-      animatedTileLookup.set(ts.firstgid + tile.id, { tilesetIndex: i, tileset: ts, animation: tile.animation, totalDuration });
-    }
-  }
+  const tilesetLookupMap = getTilesetLookupMap();
+  const animatedTileLookup = getAnimatedTileLookup();
 
   const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
+  chunkData.sortedLayers = sortedLayers;
   if (!chunkData.animatedTiles) chunkData.animatedTiles = [];
 
   for (const cell of cells) {
@@ -1324,16 +1375,8 @@ function bakeChunkShadowEdges(chunkData: ChunkData): void {
   const chunkX = chunkData.chunkX ?? Math.floor(chunkData.startX / chunkData.width);
   const chunkY = chunkData.chunkY ?? Math.floor(chunkData.startY / chunkData.height);
 
-  // Build O(1) tileset lookup
-  const tsInfo = new Map<number, { tileset: any; image: HTMLImageElement }>();
-  for (let i = 0; i < window.mapData.tilesets.length; i++) {
-    const ts = window.mapData.tilesets[i];
-    const img = window.mapData.images[i];
-    if (!img || !img.complete || img.naturalWidth === 0) continue;
-    for (let gid = ts.firstgid; gid < ts.firstgid + ts.tilecount; gid++) {
-      tsInfo.set(gid, { tileset: ts, image: img });
-    }
-  }
+  // O(1) tileset lookup (memoized per map)
+  const tsInfo = getTilesetLookupMap();
 
   if (chunkData.shadowLayers) {
     for (const sl of chunkData.shadowLayers) {

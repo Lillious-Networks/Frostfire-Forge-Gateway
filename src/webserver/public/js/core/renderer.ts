@@ -442,7 +442,10 @@ function drawAllLayersWithOpacity(segment: number, cuts: Array<{ key: number }>,
 
     if (!chunkCanvas) continue;
 
-    const sortedLayers = [...chunkData.layers].sort((a: any, b: any) => a.zIndex - b.zIndex);
+    // Chunks cache their z-sorted layer order at bake time; only sort here for
+    // chunks baked before that caching existed (or editor-mutated chunks).
+    const sortedLayers = (chunkData as any).sortedLayers
+      || [...chunkData.layers].sort((a: any, b: any) => a.zIndex - b.zIndex);
     const tileEditor = (window as any).tileEditor;
 
     // Check whether any visible layer lives here (collision/no-pvp are excluded unless selected).
