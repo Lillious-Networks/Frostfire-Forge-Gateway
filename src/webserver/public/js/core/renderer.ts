@@ -1247,7 +1247,7 @@ function animationLoop() {
   }
 
   if (cache.players instanceof Map) {
-    animationManager.updateAllPlayers(cache.players, deltaTime);
+    animationManager.updateAllPlayers(cache.players, deltaTime, cachedPlayerId);
     cache.players.forEach((player: any) => {
       updateRemotePlayerInterpolation(player, deltaTime);
     });
@@ -1260,7 +1260,7 @@ function animationLoop() {
         updateRemotePlayerInterpolation(player, deltaTime);
       }
     }
-    animationManager.updateAllPlayers(playersMap, deltaTime);
+    animationManager.updateAllPlayers(playersMap, deltaTime, cachedPlayerId);
   }
 
   if (!cameraInitialized && window.mapData) {

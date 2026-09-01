@@ -22,6 +22,11 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
 
   // For Asset Server icon requests that return direct PNG files
   if (src && src.includes("/icon?")) {
+    // Check cache first
+    if (imageCache.has(src)) {
+      return imageCache.get(src)!;
+    }
+
     return new Promise((resolve) => {
       const newImg = new Image();
 
@@ -29,6 +34,7 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
       const handleLoad = () => {
         newImg.removeEventListener("load", handleLoad);
         newImg.removeEventListener("error", handleError);
+        imageCache.set(src, newImg);
         resolve(newImg);
       };
 
@@ -46,6 +52,11 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
 
   // For sprite/sprite-sheet requests that need decompression
   if (src && (src.includes("/sprite?") || src.includes("/sprite-sheet-image?"))) {
+    // Check cache first
+    if (imageCache.has(src)) {
+      return imageCache.get(src)!;
+    }
+
     const newImg = new Image();
 
     try {
@@ -83,6 +94,8 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
       const inflated = pako.inflate(bytes, { to: "string" });
       newImg.src = `data:image/png;base64,${inflated}`;
 
+      // Cache the decompressed image
+      imageCache.set(src, newImg);
       return newImg;
     } catch (error) {
       console.error("[createCachedImage] Error loading sprite:", error);
@@ -90,11 +103,8 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
     }
   }
 
-  // For regular URLs and data URLs, just set src directly
-  getCachedImage(src);
-  const newImg = new Image();
-  newImg.src = src;
-  return newImg;
+  // For regular URLs and data URLs, use cache
+  return getCachedImage(src);
 }
 
 export function clearImageCache(): void {

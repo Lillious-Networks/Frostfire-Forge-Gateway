@@ -986,7 +986,13 @@ async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = fa
   const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
   chunkData.sortedLayers = sortedLayers;
 
-  const TILES_PER_FRAME = 300; // Balanced: render 300 tiles per frame for speed without lag
+  // Tiles drawn between yields during gameplay baking. Kept low: each drawImage
+  // can trigger a synchronous "Image decode" of the tileset region it touches,
+  // so a large batch is a visible frame hitch every time new chunks scroll into
+  // view. The initial map load bakes with skipYield (loading screen is up) and
+  // ignores this. Was briefly raised to 300 in an optimization pass, which is
+  // what caused the per-chunk-boundary stutter.
+  const TILES_PER_FRAME = 64;
 
   // Fast tileset lookup map: tileIndex -> {tileset, image} (memoized per map)
   const tilesetLookupMap = getTilesetLookupMap();

@@ -400,8 +400,6 @@ export function requestTilesetViaWS(tilesetName: string): Promise<any> {
 let cachedPlayerId: string | null = null;
 let sessionActive: boolean = false;
 
-let lastServerActivity = 0;
-let watchdogTimer: ReturnType<typeof setInterval> | null = null;
 let closeHandled = false;
 
 let snapshotRevision: number | null = null;
@@ -815,7 +813,6 @@ function initializeConnection() {
 
   reconnectAttempts = 0;
   closeHandled = false;
-  lastServerActivity = performance.now();
 
   if (cache?.players) {
     cache.players.clear();
@@ -831,38 +828,23 @@ function initializeConnection() {
   pendingMovements = [];
   pendingSpriteAnimations = [];
 
-  if (watchdogTimer) {
-    clearInterval(watchdogTimer);
-  }
-  watchdogTimer = setInterval(checkConnectionWatchdog, 1000);
-
   sendRequest({
     type: "PING",
     data: null,
   });
 }
 
-// If the game server dies without closing the QUIC session, `socket.closed`
-// may not resolve until the idle timeout (2+ minutes). Track inbound activity:
-// the server pushes SERVER_TIME every second, so a 5 second silence means the
-// connection is dead and we should surface "connection lost" immediately.
-function checkConnectionWatchdog() {
-  if (!sessionActive || !transportReady) return;
-  if (performance.now() - lastServerActivity < 5000) return;
-
-  if (watchdogTimer) {
-    clearInterval(watchdogTimer);
-    watchdogTimer = null;
-  }
-
-  try {
-    socket.close({ closeCode: 1, reason: "connection-timeout" });
-  } catch (error) {
-    // The session may already be unusable; the close call is best-effort
-  }
-
-  handleSocketClose({ closeCode: 1, reason: "connection-timeout" });
-}
+// NOTE: there is deliberately no inbound-inactivity watchdog here.
+//
+// One used to close the session after 5 seconds of silence, which only worked
+// because the server pushed SERVER_TIME every second. That heartbeat is gone -
+// time of day is anchored once and advanced locally - so a player standing
+// still legitimately receives nothing for long stretches, and that rule would
+// now disconnect them.
+//
+// A server that vanishes without closing the session is detected by QUIC's own
+// idle timeout, which resolves `socket.closed`; setupSocketHandlers already
+// routes that into handleSocketClose.
 
 function setupSocketHandlers() {
   socket.closed.then((info: any) => {
@@ -878,11 +860,6 @@ async function handleSocketClose(info: any) {
 
   if (closeHandled) return;
   closeHandled = true;
-
-  if (watchdogTimer) {
-    clearInterval(watchdogTimer);
-    watchdogTimer = null;
-  }
 
   progressBarContainer.style.display = "none";
 
@@ -1130,24 +1107,26 @@ async function handleLoadPlayersPacket(data: any) {
   }
 }
 
-function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any } {
+function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any; envelope: any } {
   const FIRST_BYTE = bytes[0];
 
   if (FIRST_BYTE === 0x01) {
-    return { type: "BATCH_MOVEXY", data: bytes };
+    return { type: "BATCH_MOVEXY", data: bytes, envelope: null };
   } else if (FIRST_BYTE === 0x02) {
-    return { type: "MOVEXY", data: bytes };
+    return { type: "MOVEXY", data: bytes, envelope: null };
   } else if (FIRST_BYTE === 0x03) {
-    return { type: "MOVE_ENTITY_BINARY", data: bytes };
+    return { type: "MOVE_ENTITY_BINARY", data: bytes, envelope: null };
   }
 
   try {
     const decoded = JSON.parse(packet.decode(bytes));
-    return { type: decoded["type"], data: decoded["data"] };
+    // The full envelope is carried through so handlers can read sibling keys
+    // (slots, chatDecryptionKey, ...) without parsing the same frame again.
+    return { type: decoded["type"], data: decoded["data"], envelope: decoded };
   } catch {
     // Non-JSON frame: ignore it instead of throwing - a throw would kill the
     // enclosing receive loop and silently stop all stream processing.
-    return { type: "UNKNOWN_FRAME", data: null };
+    return { type: "UNKNOWN_FRAME", data: null, envelope: null };
   }
 }
 
@@ -1163,7 +1142,7 @@ async function receiveLoop() {
       for (const frame of frames) {
         try {
           const decoded = decodeIncomingBytes(frame);
-          await dispatchMessage(decoded.type, decoded.data, frame);
+          await dispatchMessage(decoded.type, decoded.data, frame, decoded.envelope);
         } catch (error) {
           // Never let one bad frame kill the read loop - that would stop all
           // stream processing and eventually get the player disconnected.
@@ -1188,7 +1167,7 @@ async function receiveDatagrams() {
       const bytes = new Uint8Array(value);
       try {
         const decoded = decodeIncomingBytes(bytes);
-        await dispatchMessage(decoded.type, decoded.data, bytes);
+        await dispatchMessage(decoded.type, decoded.data, bytes, decoded.envelope);
       } catch (error) {
         if (!closeHandled) {
           console.error("Error dispatching datagram:", error);
@@ -1200,9 +1179,8 @@ async function receiveDatagrams() {
   }
 }
 
-async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
+async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envelope?: any) {
   receivedResponses++;
-  lastServerActivity = performance.now();
 
   switch (type) {
     case "AUTH_CONNECT_SUCCESS": {
@@ -1214,7 +1192,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "SERVER_TIME": {
-      sendRequest({ type: "TIME_SYNC" });
+      // One-way push driving time of day. There is no reply: the server
+      // refreshes each player's idle timestamp from any inbound packet.
       if (!data) return;
       updateTime(data);
       break;
@@ -2584,14 +2563,31 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       if (player) {
         // Handle player movement
         player.typing = false;
-        player.serverPosition.x = Math.round(moveData.x);
-        player.serverPosition.y = Math.round(moveData.y);
-        player.position.x = Math.round(moveData.x);
-        player.position.y = Math.round(moveData.y);
+        const sx = Math.round(moveData.x);
+        const sy = Math.round(moveData.y);
+        player.serverPosition.x = sx;
+        player.serverPosition.y = sy;
         player.lastServerUpdate = performance.now();
 
         if (playerId == cachedPlayerId) {
+          // The local player runs client-side prediction (updateLocalPlayerPrediction
+          // advances position every ~33ms). The server echo trails that
+          // prediction by the round-trip latency plus the server's own tick, so
+          // hard-snapping position to every echo makes the character oscillate
+          // (rubberband + "feels slow"). Trust prediction; only hard-correct
+          // when it has genuinely diverged (packet loss, an unpredicted wall, a
+          // teleport). Keep the render position integral so the sprite never
+          // draws on a fractional pixel (that is the "blurry while moving").
+          const dx = sx - player.position.x;
+          const dy = sy - player.position.y;
+          if (dx * dx + dy * dy > 48 * 48) {
+            player.position.x = sx;
+            player.position.y = sy;
+          }
           positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
+        } else {
+          player.position.x = sx;
+          player.position.y = sy;
         }
       } else if (!snapshotApplied) {
         pendingMovements.push({ id: playerId, _data: moveData, revision: data.r || 0 });
@@ -2955,10 +2951,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     case "LOGIN_SUCCESS":
       {
-        const connectionId = JSON.parse(packet.decode(bytes))["data"];
-        const chatDecryptionKey = JSON.parse(packet.decode(bytes))[
-          "chatDecryptionKey"
-        ];
+        const connectionId = data;
+        const chatDecryptionKey = envelope?.["chatDecryptionKey"];
         sessionStorage.setItem("connectionId", connectionId);
         cachedPlayerId = connectionId;
         sessionActive = true;
@@ -2999,8 +2993,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       }
       break;
     case "SPELLS": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
-      const slots = JSON.parse(packet.decode(bytes))["slots"];
+      const slots = envelope?.["slots"];
 
       const grid = spellBookUI.querySelector("#grid");
       if (!grid) return;
@@ -3139,7 +3132,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "LEARN_SPELL": {
-      const spell = JSON.parse(packet.decode(bytes))["data"];
+      const spell = data;
       const grid = spellBookUI.querySelector("#grid");
       if (!grid || !spell?.name) break;
 
@@ -3211,7 +3204,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "UNLEARN_SPELL": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       const name = data?.name;
       if (!name) break;
 
@@ -3238,8 +3230,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
     }
     case "COLLECTABLES":
       {
-        const data = JSON.parse(packet.decode(bytes))["data"];
-        const slots = JSON.parse(packet.decode(bytes))["slots"];
+        const slots = envelope?.["slots"];
 
         const grid = collectablesUI.querySelector("#grid");
         if (!grid) return;
@@ -3297,7 +3288,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
         break;
       }
     case "ADD_INVENTORY_ITEM": {
-      const item = JSON.parse(packet.decode(bytes))["data"];
+      const item = data;
       if (!item?.name) break;
 
       const existingInCache = (cache.inventory || []).find((i: any) => i.name.toLowerCase() === item.name.toLowerCase());
@@ -3376,7 +3367,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "REMOVE_INVENTORY_ITEM": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       const name = data?.name;
       if (!name) break;
 
@@ -3399,7 +3389,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "ADD_COLLECTABLE": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       if (!data?.item) break;
 
       cache.collectables.push(data);
@@ -3437,7 +3426,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "REMOVE_COLLECTABLE": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       const item = data?.item;
       if (!item) break;
 
@@ -3458,7 +3446,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
     }
     case "EQUIPMENT": {
 
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       cache.equipment = data;
 
@@ -3675,8 +3662,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
     }
     case "INVENTORY":
       {
-        const data = JSON.parse(packet.decode(bytes))["data"];
-        const slots = JSON.parse(packet.decode(bytes))["slots"];
+        const slots = envelope?.["slots"];
 
         // Ensure all items have iconUrl (convert from icon if needed)
         const assetServerUrl = data.find((item: any) => item.iconUrl)?.iconUrl?.split('/icon')?.[0] || config.ASSET_SERVER_URL;
@@ -3696,7 +3682,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       }
       break;
     case "BAGS": {
-      const bagData = JSON.parse(packet.decode(bytes))["data"];
+      const bagData = data;
       if (!bagData) break;
       cache.bags = bagData;
       rebuildInventoryGrid();
@@ -3767,7 +3753,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "LOOT_SPAWN": {
-      const lootData = JSON.parse(packet.decode(bytes))["data"];
+      const lootData = data;
       if (!lootData?.id) break;
       const existing = (cache.loot || []).findIndex((l: any) => l.id === lootData.id);
       if (existing !== -1) {
@@ -3781,13 +3767,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "LOOT_DESPAWN": {
-      const d = JSON.parse(packet.decode(bytes))["data"];
+      const d = data;
       if (!d?.id) break;
       cache.loot = (cache.loot || []).filter((l: any) => l.id !== d.id);
       break;
     }
     case "LOOT_CHEST_SPAWN": {
-      const d = JSON.parse(packet.decode(bytes))["data"];
+      const d = data;
       if (!d?.id) break;
       const ex = (cache.lootChests || []).findIndex((c: any) => c.id === d.id);
       if (ex !== -1) { cache.lootChests[ex] = d; }
@@ -3796,13 +3782,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "LOOT_CHEST_DESPAWN": {
-      const d = JSON.parse(packet.decode(bytes))["data"];
+      const d = data;
       if (!d?.id) break;
       cache.lootChests = (cache.lootChests || []).filter((c: any) => c.id !== d.id);
       break;
     }
     case "LOOT_CHEST_CONTENTS": {
-      const d = JSON.parse(packet.decode(bytes))["data"];
+      const d = data;
       if (!d?.chestId || !d?.items) break;
       import("./lootWindow.js").then(({ showLootChestPopup }) => { showLootChestPopup(d.chestId, d.items); });
       break;
@@ -3812,7 +3798,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "LOOT_TABLE_LIST": {
-      const d = JSON.parse(packet.decode(bytes))["data"];
+      const d = data;
       if (!d?.tables) break;
       import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables); });
       break;
@@ -3922,46 +3908,46 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "CLIENTCONFIG": {
-      const data = JSON.parse(packet.decode(bytes))["data"][0];
-      fpsSlider.value = data.fps;
+      const config = data?.[0];
+      fpsSlider.value = config.fps;
       document.getElementById(
         "limit-fps-label"
       )!.innerText = `FPS: (${Number(fpsSlider.value) >= 240 ? "240+" : fpsSlider.value})`;
-      musicSlider.value = data.music_volume || 0;
+      musicSlider.value = config.music_volume || 0;
       document.getElementById(
         "music-volume-label"
       )!.innerText = `Music: (${musicSlider.value})`;
-      effectsSlider.value = data.effects_volume || 0;
+      effectsSlider.value = config.effects_volume || 0;
       document.getElementById(
         "effects-volume-label"
       )!.innerText = `Effects: (${effectsSlider.value})`;
-      mutedCheckbox.checked = data.muted;
+      mutedCheckbox.checked = config.muted;
       document.getElementById(
         "muted-checkbox"
       )!.innerText = `Muted: ${mutedCheckbox.checked}`;
 
-      if (data.hotbar_config) {
-        loadHotbarConfiguration(data.hotbar_config);
+      if (config.hotbar_config) {
+        loadHotbarConfiguration(config.hotbar_config);
       }
 
-      if (data.spell_cooldowns) {
-        pendingSpellCooldowns = data.spell_cooldowns as Record<string, number>;
+      if (config.spell_cooldowns) {
+        pendingSpellCooldowns = config.spell_cooldowns as Record<string, number>;
       }
 
-      if (data.spell_lockout > 0) {
-        pendingSpellLockout = Number(data.spell_lockout);
+      if (config.spell_lockout > 0) {
+        pendingSpellLockout = Number(config.spell_lockout);
       }
 
-      if (data.inventory_config) {
+      if (config.inventory_config) {
 
-        if (typeof data.inventory_config === 'string') {
+        if (typeof config.inventory_config === 'string') {
           try {
-            cache.inventoryConfig = JSON.parse(data.inventory_config);
+            cache.inventoryConfig = JSON.parse(config.inventory_config);
           } catch (error) {
             cache.inventoryConfig = {};
           }
-        } else if (typeof data.inventory_config === 'object' && data.inventory_config !== null) {
-          cache.inventoryConfig = data.inventory_config;
+        } else if (typeof config.inventory_config === 'object' && config.inventory_config !== null) {
+          cache.inventoryConfig = config.inventory_config;
         } else {
           cache.inventoryConfig = {};
         }
@@ -3969,7 +3955,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "SELECTPLAYER": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       if (!data || !data.id) {
         const target = Array.from(cache.players).find((p) => p.targeted);
@@ -3996,7 +3981,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "NOCLIP": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       const currentPlayer = Array.from(cache.players).find(
         (player) => player.id === cachedPlayerId || player.id === cachedPlayerId
       );
@@ -4015,7 +3999,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "STEALTH": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       const currentPlayer = Array.from(cache.players).find(
         (player) => player.id === cachedPlayerId || player.id === cachedPlayerId
       );
@@ -4049,7 +4032,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "UPDATESTATS": {
-      const { target, stats, isCrit, username, damage, entity, absorb } = JSON.parse(packet.decode(bytes))["data"];
+      const { target, stats, isCrit, username, damage, entity, absorb } = data;
 
       let t;
 
@@ -4175,7 +4158,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "REVIVE": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       const target = Array.from(cache.players).find(
         (player) => player.id === data.target
       );
@@ -4208,7 +4190,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "UPDATE_XP": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       if (data.id === cachedPlayerId) {
         updateXp(data.xp, data.level, data.max_xp);
@@ -4216,7 +4197,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "INSPECTPLAYER": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const previousShownId = statUI.getAttribute("data-id");
 
@@ -4454,12 +4434,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "NOTIFY": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
       showNotification(data.message, true, false);
       break;
     }
     case "WHISPER": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const escapedMessage = data.message
         .replace(/</g, "&lt;")
@@ -4482,7 +4460,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "PARTY_CHAT": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const escapedMessage = data.message
         .replace(/</g, "&lt;")
@@ -4520,7 +4497,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "GUILD_CHAT": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       const escapedMessage = data.message
         .replace(/</g, "&lt;")
@@ -4558,7 +4534,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array) {
       break;
     }
     case "CURRENCY": {
-      const data = JSON.parse(packet.decode(bytes))["data"];
 
       if (!cachedPlayerId) break;
 

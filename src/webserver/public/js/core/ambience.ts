@@ -49,13 +49,36 @@ function getServerTime(): { hours: number; minutes: number } {
   };
 }
 
+// Server time is anchored when the server tells us (on connect) and then
+// advanced locally, instead of being re-pushed every second.
+// `serverEpochAtAnchor` is the server clock at that moment and
+// `localEpochAtAnchor` is ours; the offset between them stays fixed, so the
+// current server time is simply "anchor + elapsed since anchor".
+let serverEpochAtAnchor: number | null = null;
+let localEpochAtAnchor: number | null = null;
+
+// Anchor (or re-anchor) the clock from a server timestamp. Safe to call again
+// at any time to re-sync.
 function updateTime(time: string) {
   if (!time) return;
 
-  timeOfDay = time;
-  const date = new Date(timeOfDay);
+  const date = new Date(time);
   if (isNaN(date.getTime())) return;
 
+  timeOfDay = time;
+  serverEpochAtAnchor = date.getTime();
+  localEpochAtAnchor = Date.now();
+
+  renderTime(date);
+}
+
+// Current server time, extrapolated from the anchor.
+function currentServerDate(): Date | null {
+  if (serverEpochAtAnchor === null || localEpochAtAnchor === null) return null;
+  return new Date(serverEpochAtAnchor + (Date.now() - localEpochAtAnchor));
+}
+
+function renderTime(date: Date) {
   const hours = date.getHours() % 12 || 12;
   const minutes = date.getMinutes().toString().padStart(2, "0");
   const seconds = date.getSeconds().toString().padStart(2, "0");
@@ -68,6 +91,15 @@ function updateTime(time: string) {
     lastMinute = date.getMinutes();
   }
 }
+
+// Local tick. Drift is bounded by the browser clock's own rate error (seconds
+// per day), far below the per-minute resolution the ambience system reacts to.
+setInterval(() => {
+  const date = currentServerDate();
+  if (!date) return;
+  timeOfDay = date.toISOString();
+  renderTime(date);
+}, 1000);
 
 function smoothstep(t: number) {
   return 0.5 - 0.5 * Math.cos(Math.PI * t);

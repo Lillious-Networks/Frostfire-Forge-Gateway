@@ -28,6 +28,16 @@ import realmselection_html from "./public/realm-selection.html";
 import manageprofile_html from "./public/manage-profile.html";
 import twofachallenge_html from "./public/2fa-challenge.html";
 
+// Service worker source lives at js/web/service-worker.ts and is transpiled to
+// service-worker.js alongside the other web scripts (src/utility/transpiler.ts).
+// It must be served from the ROOT scope, so it can't be part of the bundled
+// HTML page - a dedicated route serves the transpiled file as text. Read as
+// text, never `import` it: importing a real .js module executes it here in the
+// server process (it references `self`/`caches`), crashing startup -> 502.
+const service_worker_js = await Bun.file(
+  new URL("./public/js/web/service-worker.js", import.meta.url)
+).text();
+
 function getClientIP(req: Request): string | undefined {
   return req.headers.get("X-Real-Client-IP") || undefined;
 }
@@ -74,6 +84,7 @@ async function requireAuth(req: Request): Promise<{ username: string } | Respons
 
 const routes = {
   "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  "/service-worker.js": (req: Request) => new Response(service_worker_js, { status: 200, headers: { "Content-Type": "application/javascript", "Cache-Control": "max-age=3600" } }),
   "/": login_html,
   "/registration": register_html,
   "/game": game_html,
@@ -86,6 +97,7 @@ const routes = {
   "/verify": (req: Request) => authenticate(req),
   "/register": (req: Request, server: any) => register(req, server),
   "/guest-login": async (req: Request) => createGuestAccount(req),
+  "/guest-bulk": { POST: async (req: Request) => createGuestAccountsBulk(req) },
   "/forgot-password": forgotpassword_html,
   "/reset-password": async (req: Request, server: any) => {
     if (req.method !== "POST") {
@@ -258,12 +270,15 @@ Bun.serve({
     port: serverPort,
     development: false,
     reusePort: false,
+    http2: true,
     routes: {
       "/status": routes["/status"],
+      "/service-worker.js": routes["/service-worker.js"],
       "/": routes["/"],
       "/registration": routes["/registration"],
       "/register": routes["/register"],
       "/guest-login": routes["/guest-login"],
+      "/guest-bulk": routes["/guest-bulk"],
       "/forgot-password": routes["/forgot-password"],
       "/reset-password": routes["/reset-password"],
       "/update-password": routes["/update-password"],
@@ -398,6 +413,45 @@ async function createGuestAccount(req: Request) {
   } catch (error) {
     log.error(`Failed to create guest account: ${error}`);
     return new Response(JSON.stringify({ message: "Failed to create guest account" }), { status: 500 });
+  }
+}
+
+// Load-test helper: provision many guest accounts in one request. Guarded by
+// the game-server shared secret so it is not a public account-spam vector.
+// A normal /guest-login is ~15 serialised SQL round-trips; at benchmark ramp
+// rates (thousands of clients) that saturates the DB worker pool and clients
+// time out with a 1000 close. This batches the whole set into 7 multi-row
+// INSERTs and returns the tokens for the benchmark to AUTH with directly.
+async function createGuestAccountsBulk(req: Request) {
+  try {
+    if (!settings.guest_mode?.enabled) {
+      return new Response(JSON.stringify({ message: "Guest mode is disabled" }), { status: 403 });
+    }
+
+    const secret = process.env.GATEWAY_GAME_SERVER_SECRET;
+    const provided =
+      req.headers.get("X-Benchmark-Secret") ||
+      (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+    if (!secret || provided !== secret) {
+      return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
+    }
+
+    let count = 100;
+    try {
+      const body = await req.json();
+      if (body && typeof body.count === "number") count = body.count;
+    } catch { /* default count */ }
+
+    const ip = getClientIP(req);
+    const tokens = await player.registerGuestBulk(count, ip, req.headers.get("cf-ipcountry") || undefined);
+
+    return new Response(JSON.stringify({ tokens }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch (error) {
+    log.error(`Failed to bulk-create guest accounts: ${error}`);
+    return new Response(JSON.stringify({ message: "Failed to bulk-create guest accounts" }), { status: 500 });
   }
 }
 

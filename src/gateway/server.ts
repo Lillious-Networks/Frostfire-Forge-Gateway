@@ -601,6 +601,7 @@ if (sslEnabled) {
     hostname: "0.0.0.0",
     port: httpPort,
     development: false,
+    http2: true,
     fetch(req: Request) {
       const url = tryParseURL(req.url);
       if (!url) {

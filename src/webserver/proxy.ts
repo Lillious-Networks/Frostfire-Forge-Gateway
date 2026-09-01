@@ -25,7 +25,7 @@ if (process.env.WEBSRV_USESSL === "true") {
     console.error(`  Cert path: ${_cert || "(TLS_CERT_PATH not set)"} (exists: ${!!_cert && fs.existsSync(_cert)})`);
     console.error(`  Key path:  ${_key || "(TLS_KEY_PATH not set)"} (exists: ${!!_key && fs.existsSync(_key)})`);
   } else {
-    console.log(`[Gateway Proxy] SSL enabled (HTTP/3 + HTTP/1.1 fallback)`);
+    console.log(`[Gateway Proxy] SSL enabled (HTTP/3 + HTTP/2 fallback)`);
   }
 }
 
@@ -46,6 +46,7 @@ Bun.serve({
   port: publicPort,
   development: false,
   reusePort: false,
+  http2: true,
   async fetch(req: Request, server: any) {
     const ip = server.requestIP(req)?.address;
     const url = tryParseURL(req.url);

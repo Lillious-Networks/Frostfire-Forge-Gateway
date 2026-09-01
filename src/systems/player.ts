@@ -31,6 +31,61 @@ const player = {
 
     await query("DELETE FROM accounts WHERE guest_mode = 1");
   },
+  // Bulk-provision N guest accounts for load testing. A normal guest signup is
+  // ~15 serialised SQL round-trips (2 dup-check SELECTs + 7 child INSERTs +
+  // login SELECT/UPDATEs); at benchmark ramp rates that saturates the DB worker
+  // pool and clients time out. Guests use CSPRNG usernames so dup checks are
+  // pointless, and the child rows are identical templates - so this does one
+  // multi-row INSERT per table (7 queries total for the whole batch) and mints
+  // the tokens directly instead of going through login().
+  registerGuestBulk: async (count: number, ip?: string, geo?: string) => {
+    const n = Math.max(1, Math.min(2000, Math.floor(count)));
+    const rows = Array.from({ length: n }, () => {
+      const username = `guest_${randomBytes(12)}`.toLowerCase();
+      const domain = process.env.DOMAIN?.replace(/^https?:\/\//, "");
+      return {
+        username,
+        email: `${username}@${domain}`,
+        token: randomBytes(32),
+      };
+    });
+
+    const multiInsert = async (
+      sql: string,
+      perRow: (r: (typeof rows)[number]) => any[]
+    ) => {
+      const first = perRow(rows[0]);
+      const group = `(${first.map(() => "?").join(", ")})`;
+      const values = rows.map(() => group).join(", ");
+      const params = rows.flatMap(perRow);
+      await query(`${sql} VALUES ${values}`, params);
+    };
+
+    await multiInsert(
+      "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode)",
+      (r) => [r.email, r.username, r.token, "guest:benchmark", ip ?? null, geo ?? null, "", "0,0", 1]
+    );
+    await multiInsert(
+      "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance)",
+      (r) => [r.username, 100, 100, 100, 100, 0, 100, 1, 10, 10]
+    );
+    await multiInsert(
+      "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted)",
+      (r) => [r.username, 60, 50, 50, 0]
+    );
+    await multiInsert("INSERT INTO quest_log (username)", (r) => [r.username]);
+    await multiInsert(
+      "INSERT INTO currency (username, copper, silver, gold)",
+      (r) => [r.username, 0, 0, 0]
+    );
+    await multiInsert("INSERT INTO equipment (username)", (r) => [r.username]);
+    await multiInsert(
+      "INSERT INTO collectables (type, item, username)",
+      (r) => ["mount", "horse", r.username]
+    );
+
+    return rows.map((r) => r.token);
+  },
   register: async (
     username: string,
     password_hash: string,
