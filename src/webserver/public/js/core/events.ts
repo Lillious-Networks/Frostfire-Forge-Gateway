@@ -175,22 +175,25 @@ window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
 
   const angle = Math.atan2(y, x) * (180 / Math.PI);
 
+  // Cardinal-biased sectors: LEFT/RIGHT/UP/DOWN each span 60deg (+/-30deg around
+  // the axis), diagonals 30deg. An even 45deg split made "walk straight" hard on
+  // a phone.
   let direction = "";
-  if (angle >= -22.5 && angle < 22.5) {
+  if (angle >= -30 && angle < 30) {
     direction = "RIGHT";
-  } else if (angle >= 22.5 && angle < 67.5) {
+  } else if (angle >= 30 && angle < 60) {
     direction = "DOWNRIGHT";
-  } else if (angle >= 67.5 && angle < 112.5) {
+  } else if (angle >= 60 && angle < 120) {
     direction = "DOWN";
-  } else if (angle >= 112.5 && angle < 157.5) {
+  } else if (angle >= 120 && angle < 150) {
     direction = "DOWNLEFT";
-  } else if (angle >= 157.5 || angle < -157.5) {
+  } else if (angle >= 150 || angle < -150) {
     direction = "LEFT";
-  } else if (angle >= -157.5 && angle < -112.5) {
+  } else if (angle >= -150 && angle < -120) {
     direction = "UPLEFT";
-  } else if (angle >= -112.5 && angle < -67.5) {
+  } else if (angle >= -120 && angle < -60) {
     direction = "UP";
-  } else if (angle >= -67.5 && angle < -22.5) {
+  } else if (angle >= -60 && angle < -30) {
     direction = "UPRIGHT";
   }
 
