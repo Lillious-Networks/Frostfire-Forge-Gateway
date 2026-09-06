@@ -8,7 +8,7 @@ import query from "../controllers/sqldatabase";
 import { generateSecret, generateTotpUri, verifyTOTP } from "../services/totp";
 import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verifyAttestation, generateAssertionOptions, verifyAssertion } from "../services/webauthn";
 import { generateQRDataUri } from "../services/qrcode";
-import { getInternalServerOptions, serverFetch } from "../modules/https_servers";
+import { getInternalServerOptions, serverFetch, getInternalBaseUrl } from "../modules/https_servers";
 
 const settings = {
   guest_mode: {
@@ -117,7 +117,11 @@ const routes = {
       try {
 
         const gatewayPort = process.env.GATEWAY_INTERNAL_PORT || "9998";
-        const gatewayUrl = `https://127.0.0.1:${gatewayPort}`;
+        const gatewayUrl = getInternalBaseUrl(
+          parseInt(gatewayPort),
+          process.env.TLS_CERT_PATH,
+          process.env.TLS_KEY_PATH
+        );
 
         const response = await serverFetch(`${gatewayUrl}/status`, {
           method: "GET",

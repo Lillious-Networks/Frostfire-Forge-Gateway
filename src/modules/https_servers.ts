@@ -81,14 +81,31 @@ function readChain(certPath: string, caPath?: string): string {
   return cert;
 }
 
+// The internal hop uses TLS when the shared certificate files exist
+// (production / local machines) and falls back to plain HTTP when they do
+// not (CI/docker images do not bake in certificates).
+export function isInternalTlsEnabled(certPath?: string, keyPath?: string): boolean {
+  return !!certPath && !!keyPath && fs.existsSync(certPath) && fs.existsSync(keyPath);
+}
+
+export function getInternalBaseUrl(port: number, certPath?: string, keyPath?: string, host?: string): string {
+  const scheme = isInternalTlsEnabled(certPath, keyPath) ? "https" : "http";
+  return `${scheme}://${host ?? "127.0.0.1"}:${port}`;
+}
+
 // Options for the internal application server: HTTPS on 127.0.0.1 using the
 // same certificate as the public proxy. Protocol versions follow the
 // WEBSRV_HTTP1/2/3 env vars - internal hops always fetch over TLS with
 // HTTP/3 or HTTP/2 (see serverFetch), so disabling HTTP/1.1 is safe
-// everywhere.
-export function getInternalServerOptions(certPath: string, keyPath: string, caPath?: string): { http1: boolean; http2: boolean; http3?: boolean; tls: { cert: string; key: string | Buffer } } {
+// everywhere. Without certificate files (CI images) it falls back to plain
+// HTTP so the stack still boots.
+export function getInternalServerOptions(certPath: string, keyPath: string, caPath?: string): { http1: boolean; http2: boolean; http3?: boolean; tls?: { cert: string; key: string | Buffer } } {
+  const protocols = getHttpProtocolOptions(isInternalTlsEnabled(certPath, keyPath));
+  if (!isInternalTlsEnabled(certPath, keyPath)) {
+    return protocols;
+  }
   return {
-    ...getHttpProtocolOptions(true),
+    ...protocols,
     tls: {
       cert: readChain(certPath, caPath),
       key: fs.readFileSync(keyPath),
@@ -182,7 +199,7 @@ export function startHttpsServers(config: HttpsServerConfig): HttpsServerStack {
   }
 
   const publicPort = sslEnabled ? config.httpsPort : config.httpPort;
-  const internalUrl = `https://${config.internalHost ?? "127.0.0.1"}:${config.internalPort}`;
+  const internalUrl = getInternalBaseUrl(config.internalPort, config.certPath, config.keyPath, config.internalHost);
 
   const tlsOptions = sslEnabled
     ? {
