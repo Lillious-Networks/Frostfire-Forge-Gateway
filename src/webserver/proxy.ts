@@ -3,6 +3,7 @@ import log from "../modules/logger";
 import path from "path";
 import fs from "fs";
 import { w_ips, b_ips, blacklistAdd } from "../systems/security";
+import { startHttpsServers } from "../modules/https_servers";
 
 const security = fs.existsSync(path.join(import.meta.dir, "./config/security.cfg"))
   ? fs.readFileSync(path.join(import.meta.dir, "./config/security.cfg"), "utf8").split("\n").map(line => line.trim()).filter(line => line !== "" && !line.startsWith("#"))
@@ -14,25 +15,6 @@ if (security.length > 0) {
   log.warn("No security rules found");
 }
 
-const _cert = process.env.TLS_CERT_PATH;
-const _key = process.env.TLS_KEY_PATH;
-const _ca = process.env.TLS_CA_PATH;
-const _https = process.env.WEBSRV_USESSL === "true" && !!_cert && !!_key && fs.existsSync(_cert) && fs.existsSync(_key);
-
-if (process.env.WEBSRV_USESSL === "true") {
-  if (!_https) {
-    console.error("[Gateway Proxy] SSL requested but certificates not found.");
-    console.error(`  Cert path: ${_cert || "(TLS_CERT_PATH not set)"} (exists: ${!!_cert && fs.existsSync(_cert)})`);
-    console.error(`  Key path:  ${_key || "(TLS_KEY_PATH not set)"} (exists: ${!!_key && fs.existsSync(_key)})`);
-  } else {
-    console.log(`[Gateway Proxy] SSL enabled (HTTP/3 + HTTP/2 fallback)`);
-  }
-}
-
-const publicPort = _https ? (parseInt(process.env.WEBSRV_PORTSSL || "") || 443) : (parseInt(process.env.WEBSRV_PORT || "") || 80);
-const internalPort = parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080;
-const upstream = `http://127.0.0.1:${internalPort}`;
-
 function tryParseURL(url: string): URL | null {
   try {
     return new URL(url);
@@ -41,21 +23,24 @@ function tryParseURL(url: string): URL | null {
   }
 }
 
-Bun.serve({
-  hostname: "0.0.0.0",
-  port: publicPort,
-  development: false,
-  reusePort: false,
-  http2: true,
-  async fetch(req: Request, server: any) {
-    const ip = server.requestIP(req)?.address;
+const domainHost = process.env.DOMAIN?.replace(/https?:\/\//, "") || "";
+
+startHttpsServers({
+  name: "Gateway Proxy",
+  sslEnabled: process.env.HTTP_USE_SSL === "true",
+  httpPort: parseInt(process.env.WEBSRV_PORT || "") || 80,
+  httpsPort: parseInt(process.env.WEBSRV_PORTSSL || "") || 443,
+  internalPort: parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080,
+  certPath: process.env.TLS_CERT_PATH,
+  keyPath: process.env.TLS_KEY_PATH,
+  caPath: process.env.TLS_CA_PATH,
+  log,
+  filterRequest: async (req: Request, ip: string) => {
     const url = tryParseURL(req.url);
     if (!url) {
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
     }
-    if (!ip) {
-      return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
-    }
+
     log.debug(`Received request: ${req.method} ${req.url} from ${ip}`);
 
     // Handle CORS preflight
@@ -96,60 +81,15 @@ Bun.serve({
       }
     }
 
-    const domainHost = process.env.DOMAIN?.replace(/https?:\/\//, "") || "";
     const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1" || domainHost === "localhost" || domainHost === "127.0.0.1";
     if (!isLocalhost && domainHost && url.host !== domainHost) {
       log.debug(`Domain mismatch: expected "${domainHost}", got "${url.host}"`);
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
     }
 
-    const headers = new Headers(req.headers);
-    headers.delete("X-Real-Client-IP");
-    headers.set("X-Real-Client-IP", ip);
-    headers.set("X-Forwarded-For", ip);
-    headers.set("X-Forwarded-Proto", _https ? "https" : "http");
-
-    try {
-      const hasBody = req.method !== "GET" && req.method !== "HEAD";
-      return await fetch(`${upstream}${url.pathname}${url.search}`, {
-        method: req.method,
-        headers,
-        body: hasBody ? await req.arrayBuffer() : undefined,
-        redirect: "manual",
-      });
-    } catch (error) {
-      log.error(`Failed to proxy request: ${error}`);
-      return new Response(JSON.stringify({ message: "Bad gateway" }), { status: 502 });
-    }
+    return null;
   },
-  ...(_https ? {
-      tls: {
-        cert: _ca && fs.existsSync(_ca)
-          ? fs.readFileSync(_cert) + "\n" + fs.readFileSync(_ca)
-          : fs.readFileSync(_cert),
-        key: fs.readFileSync(_key),
-      },
-      http3: true,
-    }
-  : {}),
 });
 
-if (_https) {
-  Bun.serve({
-    hostname: "0.0.0.0",
-    port: process.env.WEBSRV_PORT || 80,
-    development: false,
-    fetch(req: Request) {
-      const url = tryParseURL(req.url);
-      if (!url) {
-        return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
-      }
-
-      const port = process.env.WEBSRV_PORTSSL === "443" ? "" : `:${process.env.WEBSRV_PORTSSL || 443}`;
-      return Response.redirect(`https://${url.hostname}${port}${url.pathname}${url.search}`, 301);
-    }
-  });
-}
-
 const readyTimeMs = performance.now() - now;
-log.success(`Reverse proxy started on port ${publicPort} (${_https ? "HTTPS" : "HTTP"}) forwarding to ${upstream} - Ready in ${(readyTimeMs / 1000).toFixed(3)}s (${readyTimeMs.toFixed(0)}ms)`);
+log.success(`Reverse proxy ready in ${(readyTimeMs / 1000).toFixed(3)}s (${readyTimeMs.toFixed(0)}ms)`);

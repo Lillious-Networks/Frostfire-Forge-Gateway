@@ -8,6 +8,7 @@ import query from "../controllers/sqldatabase";
 import { generateSecret, generateTotpUri, verifyTOTP } from "../services/totp";
 import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verifyAttestation, generateAssertionOptions, verifyAssertion } from "../services/webauthn";
 import { generateQRDataUri } from "../services/qrcode";
+import { getInternalServerOptions, serverFetch } from "../modules/https_servers";
 
 const settings = {
   guest_mode: {
@@ -44,7 +45,7 @@ function getClientIP(req: Request): string | undefined {
 
 function getRequestOrigin(req: Request): { rpId: string; origin: string } {
   const host = req.headers.get("host") || new URL(process.env.DOMAIN || "http://localhost").hostname;
-  const proto = req.headers.get("X-Forwarded-Proto") || (process.env.WEBSRV_USESSL === "true" ? "https" : "http");
+  const proto = req.headers.get("X-Forwarded-Proto") || (process.env.HTTP_USE_SSL === "true" ? "https" : "http");
   return { rpId: host, origin: `${proto}://${host}` };
 }
 
@@ -115,12 +116,12 @@ const routes = {
     GET: async () => {
       try {
 
-        const gatewayPort = process.env.GATEWAY_PORT || "9999";
-        const gatewayUrl = `http://localhost:${gatewayPort}`;
+        const gatewayPort = process.env.GATEWAY_INTERNAL_PORT || "9998";
+        const gatewayUrl = `https://127.0.0.1:${gatewayPort}`;
 
-        const response = await fetch(`${gatewayUrl}/status`, {
+        const response = await serverFetch(`${gatewayUrl}/status`, {
           method: "GET",
-          headers: { "Content-Type": "application/json" }
+          headers: { "Content-Type": "application/json" },
         });
 
         if (!response.ok) {
@@ -269,8 +270,12 @@ Bun.serve({
     hostname: "127.0.0.1",
     port: serverPort,
     development: false,
-    reusePort: false,
-    http2: true,
+    reusePort: true,
+    ...getInternalServerOptions(
+      process.env.TLS_CERT_PATH || "",
+      process.env.TLS_KEY_PATH || "",
+      process.env.TLS_CA_PATH
+    ),
     routes: {
       "/status": routes["/status"],
       "/service-worker.js": routes["/service-worker.js"],

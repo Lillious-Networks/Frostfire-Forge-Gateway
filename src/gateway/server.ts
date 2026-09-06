@@ -1,13 +1,12 @@
+import { startHttpsServers, getInternalServerOptions, serverFetch } from "../modules/https_servers";
 
-const useSSL = process.env.GATEWAY_USESSL === "true" || process.env.GATEWAY_USESSL === "1";
 const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
-let sslEnabled = false;
-let serverPort = httpPort;
+const internalPort = parseInt(process.env.GATEWAY_INTERNAL_PORT || "") || 9998;
 // Import all types from types.d.ts
 
 const config: GatewayConfig = {
-  port: serverPort,
+  port: httpPort,
   heartbeatInterval: parseInt(process.env.HEARTBEAT_INTERVAL || "30000"),
   serverTimeout: parseInt(process.env.SERVER_TIMEOUT || "90000"),
   sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || "300000"),
@@ -132,9 +131,14 @@ setInterval(cleanupDeadServers, config.heartbeatInterval);
 setInterval(cleanupExpiredSessions, 60000);
 
 const serverConfig: any = {
-  port: config.port,
-  hostname: "0.0.0.0",
+  port: internalPort,
+  hostname: "127.0.0.1",
   development: false,
+  ...getInternalServerOptions(
+    process.env.TLS_CERT_PATH || "",
+    process.env.TLS_KEY_PATH || "",
+    process.env.TLS_CA_PATH
+  ),
   async fetch(req: any) {
     const url = new URL(req.url);
 
@@ -527,11 +531,12 @@ const serverConfig: any = {
         isNewSession = true;
       }
 
-      const targetUrl = `http://${targetServer.host}:${targetServer.port}${url.pathname}${url.search}`;
+      const targetProtocol = targetServer.useSSL ? "https" : "http";
+      const targetUrl = `${targetProtocol}://${targetServer.host}:${targetServer.port}${url.pathname}${url.search}`;
 
       try {
 
-        const proxyResponse = await fetch(targetUrl, {
+        const proxyResponse = await serverFetch(targetUrl, {
           method: req.method,
           headers: req.headers,
           body: req.body
@@ -556,106 +561,21 @@ const serverConfig: any = {
   }
 };
 
-if (useSSL) {
-  const certPath = process.env.TLS_CERT_PATH;
-  const keyPath = process.env.TLS_KEY_PATH;
-  const caPath = process.env.TLS_CA_PATH;
-
-  if (!certPath || !keyPath) {
-    console.warn(`[Gateway] GATEWAY_USESSL is enabled but TLS_CERT_PATH and TLS_KEY_PATH are not set. Serving plain HTTP instead.`);
-  } else {
-    try {
-
-      const cert = await Bun.file(certPath).text();
-      const ca = caPath ? (await Bun.file(caPath).text().catch(() => "")).trim() : "";
-      const fullChain = ca ? cert + "\n" + ca : cert;
-
-      serverConfig.tls = {
-        cert: fullChain,
-        key: Bun.file(keyPath),
-      };
-      serverConfig.http3 = true;
-      sslEnabled = true;
-      serverPort = httpsPort;
-      console.log(`[Gateway] SSL enabled with cert: ${certPath}${ca ? ` and CA bundle: ${caPath}` : ""}`);
-    } catch (error) {
-      console.error(`[Gateway] Failed to load SSL certificates. Falling back to HTTP.`);
-      console.error(`[Gateway] Make sure ${certPath} and ${keyPath} exist.`);
-      console.error(`[Gateway] Error: ${error}`);
-    }
-  }
-}
-
-config.port = serverPort;
-serverConfig.port = serverPort;
-
 Bun.serve(serverConfig);
 
-const protocol = sslEnabled ? 'https' : 'http';
-console.log(`[Gateway] Gateway Server running on ${protocol}://localhost:${config.port}`);
+const stack = startHttpsServers({
+  name: "Gateway",
+  sslEnabled: process.env.HTTP_USE_SSL === "true",
+  httpPort,
+  httpsPort,
+  internalPort,
+  certPath: process.env.TLS_CERT_PATH,
+  keyPath: process.env.TLS_KEY_PATH,
+  caPath: process.env.TLS_CA_PATH,
+});
+
+const protocol = stack.sslEnabled ? 'https' : 'http';
+console.log(`[Gateway] Gateway Server running on ${protocol}://localhost:${stack.publicPort}`);
 console.log(`[Gateway] Waiting for game servers to register...`);
-
-if (sslEnabled) {
-  const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
-  Bun.serve({
-    hostname: "0.0.0.0",
-    port: httpPort,
-    development: false,
-    http2: true,
-    fetch(req: Request) {
-      const url = tryParseURL(req.url);
-      if (!url) {
-        return new Response(JSON.stringify({ message: "Invalid request" }), { status: 400 });
-      }
-
-      const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-
-      if (isLocalhost && url.pathname === '/status' && req.method === 'GET') {
-
-        const servers = Array.from(gameServers.values()).map(s => {
-          const isHealthy = (Date.now() - s.lastHeartbeat) < config.serverTimeout;
-          const isFull = s.activeConnections >= s.maxConnections;
-
-          return {
-            id: s.id,
-            description: s.description || '',
-            publicHost: s.publicHost,
-            port: s.port,
-            wtPort: s.wtPort,
-            wtEnabled: s.wtEnabled === true,
-            useSSL: s.useSSL,
-            activeConnections: s.activeConnections,
-            maxConnections: s.maxConnections,
-            latency: s.latency || 0,
-            whitelisted: s.whitelisted || false,
-            status: !isHealthy ? 'offline' : (isFull ? 'full' : 'online')
-          };
-        });
-
-        return new Response(JSON.stringify({
-          totalServers: gameServers.size,
-          servers
-        }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      const sslPort = config.port === 443 ? "" : `:${config.port}`;
-      const httpsUrl = `https://${url.hostname}${sslPort}${url.pathname}${url.search}`;
-      console.log(`[Gateway] Redirecting HTTP request to: ${httpsUrl}`);
-      return Response.redirect(httpsUrl, 301);
-    }
-  });
-  console.log(`[Gateway] HTTP redirect server running on http://localhost:${httpPort}`);
-}
-
-function tryParseURL(url: string) : URL | null {
-  try {
-    return new URL(url);
-  } catch {
-    return null;
-  }
-}
 
 export {}
