@@ -679,14 +679,29 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
         }
 
         const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
-        const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
+        const options = await buildWebTransportOptions(server);
+        console.info(
+          `WebTransport: connecting to ${gameServerUrl}` +
+            (options ? " with a pinned certificate hash" : " using normal certificate validation"),
+        );
+        const gameTransport = new WebTransport(gameServerUrl, options);
         await gameTransport.ready;
         return gameTransport;
       } else {
 
         localStorage.removeItem('selectedServerId');
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Logged rather than swallowed: this path discards the selected server
+      // and retries the fallback below, so without this the only error that
+      // ever reaches the console is the second attempt's, and the first
+      // attempt fails invisibly.
+      console.error(
+        "WebTransport: connecting to the selected server failed:",
+        error?.name,
+        error?.message ?? error,
+        error?.source ? `source=${error.source}` : "",
+      );
       localStorage.removeItem('selectedServerId');
     }
   }
@@ -716,11 +731,23 @@ async function connectThroughGateway(): Promise<WebTransport | undefined> {
     }
 
     const gameServerUrl = `https://${normalizeGameHost(server.publicHost)}:${server.wtPort}`;
-    const gameTransport = new WebTransport(gameServerUrl, await buildWebTransportOptions(server));
+    const options = await buildWebTransportOptions(server);
+    console.info(
+      `WebTransport: connecting to ${gameServerUrl}` +
+        (options ? " with a pinned certificate hash" : " using normal certificate validation"),
+    );
+    const gameTransport = new WebTransport(gameServerUrl, options);
     await gameTransport.ready;
     return gameTransport;
-  } catch (error) {
-    console.error("Error connecting through gateway:", error);
+  } catch (error: any) {
+    // WebTransportError carries the useful detail on `source`, and the
+    // session's own reason often arrives on `closed` rather than `ready`.
+    console.error(
+      "Error connecting through gateway:",
+      error?.name,
+      error?.message ?? error,
+      error?.source ? `source=${error.source}` : "",
+    );
   }
 }
 
