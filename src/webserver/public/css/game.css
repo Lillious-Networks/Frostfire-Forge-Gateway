@@ -16,6 +16,11 @@
   src: url('../fonts/ComicRelief-Regular.ttf') format('truetype');
 }
 
+@font-face {
+  font-family: 'Alfa Slab One';
+  src: url('../fonts/AlfaSlabOne-Regular.ttf') format('truetype');
+}
+
 /* Reset box-sizing for all elements */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -983,7 +988,7 @@ body {
 
 #hotbar #grid {
   display: flex;
-  padding-top: 98px;
+  padding-top: 90px;
   padding-left: 50px;
   padding-right: 35px;
 }
@@ -1344,7 +1349,7 @@ input::placeholder(:not(#chat-container input)) {
   background-repeat: no-repeat;
   background-size: 100% 100%;
   width: 500px;
-  height: 161px;
+  height: 152px;
 }
 
 #level-container {
@@ -1363,7 +1368,7 @@ input::placeholder(:not(#chat-container input)) {
 #xp-bar-container {
   position: absolute;
   height: 10px;
-  top: 74px;
+  top: 72px;
   left: 36px;
   right: 37px;
   width: 428px;
@@ -1526,7 +1531,7 @@ input::placeholder(:not(#chat-container input)) {
 
 #health-bar-container {
   position: absolute;
-  top: 54;
+  top: 50;
   z-index: 101;
   left: 30;
   width: 179px;
@@ -1574,7 +1579,7 @@ input::placeholder(:not(#chat-container input)) {
 
 #stamina-bar-container {
   position: absolute;
-  top: 54;
+  top: 50;
   z-index: 101;
   right:30;
   height: 10px;
@@ -1617,10 +1622,15 @@ input::placeholder(:not(#chat-container input)) {
   position: absolute;
   bottom: 0;
   left: 1px;
-  font-size: 9px;
+  font-size: 11px;
+  font-family: 'Alfa Slab One', sans-serif;
   font-weight: bold;
   color: #ffffff;
-  text-shadow: 1px 1px 1px #000;
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.9),
+    1px -1px 0 rgba(0, 0, 0, 0.9),
+    -1px 1px 0 rgba(0, 0, 0, 0.7),
+    1px 1px 0 rgba(0, 0, 0, 0.7);
   z-index: 4;
   pointer-events: none;
   line-height: 1;
@@ -7892,6 +7902,7 @@ body.ipad-device #game-notification-container {
     width: auto !important;
     height: auto !important;
     bottom: 65px !important;
+    padding-bottom: 5px !important;
   }
 
   /* Grid of 10 glasslike squares centered at bottom */
@@ -7903,7 +7914,6 @@ body.ipad-device #game-notification-container {
     gap: 8px !important;
   }
 
-  /* Glasslike slot squares */
   #hotbar #grid .slot {
     width: 72px !important;
     height: 72px !important;
@@ -7912,9 +7922,10 @@ body.ipad-device #game-notification-container {
     min-height: 72px !important;
     max-height: 72px !important;
     flex-basis: 72px !important;
-    background: rgba(255, 255, 255, 0.1) !important;
-    border: 1px solid rgba(255, 255, 255, 0.35) !important;
-    border-radius: 4px !important;
+    background: url("../img/ui/ui-hotbar-slot.png");
+    background-size: 72px 72px;
+    background-repeat: no-repeat;
+    background-position: center;
     box-shadow: none !important;
     -webkit-box-shadow: none !important;
     backdrop-filter: none !important;
@@ -7926,6 +7937,23 @@ body.ipad-device #game-notification-container {
     max-height: 48px !important;
     width: 48px !important;
     height: 48px !important;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+  }
+
+  #hotbar #grid .slot .hotbar-key {
+    font-size: 20px !important;
+    font-family: 'Alfa Slab One', sans-serif !important;
+    bottom: 2px !important;
+    left: 2px !important;
+    font-weight: normal !important;
+    color: #fff !important;
+    text-shadow:
+      -1px -1px 0 rgba(0, 0, 0, 0.9),
+      1px -1px 0 rgba(0, 0, 0, 0.9),
+      -1px 1px 0 rgba(0, 0, 0, 0.7),
+      1px 1px 0 rgba(0, 0, 0, 0.7),
+      0 2px 4px rgba(0, 0, 0, 0.6) !important;
   }
 
   #hotbar #grid .slot:focus,
@@ -7946,7 +7974,7 @@ body.ipad-device #game-notification-container {
   /* XP bar below hotbar slots */
   #xp-bar-container {
     position: absolute !important;
-    bottom: -14px !important;
+    bottom: -6px !important;
     left: 0 !important;
     right: 0 !important;
     top: auto !important;

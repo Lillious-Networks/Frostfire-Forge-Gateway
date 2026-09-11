@@ -410,6 +410,7 @@ class EntityEditor {
           localStorage.setItem(storageKey, JSON.stringify({
             x: panel!.offsetLeft,
             y: panel!.offsetTop,
+            _deviceType: 'desktop',
           }));
         });
 
@@ -469,8 +470,12 @@ class EntityEditor {
 
       panel.style.left = newX + "px";
       panel.style.top = newY + "px";
-      localStorage.setItem(storageKey, JSON.stringify({ x: newX, y: newY }));
+      localStorage.setItem(storageKey, JSON.stringify({ x: newX, y: newY, _deviceType: 'desktop' }));
     }
+  }
+
+  private isMobileDevice(): boolean {
+    return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   }
 
   private loadStoredPanelStates() {
@@ -482,9 +487,17 @@ class EntityEditor {
     for (const { panel, storageKey, defaultX, defaultY } of panels) {
       if (!panel) continue;
 
+      // On mobile, never load saved positions
+      if (this.isMobileDevice()) {
+        panel.style.left = defaultX + "px";
+        panel.style.top = defaultY + "px";
+        continue;
+      }
+
       const stored = localStorage.getItem(storageKey);
       if (stored) {
-        const { x, y } = JSON.parse(stored);
+        const data = JSON.parse(stored);
+        const { x, y } = data;
         panel.style.left = x + "px";
         panel.style.top = y + "px";
       } else {

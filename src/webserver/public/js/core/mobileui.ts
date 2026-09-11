@@ -100,12 +100,15 @@ radialItems.forEach((item) => {
   item.addEventListener('click', (e) => {
     const hotkey = item.getAttribute('data-hotkey');
 
-    // Don't dispatch if no hotkey (e.g., Settings)
-    if (hotkey && hotkey !== 'null') {
-      dispatchHotkey(hotkey);
-    }
-
+    // Close menu first, then dispatch hotkey to avoid race conditions on mobile
     closeRadialMenu();
+
+    // Add small delay to ensure menu closes before hotkey is processed
+    if (hotkey && hotkey !== 'null') {
+      setTimeout(() => {
+        dispatchHotkey(hotkey);
+      }, 50);
+    }
   });
 });
 

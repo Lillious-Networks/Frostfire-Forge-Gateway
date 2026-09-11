@@ -3097,19 +3097,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             });
           });
 
-          setupSpellTooltip(slot, () => ({
-            name: slot.dataset.spellName,
-            description: spell.description,
-            mana: spell.mana,
-            cooldown: spell.cooldown,
-            cast_time: spell.cast_time,
-            damage: spell.damage,
-            type: spell.type,
-            effects: spell.effects,
-            aoe_radius: spell.aoe_radius,
-            ground_aoe: spell.ground_aoe,
-            ground_duration: spell.ground_duration,
-          }));
+          // Disable tooltips on mobile devices
+          if (!window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+            setupSpellTooltip(slot, () => ({
+              name: slot.dataset.spellName,
+              description: spell.description,
+              mana: spell.mana,
+              cooldown: spell.cooldown,
+              cast_time: spell.cast_time,
+              damage: spell.damage,
+              type: spell.type,
+              effects: spell.effects,
+              aoe_radius: spell.aoe_radius,
+              ground_aoe: spell.ground_aoe,
+              ground_duration: spell.ground_duration,
+            }));
+          }
 
           grid.appendChild(slot);
         }
@@ -3211,7 +3214,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         const target = Array.from(cache?.players).find(p => p?.targeted) || null;
         sendRequest({ type: "HOTBAR", data: { spell: slot.dataset.spellName, target } });
       });
-      setupSpellTooltip(slot, () => cache.spells[spell.name] || { name: spell.name });
+      // Disable tooltips on mobile devices
+      if (!window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+        setupSpellTooltip(slot, () => cache.spells[spell.name] || { name: spell.name });
+      }
 
       const empty = grid.querySelector(".slot.empty");
       if (empty) grid.replaceChild(slot, empty);

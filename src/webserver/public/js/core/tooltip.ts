@@ -13,6 +13,8 @@ let currentMouseY: number = 0;
 let currentTooltipKind: "item" | "spell" | null = null;
 
 function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mouseY: number, compareMode: boolean = false) {
+  // Never show tooltips on mobile devices
+  if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
   if (!tooltip || !itemData) return;
 
   currentTooltipElement = element;
@@ -233,6 +235,8 @@ function removeItemTooltip(element: HTMLElement) {
 }
 
 function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, mouseY: number, anchor: "cursor" | "bottom-right" = "cursor") {
+  // Never show tooltips on mobile devices
+  if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
   if (!tooltip || !spellData) return;
 
   currentTooltipElement = element;

@@ -103,12 +103,15 @@ hotbarSlots.forEach((slot, index) => {
     cast(index);
   });
 
-  setupSpellTooltip(slot, () => {
-    const spellName = slot.dataset.spellName;
-    if (!spellName) return null;
-    const spells = Cache.getInstance().spells;
-    return spells ? spells[spellName] : null;
-  }, { anchor: "bottom-right" });
+  // Disable tooltips on mobile devices
+  if (!isMobileDevice) {
+    setupSpellTooltip(slot, () => {
+      const spellName = slot.dataset.spellName;
+      if (!spellName) return null;
+      const spells = Cache.getInstance().spells;
+      return spells ? spells[spellName] : null;
+    }, { anchor: "bottom-right" });
+  }
 });
 
 const buffBar = document.getElementById("buff-bar") as HTMLDivElement;
@@ -142,20 +145,23 @@ function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = fals
   const entry = { el, timerEl, stacksEl, endTime, spell, isDebuff, info };
 
   // Tooltip describes what the effect is actively doing to the player
-  setupSpellTooltip(el, () => {
-    const spellMeta = Cache.getInstance().spells[spell];
-    return {
-      name: spell,
-      description: spellMeta?.description,
-      isDebuff: entry.isDebuff,
-      activeEffect: {
-        value: entry.info?.value,
-        interval: entry.info?.interval,
-        stacks: entry.info?.stacks,
-        remaining: Math.max(0, Math.ceil((entry.endTime - Date.now()) / 1000)),
-      },
-    };
-  });
+  // Disable tooltips on mobile devices
+  if (!isMobileDevice) {
+    setupSpellTooltip(el, () => {
+      const spellMeta = Cache.getInstance().spells[spell];
+      return {
+        name: spell,
+        description: spellMeta?.description,
+        isDebuff: entry.isDebuff,
+        activeEffect: {
+          value: entry.info?.value,
+          interval: entry.info?.interval,
+          stacks: entry.info?.stacks,
+          remaining: Math.max(0, Math.ceil((entry.endTime - Date.now()) / 1000)),
+        },
+      };
+    });
+  }
 
   // Right-click buffs (not debuffs) to cancel the effect
   if (!isDebuff) {
@@ -600,6 +606,7 @@ if (!isMobileDevice) {
 }
 
 function loadPanelPosition(element: HTMLElement, storageKey: string) {
+  // Never load positions on mobile
   if (isMobileDevice) return;
   try {
     const saved = localStorage.getItem(storageKey);
@@ -618,7 +625,7 @@ function loadPanelPosition(element: HTMLElement, storageKey: string) {
 function savePanelPosition(storageKey: string, left: string, top: string) {
   if (isMobileDevice) return;
   try {
-    localStorage.setItem(storageKey, JSON.stringify({ x: left, y: top }));
+    localStorage.setItem(storageKey, JSON.stringify({ x: left, y: top, _deviceType: 'desktop' }));
   } catch (e) { /* ignore */ }
 }
 

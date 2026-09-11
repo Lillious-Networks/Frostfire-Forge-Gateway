@@ -23,7 +23,10 @@ class DraggableUI {
   private prevViewportHeight = window.innerHeight;
 
   constructor() {
-    this.loadPositions();
+    // Only load positions on desktop, never on mobile
+    if (!this.isMobileDevice()) {
+      this.loadPositions();
+    }
     document.addEventListener('keydown', (e) => this.onKeyChange(e, true));
     document.addEventListener('keyup', (e) => this.onKeyChange(e, false));
     window.addEventListener('blur', () => {
@@ -162,11 +165,21 @@ class DraggableUI {
     this.savePosition(id, panel.position);
   }
 
+  private isMobileDevice(): boolean {
+    return window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+  }
+
   private loadPositions() {
+    // Never load positions on mobile
+    if (this.isMobileDevice()) return {};
+
     try {
       const saved = localStorage.getItem(this.storageKey);
       if (saved) {
-        return JSON.parse(saved);
+        const data = JSON.parse(saved);
+        // Store device type for future checks
+        data._deviceType = 'desktop';
+        return data;
       }
     } catch (e) {
       console.error('Error loading panel positions:', e);
@@ -180,6 +193,8 @@ class DraggableUI {
   }
 
   private savePosition(id: string, position: PanelPosition) {
+    // Never save positions on mobile
+    if (this.isMobileDevice()) return;
     try {
       const positions = this.loadPositions();
       positions[id] = position;
