@@ -143,38 +143,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   margin-left: 4px;
   font-size: 12px;
 }
-.editor-obj-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  margin: 2px 0;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.03);
-  font-size: 11px;
-  color: #fff;
-}
-.editor-obj-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(100, 180, 255, 0.3);
-}
-.editor-obj-item.active {
-  background: rgba(100, 180, 255, 0.15);
-  border-color: rgba(100, 180, 255, 0.4);
-}
-.editor-obj-label {
-  flex: 1;
-  font-family: 'Space Mono', monospace;
-  font-size: 11px;
-  font-weight: 500;
-}
-.editor-obj-eye {
-  margin-left: 8px;
-  font-size: 12px;
-}
-
 /* --- Tabs --- */
 #editor-tab-bar {
   flex-shrink: 0;
@@ -326,12 +294,6 @@ input[type="range"].editor-range::-moz-range-thumb {
   gap: 10px;
 }
 .editor-form-row > div { flex: 1; }
-.editor-form-check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 2px 0;
-}
 .editor-form-check, .editor-form-check label {
   margin-bottom: 0;
   display: inline;
@@ -367,22 +329,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 }
 .editor-danger-btn:hover { background: rgba(255, 80, 80, 0.3); }
 
-/* --- New-item button --- */
-.editor-new-btn {
-  margin: 6px;
-  padding: 7px;
-  background: rgba(46, 204, 113, 0.15);
-  color: rgba(46, 204, 113, 0.9);
-  border: 1px solid rgba(46, 204, 113, 0.3);
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: 'Comic Relief', Arial, sans-serif;
-  font-size: 11px;
-  text-align: center;
-  transition: all 0.15s;
-}
-.editor-new-btn:hover { background: rgba(46, 204, 113, 0.25); }
-
 /* --- Search input --- */
 .editor-search {
   width: 100%;
@@ -403,18 +349,6 @@ input[type="range"].editor-range::-moz-range-thumb {
   color: #e0e7ff;
   font-family: 'Space Mono', monospace;
   font-size: 12px;
-}
-.editor-name-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.editor-name-row .editor-form-label {
-  margin-bottom: 0;
-  white-space: nowrap;
-}
-.editor-form-section.no-border {
-  border-bottom: none;
 }
 
 /* --- Modal --- */
@@ -524,7 +458,8 @@ input[type="range"].editor-range::-moz-range-thumb {
 #particle-list { padding: 4px; flex: 1; overflow-y: auto; min-height: 0; }
 #particle-list::-webkit-scrollbar { width: 4px; }
 #particle-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
-#particle-preview-canvas { display: block; width: 600px; height: 450px; background: #222; image-rendering: pixelated; }
+#particle-preview-canvas { border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 6px; margin-bottom: 15px; transition: border-color 0.2s; }
+#particle-preview-canvas:hover { border-color: rgba(46, 204, 113, 0.5); }
 #editor-form { padding: 6px 8px; }
 
 #ne-particle-options { overflow-y: auto; }

@@ -53,110 +53,6 @@ body::before {
     padding: var(--spacing-unit);
 }
 
-.login-wrapper {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 4rem;
-    max-width: 1200px;
-    width: 100%;
-    align-items: center;
-}
-
-@media (min-width: 768px) {
-    .login-wrapper {
-        grid-template-columns: 1fr 1fr;
-    }
-}
-
-.hero-section {
-    display: none;
-}
-
-@media (min-width: 768px) {
-    .hero-section {
-        display: block;
-    }
-}
-
-.hero-content {
-    padding: 2rem;
-}
-
-.hero-badge {
-    display: inline-block;
-    font-family: 'Clash Display', sans-serif;
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--color-primary);
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--color-primary);
-    margin-bottom: 2rem;
-    opacity: 0;
-    animation: slideUp 0.6s ease-out 0.2s forwards;
-}
-
-.hero-title {
-    font-family: 'Clash Display', sans-serif;
-    font-size: clamp(2rem, 5vw, 3.5rem);
-    font-weight: 700;
-    line-height: 1.2;
-    margin-bottom: 1.5rem;
-    opacity: 0;
-    animation: slideUp 0.6s ease-out 0.4s forwards;
-}
-
-.hero-title-green {
-    color: var(--color-primary);
-}
-
-.hero-description {
-    font-size: 1rem;
-    line-height: 1.6;
-    color: var(--color-text-muted);
-    margin-bottom: 2rem;
-    opacity: 0;
-    animation: slideUp 0.6s ease-out 0.6s forwards;
-}
-
-.features-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    opacity: 0;
-    animation: slideUp 0.6s ease-out 0.8s forwards;
-}
-
-.feature-item {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-}
-
-.feature-icon {
-    width: 24px;
-    height: 24px;
-    min-width: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-primary);
-    font-weight: bold;
-    font-size: 0.875rem;
-}
-
-.feature-text {
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
-}
-
-.login-section {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-}
-
 .login-card {
     background: rgba(30, 41, 59, 0.8);
     border: 1px solid var(--color-border);
@@ -168,20 +64,11 @@ body::before {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
 }
 
-.login-header {
-    margin-bottom: 2rem;
-}
-
 .login-title {
     font-family: 'Clash Display', sans-serif;
     font-size: 1.75rem;
     font-weight: 700;
     margin-bottom: 0.5rem;
-}
-
-.login-subtitle {
-    font-size: 0.875rem;
-    color: var(--color-text-muted);
 }
 
 .error-message {
@@ -288,16 +175,6 @@ input[type="password"]::placeholder {
     opacity: 0.6;
     cursor: not-allowed;
     transform: none;
-}
-
-.footer {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 0.75rem;
-    z-index: 10;
 }
 
 @keyframes slideUp {
@@ -459,13 +336,6 @@ input[type="password"]::placeholder {
         justify-content: center;
     }
 
-    .login-wrapper {
-        grid-template-columns: 1fr;
-        gap: 0;
-        max-width: 440px;
-        width: 100%;
-    }
-
     .login-card,
     .register-container,
     .form-container {
@@ -474,12 +344,6 @@ input[type="password"]::placeholder {
         margin: 0 auto;
     }
 
-    .login-section {
-        display: flex;
-        justify-content: center;
-    }
-
-    .login-header,
     .register-header,
     .form-header {
         margin-bottom: 0.5rem;
@@ -492,7 +356,6 @@ input[type="password"]::placeholder {
         margin-bottom: 0.15rem;
     }
 
-    .login-subtitle,
     .register-subtitle,
     .form-header p {
         font-size: 0.7rem;
@@ -543,10 +406,6 @@ input[type="password"]::placeholder {
         height: 28px;
         font-size: 0.9rem;
     }
-
-    .hero-section {
-        display: none;
-    }
 }
 
 /* Ultra-short landscape (iPhone SE etc.) */
@@ -559,12 +418,6 @@ input[type="password"]::placeholder {
         margin: 0 auto;
     }
 
-    .login-section {
-        display: flex;
-        justify-content: center;
-    }
-
-    .login-header,
     .register-header,
     .form-header {
         margin-bottom: 0.35rem;
@@ -629,7 +482,6 @@ input[type="password"]::placeholder {
         font-size: 1.35rem;
     }
 
-    .login-subtitle,
     .register-subtitle,
     .form-header p {
         font-size: 0.8rem;
@@ -673,14 +525,5 @@ input[type="password"]::placeholder {
         left: 12px;
         width: 36px;
         height: 36px;
-    }
-
-    .hero-section {
-        display: none;
-    }
-
-    .login-wrapper {
-        grid-template-columns: 1fr;
-        gap: 0;
     }
 }
