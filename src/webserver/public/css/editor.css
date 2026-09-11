@@ -458,10 +458,28 @@ input[type="range"].editor-range::-moz-range-thumb {
 #particle-list { padding: 4px; flex: 1; overflow-y: auto; min-height: 0; }
 #particle-list::-webkit-scrollbar { width: 4px; }
 #particle-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
-#particle-preview-canvas { border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 6px; margin-bottom: 15px; transition: border-color 0.2s; }
+#particle-preview-canvas { width: 200px; height: 200px; display: block; background: #222; image-rendering: pixelated; border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 6px; margin-bottom: 15px; transition: border-color 0.2s; }
 #particle-preview-canvas:hover { border-color: rgba(46, 204, 113, 0.5); }
 #editor-form { padding: 6px 8px; }
 
-#ne-particle-options { overflow-y: auto; }
+#ne-particle-options { overflow-y: auto; max-height: 180px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 3px; }
 #ne-particle-options label { display: flex; align-items: center; padding: 4px 6px; margin: 1px 0; cursor: pointer; color: rgba(255, 255, 255, 0.7); font-family: 'Comic Relief', Arial, sans-serif; font-size: 11px; }
 #ne-particle-options label input[type="checkbox"] { width: auto; accent-color: rgba(46, 204, 113, 0.8); cursor: pointer; flex-shrink: 0; margin-right: 6px; }
+
+/* === Inline styles extracted from editor HTML pages === */
+/* NPC editor conditional sprite sections (visibility toggled via JS style.display) */
+#sprite-fields,
+#sprite-animated-fields { display: none; }
+
+/* NPC editor small hint text inside labels (e.g. "(500 max)") */
+.editor-hint { color: rgba(255,255,255,0.4); font-size: 10px; }
+
+/* NPC editor dialog/script text areas */
+#inp-dialog,
+#inp-script { resize: vertical; }
+
+/* NPC editor particle search spacing */
+#ne-particle-search { margin-bottom: 8px; }
+
+/* Loot editor item results dropdown (visibility toggled via JS style.display) */
+#le-item-results { display: none; }

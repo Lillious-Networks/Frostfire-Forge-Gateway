@@ -947,3 +947,73 @@ input[type="number"] {
         align-items: flex-start;
     }
 }
+
+/* === Inline styles extracted from animator.html === */
+#import-json-input {
+    display: none;
+}
+
+.toolbar-check-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #22c55e;
+    font-size: 0.9em;
+}
+
+.toolbar-check-label-plain {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#load-image-btn-alt {
+    margin-top: 8px;
+}
+
+.panel-heading-gap {
+    margin-top: 12px;
+}
+
+.section-header-tight {
+    margin-bottom: 6px;
+}
+
+#info-panel {
+    display: none;
+}
+
+#direction-select-container {
+    margin-top: 12px;
+    display: none;
+}
+
+.btn-icon-group {
+    display: flex;
+    gap: 6px;
+}
+
+.btn-icon-group-center {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+#direction-select {
+    flex: 1;
+}
+
+.playback-loop-label {
+    margin-left: 8px;
+    font-size: 0.85em;
+}
+
+#confirm-message {
+    margin-bottom: 20px;
+}
+
+.confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}

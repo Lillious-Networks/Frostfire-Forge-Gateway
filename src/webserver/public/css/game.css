@@ -5502,3 +5502,22 @@ body.ipad-device #game-notification-container {
 .le-item-result img{image-rendering:pixelated;flex-shrink:0}
 .le-add-btn{height:24px;padding:0 8px;font-size:10px;background:rgba(46,204,113,0.15);color:#2ecc71;border:1px solid rgba(46,204,113,0.3);border-radius:3px;cursor:pointer;font-family:'Clash Display',sans-serif;white-space:nowrap}
 .le-add-btn:hover{background:rgba(46,204,113,0.25);border-color:rgba(46,204,113,0.5)}
+
+/* === Inline styles extracted from game.html === */
+#timelapse-btn{font-size:0.75em;padding:2px 6px;margin-top:3px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;border-radius:2px;cursor:pointer}
+
+/* Guild create section (visibility toggled via JS style.display) */
+#guild-create-section{display:none}
+
+/* Entity editor container (visibility toggled via JS style.display) */
+#entity-editor-container{display:none}
+
+/* New-entity modal field label */
+.ee-modal-label{display:block;margin-top:16px;font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.5px}
+
+/* Delete-entity modal text */
+.ee-delete-text{color:rgba(255,255,255,0.8);margin:12px 0 0 0;font-size:13px}
+#ee-delete-entity-name{color:#ff6666;font-weight:600}
+
+/* Item tooltip (visibility toggled via JS style.display) */
+#item-tooltip{display:none}

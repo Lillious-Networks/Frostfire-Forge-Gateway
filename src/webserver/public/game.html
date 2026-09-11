@@ -116,7 +116,7 @@
           <span id="time-override-label" class="ui">12:00</span>
         </div>
         <div id="timelapse-toggle" class="ui">
-          <button id="timelapse-btn" class="ui" style="font-size:0.75em;padding:2px 6px;margin-top:3px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;border-radius:2px;cursor:pointer;">Timelapse</button>
+          <button id="timelapse-btn" class="ui">Timelapse</button>
         </div>
       </div>
       <!--
@@ -286,7 +286,7 @@
           <div id="guild-rank" class="ui"></div>
           <div id="guild-header-separator" class="ui"></div>
           <div id="guild-members-list" class="ui"></div>
-          <div id="guild-create-section" class="ui" style="display:none;">
+          <div id="guild-create-section" class="ui">
             <label id="guild-create-label" class="guild-label ui">Create Guild</label>
             <input type="text" id="guild-create-input" class="guild-input ui" placeholder="Guild Name" autocomplete="off" spellcheck="false">
             <button type="button" id="guild-create-button" class="guild-button ui">Create</button>
@@ -361,13 +361,13 @@
       </div>
     </div>
     <!-- NPC Editor -->
-    <div id="entity-editor-container" class="ui" style="display: none;"></div>
+    <div id="entity-editor-container" class="ui"></div>
 
     <!-- New Entity Modal -->
     <div id="ee-new-entity-modal" class="ui ee-modal">
       <div class="ee-modal-content ui">
         <h2 class="ui">Create New Entity</h2>
-        <label class="ui" style="display: block; margin-top: 16px; font-size: 11px; color: rgba(255, 255, 255, 0.6); text-transform: uppercase; letter-spacing: 0.5px;">Entity Name</label>
+        <label class="ui ee-modal-label">Entity Name</label>
         <input type="text" id="ee-new-entity-name-input" class="ui modal-input" placeholder="Enter entity name">
         <div>
           <button type="button" id="ee-modal-confirm" class="ui">Create</button>
@@ -380,7 +380,7 @@
     <div id="ee-delete-entity-modal" class="ui ee-modal">
       <div class="ee-modal-content ui">
         <h2 class="ui">Delete Entity</h2>
-        <p class="ui" style="color: rgba(255, 255, 255, 0.8); margin: 12px 0 0 0; font-size: 13px;">Are you sure you want to delete <span id="ee-delete-entity-name" style="color: #ff6666; font-weight: 600;"></span>?</p>
+        <p class="ui ee-delete-text">Are you sure you want to delete <span id="ee-delete-entity-name"></span>?</p>
         <div>
           <button type="button" id="ee-delete-confirm" class="ui">Delete</button>
           <button type="button" id="ee-delete-cancel" class="ui">Cancel</button>
@@ -389,7 +389,7 @@
     </div>
 
     <!-- Item Tooltip -->
-    <div id="item-tooltip" class="ui" style="display: none;">
+    <div id="item-tooltip" class="ui">
       <div id="tooltip-name" class="ui"></div>
       <div id="tooltip-type" class="ui"></div>
       <div id="tooltip-stats" class="ui"></div>

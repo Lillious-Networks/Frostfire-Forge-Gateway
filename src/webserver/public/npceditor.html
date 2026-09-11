@@ -66,11 +66,11 @@
                   <option value="animated">Animated Sprite</option>
                 </select>
               </div>
-              <div class="editor-form-section" id="sprite-fields" style="display:none">
+              <div class="editor-form-section" id="sprite-fields">
                 <label class="editor-form-label">Body (Required)</label>
                 <input type="text" id="inp-sprite-body" class="editor-form-input" spellcheck="false" placeholder="e.g. npc_merchant_body">
               </div>
-              <div id="sprite-animated-fields" style="display:none">
+              <div id="sprite-animated-fields">
                 <div class="editor-form-section">
                   <label class="editor-form-label">Equipment</label>
                 </div>
@@ -110,20 +110,20 @@
                 <input type="text" id="inp-name" class="editor-form-input" spellcheck="false" maxlength="64">
               </div>
               <div class="editor-form-section">
-                <label class="editor-form-label">Dialog <span style="color:rgba(255,255,255,0.4);font-size:10px">(500 max)</span></label>
-                <textarea id="inp-dialog" class="editor-form-input" maxlength="500" rows="3" spellcheck="false" style="resize:vertical"></textarea>
+                <label class="editor-form-label">Dialog <span class="editor-hint">(500 max)</span></label>
+                <textarea id="inp-dialog" class="editor-form-input" maxlength="500" rows="3" spellcheck="false"></textarea>
               </div>
               <div class="editor-form-section">
-                <label class="editor-form-label">Script <span style="color:rgba(255,255,255,0.4);font-size:10px">(5000 max)</span></label>
-                <textarea id="inp-script" class="editor-form-input" maxlength="5000" rows="5" spellcheck="false" style="resize:vertical"></textarea>
+                <label class="editor-form-label">Script <span class="editor-hint">(5000 max)</span></label>
+                <textarea id="inp-script" class="editor-form-input" maxlength="5000" rows="5" spellcheck="false"></textarea>
               </div>
             </div>
             <!-- Effects Tab -->
             <div class="editor-tab-panel" data-tab="effects">
               <div class="editor-form-section">
                 <label class="editor-form-label">Particles</label>
-                <input type="text" id="ne-particle-search" class="editor-form-input" placeholder="Search particles..." style="margin-bottom:8px">
-                <div id="ne-particle-options" style="max-height:180px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:3px"></div>
+                <input type="text" id="ne-particle-search" class="editor-form-input" placeholder="Search particles...">
+                <div id="ne-particle-options"></div>
               </div>
             </div>
           </div>

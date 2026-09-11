@@ -25,10 +25,10 @@
                 <div class="toolbar-section">
                     <button id="new-metadata-btn" class="btn btn-primary">New</button>
                     <label for="import-json-input" class="btn btn-secondary">Import</label>
-                    <input type="file" id="import-json-input" accept=".json" style="display: none;">
+                    <input type="file" id="import-json-input" accept=".json">
                 </div>
                 <div class="toolbar-section">
-                    <label style="display: flex; align-items: center; gap: 8px; color: #22c55e; font-size: 0.9em;">
+                    <label class="toolbar-check-label">
                         <input type="checkbox" id="autosave-checkbox" autocomplete="off">
                         Autosave
                     </label>
@@ -46,12 +46,12 @@
                         <div id="spritesheet-preview-container">
                             <div id="spritesheet-preview-placeholder">
                                 <span>No spritesheet loaded</span>
-                                <button id="load-image-btn-alt" class="btn btn-secondary" style="margin-top: 8px;">Load Spritesheet</button>
+                                <button id="load-image-btn-alt" class="btn btn-secondary">Load Spritesheet</button>
                             </div>
                             <canvas id="spritesheet-preview-canvas"></canvas>
                         </div>
 
-                        <h3 style="margin-top: 12px;">Settings</h3>
+                        <h3 class="panel-heading-gap">Settings</h3>
                         <div class="settings-grid">
                             <div class="form-group">
                                 <label for="frame-width">Frame Width:</label>
@@ -74,7 +74,7 @@
                     </div>
 
                     <!-- Metadata Info -->
-                    <div id="info-panel" class="panel-section" style="display: none;">
+                    <div id="info-panel" class="panel-section">
                         <h3>Info</h3>
                         <div class="form-group">
                             <label for="metadata-name">Name:</label>
@@ -84,9 +84,9 @@
                             <label for="image-source">Image Source:</label>
                             <input type="text" id="image-source" placeholder="e.g., player_body_base.png" autocomplete="off">
                         </div>
-                        <div class="section-header" style="margin-top: 12px;">
+                        <div class="section-header panel-heading-gap">
                             <h4>Animation</h4>
-                            <div style="display: flex; gap: 6px;">
+                            <div class="btn-icon-group">
                                 <button id="add-animation-btn" class="btn btn-icon btn-secondary" title="Add Animation">+</button>
                                 <button id="edit-animation-btn" class="btn btn-icon btn-secondary" title="Edit Animation">✎</button>
                                 <button id="delete-animation-btn" class="btn btn-icon btn-danger" title="Delete Animation">×</button>
@@ -95,17 +95,17 @@
                         <select id="animation-select" class="form-control" autocomplete="off">
                             <option value="">Select animation...</option>
                         </select>
-                        <div id="direction-select-container" style="margin-top: 12px; display: none;">
-                            <div class="section-header" style="margin-bottom: 6px;">
+                        <div id="direction-select-container">
+                            <div class="section-header section-header-tight">
                                 <h4>Direction</h4>
-                                <div style="display: flex; gap: 6px;">
+                                <div class="btn-icon-group">
                                     <button id="add-direction-btn" class="btn btn-icon btn-secondary" title="Add Direction">+</button>
                                     <button id="edit-direction-btn" class="btn btn-icon btn-secondary" title="Edit Direction">✎</button>
                                     <button id="delete-direction-btn" class="btn btn-icon btn-danger" title="Delete Direction">×</button>
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 6px; align-items: center;">
-                                <select id="direction-select" class="form-control" autocomplete="off" style="flex: 1;">
+                            <div class="btn-icon-group-center">
+                                <select id="direction-select" class="form-control" autocomplete="off">
                                     <option value="">Select direction...</option>
                                 </select>
                             </div>
@@ -150,7 +150,7 @@
                         <div id="playback-controls">
                             <button id="play-pause-btn" class="btn btn-play">▶</button>
                             <button id="stop-btn" class="btn btn-stop">⏹</button>
-                            <label style="margin-left: 8px; font-size: 0.85em;">
+                            <label class="playback-loop-label">
                                 <input type="checkbox" id="preview-loop-checkbox" checked>
                                 Loop
                             </label>
@@ -173,7 +173,7 @@
     </div>
 
     <!-- Animation Modal Template -->
-    <div id="animation-modal" class="modal" style="display: none;">
+    <div id="animation-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modal-title">Add Animation</h2>
@@ -190,7 +190,7 @@
     </div>
 
     <!-- Direction Modal Template -->
-    <div id="direction-modal" class="modal" style="display: none;">
+    <div id="direction-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Add Direction</h2>
@@ -224,7 +224,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 8px;">
+                    <label class="toolbar-check-label-plain">
                         <input type="checkbox" id="loop-checkbox" autocomplete="off">
                         Loop Animation
                     </label>
@@ -235,7 +235,7 @@
     </div>
 
     <!-- Timeline Frame Properties Modal -->
-    <div id="frame-duration-modal" class="modal" style="display: none;">
+    <div id="frame-duration-modal" class="modal">
         <div class="modal-content modal-small">
             <div class="modal-header">
                 <h2>Frame Properties</h2>
@@ -278,15 +278,15 @@
     </div>
 
     <!-- Confirmation Modal -->
-    <div id="confirm-modal" class="modal" style="display: none;">
+    <div id="confirm-modal" class="modal">
         <div class="modal-content modal-small">
             <div class="modal-header">
                 <h2 id="confirm-title">Confirm</h2>
                 <span class="modal-close">&times;</span>
             </div>
             <div class="modal-body">
-                <p id="confirm-message" style="margin-bottom: 20px;"></p>
-                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <p id="confirm-message"></p>
+                <div class="confirm-actions">
                     <button id="confirm-cancel-btn" class="btn btn-secondary">Cancel</button>
                     <button id="confirm-ok-btn" class="btn btn-primary">Okay</button>
                 </div>
