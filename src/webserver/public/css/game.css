@@ -5495,7 +5495,7 @@ body.ipad-device #game-notification-container {
 .le-inline-inp{width:48px;height:24px;font-size:11px;background:rgba(255,255,255,0.06);border:1px solid rgba(71,85,105,0.4);border-radius:3px;color:#e0e7ff;text-align:center;padding:0 2px;font-family:'Space Mono',monospace;box-sizing:border-box}
 .le-inline-inp:focus{outline:none;border-color:rgba(46,204,113,0.6);background:rgba(46,204,113,0.08)}
 .le-inline-inp::-webkit-outer-spin-button,.le-inline-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.le-inline-inp[type=number]{-moz-appearance:textfield}
+.le-inline-inp[type=number]{appearance:textfield;-moz-appearance:textfield}
 .le-item-results{position:absolute;z-index:100;max-height:280px;overflow-y:auto;background:#1a2332;border:1px solid rgba(71,85,105,0.5);border-radius:3px;margin-top:2px;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.4)}
 .le-item-result{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;font-size:12px;color:#e0e7ff;font-family:'Clash Display',sans-serif;border-bottom:1px solid rgba(71,85,105,0.15)}
 .le-item-result:hover{background:rgba(255,255,255,0.05)}
