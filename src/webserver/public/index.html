@@ -3,10 +3,11 @@
     <head>
         <link rel="icon" type="image/ico" href="./img/icons/favicon.ico">
         <meta charset="utf-8">
+        <meta http-equiv="Cache-Control" content="no-cache">
         <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black">
         <meta name="theme-color" content="#000000">
         <title>Frostfire Forge - Player Login</title>
         <link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -14,9 +15,13 @@
         <link rel="stylesheet" href="./css/index.css">
         <script src="./js/web/notification.js"></script>
         <script defer src="./js/web/login.js"></script>
+        <script defer src="./js/web/pulltorefresh.js"></script>
     </head>
     <body>
-        <a href="/manage-profile" class="profile-button">Manage Profile</a>
+        <div id="ptr-indicator" aria-hidden="true">
+            <svg id="ptr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            <span id="ptr-label">Pull to refresh</span>
+        </div>
         <div class="container">
             <div class="login-container">
 
@@ -38,6 +43,7 @@
                 <div class="links-container">
                     <a href="/registration" id="register-link">Create new account</a>
                     <a href="/forgot-password" id="forgot-password-link">Forgot password?</a>
+                    <a href="/manage-profile" id="manage-profile-link">Manage profile</a>
                 </div>
             </div>
         </div>

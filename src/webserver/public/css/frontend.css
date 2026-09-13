@@ -59,6 +59,7 @@ body::before {
     padding: 2.5rem;
     border-radius: var(--radius);
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     opacity: 0;
     animation: slideUp 0.6s ease-out 1s forwards;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
@@ -196,7 +197,6 @@ input[type="password"]::placeholder {
     }
 }
 
-/* Notification Styles */
 .notification {
     position: fixed;
     bottom: 2rem;
@@ -212,6 +212,7 @@ input[type="password"]::placeholder {
     animation: slideInRight 0.3s ease-out forwards;
     z-index: 1000;
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     transition: var(--transition);
 }
 
@@ -321,11 +322,17 @@ input[type="password"]::placeholder {
     }
 }
 
-/* Mobile landscape optimization */
 @media (max-height: 500px) and (orientation: landscape) {
-    html, body {
+
+    html {
+        height: auto;
         overflow-y: auto;
-        overflow-x: hidden;
+        overflow-x: clip;
+    }
+
+    body {
+        height: auto;
+        overflow: visible;
     }
 
     .container {
@@ -408,7 +415,6 @@ input[type="password"]::placeholder {
     }
 }
 
-/* Ultra-short landscape (iPhone SE etc.) */
 @media (max-height: 380px) and (orientation: landscape) {
     .login-card,
     .register-container,
@@ -457,10 +463,17 @@ input[type="password"]::placeholder {
     }
 }
 
-/* Mobile portrait optimization */
 @media (max-width: 480px) and (orientation: portrait) {
-    html, body {
-        overflow: auto;
+
+    html {
+        height: auto;
+        overflow-y: auto;
+        overflow-x: clip;
+    }
+
+    body {
+        height: auto;
+        overflow: visible;
     }
 
     .container {
@@ -525,5 +538,70 @@ input[type="password"]::placeholder {
         left: 12px;
         width: 36px;
         height: 36px;
+    }
+}
+
+html {
+    overscroll-behavior-y: none;
+}
+
+#ptr-indicator {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top, 0px));
+    left: 50%;
+    transform: translate(-50%, -150%);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    background: rgba(30, 41, 59, 0.92);
+    border: 1px solid var(--color-border, #475569);
+    border-radius: 999px;
+    color: var(--color-primary, #22c55e);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    z-index: 90;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: transform 0.25s ease, opacity 0.25s ease, border-color 0.25s ease, visibility 0.25s ease;
+}
+#ptr-indicator.ptr-pulling,
+#ptr-indicator.ptr-refreshing {
+    opacity: 1;
+    visibility: visible;
+}
+#ptr-indicator.ptr-pulling {
+    transition: none;
+}
+#ptr-indicator.ptr-ready {
+    border-color: var(--color-primary, #22c55e);
+}
+#ptr-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+#ptr-indicator.ptr-refreshing #ptr-icon {
+    animation: ptr-spin 0.8s linear infinite;
+}
+@keyframes ptr-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    #ptr-indicator.ptr-refreshing #ptr-icon {
+        animation: none;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .home-button {
+        display: none !important;
     }
 }

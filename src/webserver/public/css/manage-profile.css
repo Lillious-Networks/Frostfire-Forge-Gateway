@@ -1,4 +1,31 @@
-/* manage-profile page styles - extracted from manage-profile.html */
+.container.swipe-drag {
+    box-shadow: -24px 0 48px rgba(0, 0, 0, 0.55);
+    will-change: transform, opacity;
+}
+.home-button.swipe-armed {
+    border-color: var(--color-primary);
+    background: rgba(34, 197, 94, 0.15);
+    box-shadow: 0 0 12px rgba(34, 197, 94, 0.35);
+}
+.home-button.swipe-hint {
+    animation: swipe-hint-nudge 1.2s ease-in-out 1;
+}
+@keyframes swipe-hint-nudge {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    35% {
+        transform: translateX(12px);
+    }
+    60% {
+        transform: translateX(4px);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .home-button.swipe-hint {
+        animation: none;
+    }
+}
 .page {
                 max-width: 840px;
                 width: 100%;
@@ -25,6 +52,7 @@
                 border-radius: var(--radius);
                 padding: 2rem;
                 backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
                 margin-bottom: 1.5rem;
             }
 
@@ -116,6 +144,7 @@
                 border-radius: var(--radius);
                 padding: 1.75rem;
                 backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
             }
             .setting-card h3 {
                 font-family: 'Clash Display', sans-serif;
@@ -352,6 +381,7 @@
                 justify-content: center;
                 z-index: 100;
                 backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
             }
             .modal-box {
                 background: rgba(30, 41, 59, 0.98);
@@ -426,7 +456,6 @@
                 }
             }
 
-/* === Inline styles extracted from manage-profile.html === */
 #reset-password-section .page-header {
     margin-bottom: 0;
 }
@@ -465,4 +494,246 @@
 
 .modal-desc-tall {
     line-height: 1.5;
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+    .page {
+        margin: max(0.75rem, env(safe-area-inset-top, 0px)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+    }
+
+    .page-header {
+        margin-bottom: 0.7rem;
+    }
+    .page-header h1 {
+        font-size: 1.05rem;
+        margin-bottom: 0.15rem;
+    }
+    .page-header p {
+        font-size: 0.7rem;
+    }
+
+    .profile-card {
+        padding: 0.8rem 0.9rem;
+        margin-bottom: 0.7rem;
+    }
+
+    .avatar {
+        width: 38px;
+        height: 38px;
+    }
+    .avatar svg {
+        width: 17px;
+        height: 17px;
+    }
+    .avatar-row {
+        gap: 0.7rem;
+    }
+    .avatar-details {
+        gap: 0.6rem;
+    }
+    .avatar-details .value {
+        font-size: 0.8rem;
+    }
+    .avatar-details .value-muted {
+        font-size: 0.7rem;
+    }
+
+    .card-grid {
+        gap: 0.7rem;
+        margin-bottom: 0.7rem;
+    }
+
+    .setting-card {
+        padding: 0.8rem 0.9rem;
+    }
+    .setting-card h3 {
+        font-size: 0.78rem;
+        margin-bottom: 0.2rem;
+    }
+    .setting-card .desc {
+        font-size: 0.68rem;
+        margin-bottom: 0.6rem;
+        line-height: 1.45;
+    }
+
+    .card-header {
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.35rem;
+    }
+    .card-header h3 {
+        font-size: 0.8rem;
+    }
+    .card-header-checkbox {
+        width: 16px;
+        height: 16px;
+    }
+
+    .form-group {
+        gap: 0.25rem;
+        margin-bottom: 0.55rem;
+    }
+    label {
+        font-size: 0.62rem;
+    }
+    input[type="email"],
+    input[type="text"],
+    input[type="password"] {
+        padding: 0.45rem 0.65rem;
+        font-size: 16px;
+    }
+
+    .password-row {
+        gap: 0.4rem;
+    }
+
+    .btn {
+        padding: 0.45rem 0.85rem;
+        font-size: 0.68rem;
+    }
+    .btn-outline {
+        padding: 0.35rem 0.7rem;
+        font-size: 0.62rem;
+    }
+    .row-actions {
+        gap: 0.5rem;
+    }
+
+    .security-banner {
+        padding: 0.45rem 0.7rem;
+        margin-bottom: 0.7rem;
+        font-size: 0.7rem;
+    }
+
+    .key-item {
+        padding: 0.35rem 0.55rem;
+        margin-bottom: 0.3rem;
+    }
+    .key-item .key-label {
+        font-size: 0.72rem;
+    }
+    .key-item .key-meta {
+        font-size: 0.62rem;
+    }
+
+    .checkbox-row {
+        padding: 0.35rem 0;
+        gap: 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    .msg {
+        padding: 0.4rem 0.65rem;
+        margin-top: 0.5rem;
+        font-size: 0.65rem;
+    }
+
+    .empty-note {
+        font-size: 0.68rem;
+    }
+
+    .modal-desc {
+        font-size: 0.68rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .modal-box {
+        padding: 1rem 1.15rem;
+        width: 400px;
+        max-height: calc(100vh - 2rem);
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+    }
+    .modal-box h3 {
+        font-size: 0.88rem;
+        margin-bottom: 0.65rem;
+    }
+    .modal-box .form-group {
+        margin-bottom: 0.65rem;
+    }
+    .modal-actions {
+        gap: 0.5rem;
+    }
+
+    .qrcode {
+        margin: 0.5rem 0;
+    }
+    .qrcode img {
+        width: 96px;
+        height: 96px;
+    }
+
+    .home-button {
+        top: max(10px, env(safe-area-inset-top));
+        left: max(10px, env(safe-area-inset-left));
+        width: 30px;
+        height: 30px;
+        font-size: 0.95rem;
+    }
+
+    #reset-password-section form {
+        margin-top: 0.8rem;
+    }
+}
+
+@media (max-height: 380px) and (orientation: landscape) {
+    .page-header {
+        margin-bottom: 0.5rem;
+    }
+    .page-header h1 {
+        font-size: 0.95rem;
+    }
+
+    .profile-card {
+        padding: 0.65rem 0.8rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .setting-card {
+        padding: 0.65rem 0.8rem;
+    }
+    .setting-card .desc {
+        margin-bottom: 0.5rem;
+    }
+
+    .avatar {
+        width: 32px;
+        height: 32px;
+    }
+    .avatar svg {
+        width: 15px;
+        height: 15px;
+    }
+
+    .card-grid {
+        gap: 0.6rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .form-group {
+        margin-bottom: 0.45rem;
+    }
+
+    .modal-box {
+        padding: 0.85rem 1rem;
+    }
+
+    .qrcode img {
+        width: 80px;
+        height: 80px;
+    }
+
+    .home-button {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) and (orientation: portrait) {
+    .page {
+        margin-top: max(2rem, env(safe-area-inset-top, 0px));
+    }
+
+    .home-button {
+        top: max(12px, env(safe-area-inset-top, 0px));
+        left: max(12px, env(safe-area-inset-left, 0px));
+    }
 }

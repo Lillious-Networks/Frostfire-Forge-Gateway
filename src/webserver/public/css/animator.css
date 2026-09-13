@@ -2,7 +2,7 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    /* Custom scrollbar */
+
     scrollbar-width: thin;
     scrollbar-color: rgba(34, 197, 94, 0.6) rgba(15, 23, 42, 0.9);
 }
@@ -51,7 +51,6 @@ input, select {
     outline: none;
 }
 
-/* Remove arrows from all number inputs */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
@@ -151,7 +150,6 @@ input[type="number"] {
     min-height: 0;
 }
 
-/* Toolbar */
 #animator-toolbar {
     background: transparent;
     backdrop-filter: none;
@@ -171,7 +169,6 @@ input[type="number"] {
     gap: 12px;
 }
 
-/* Main Content Layout - 2 Column */
 #animator-content {
     display: grid;
     grid-template-columns: 320px 1fr;
@@ -201,7 +198,6 @@ input[type="number"] {
     overflow-y: auto;
 }
 
-/* Buttons */
 .btn {
     font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
     font-size: 0.85em;
@@ -298,7 +294,6 @@ input[type="number"] {
     box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
 }
 
-/* Settings Grid */
 .settings-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -306,10 +301,10 @@ input[type="number"] {
     margin-bottom: 10px;
 }
 
-/* Panels */
 .panel-section {
     background: rgba(30, 41, 59, 0.3);
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(34, 197, 94, 0.15);
     border-radius: 12px;
     padding: 16px;
@@ -349,7 +344,6 @@ input[type="number"] {
     margin-bottom: 0;
 }
 
-/* Spritesheet Preview */
 #spritesheet-preview-container {
     position: relative;
     background: rgba(0, 0, 0, 0.4);
@@ -388,7 +382,6 @@ input[type="number"] {
     display: block;
 }
 
-/* Frames Grid */
 .frames-panel {
     display: flex;
     flex-direction: column;
@@ -474,7 +467,6 @@ input[type="number"] {
     font-size: 0.8em;
 }
 
-/* Timeline Scrubber */
 #timeline-scrubber-container {
     margin-top: 10px;
     width: 100%;
@@ -554,7 +546,6 @@ input[type="number"] {
     transition: none !important;
 }
 
-/* Form Groups */
 .form-group {
     margin-bottom: 10px;
 }
@@ -627,7 +618,6 @@ input[type="number"] {
     margin-bottom: 4px;
 }
 
-/* Timeline */
 .timeline-panel {
     flex: 1;
     min-height: 0;
@@ -643,7 +633,6 @@ input[type="number"] {
     flex-wrap: wrap;
 }
 
-/* Frame Sequence List */
 #frame-sequence-container {
     margin-top: 10px;
     margin-bottom: 8px;
@@ -663,7 +652,6 @@ input[type="number"] {
     min-width: 0;
 }
 
-/* Timeline Frame Item (inline styled but needs drag states) */
 .timeline-frame-item {
     transition: margin 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
     position: relative;
@@ -679,7 +667,6 @@ input[type="number"] {
     cursor: grabbing;
 }
 
-/* Insert indicators - show a gap where the item will be dropped */
 .timeline-frame-item.drop-before {
     margin-left: 90px;
 }
@@ -688,7 +675,6 @@ input[type="number"] {
     margin-right: 90px;
 }
 
-/* Visual line indicator */
 .timeline-frame-item.drop-before::before,
 .timeline-frame-item.drop-after::after {
     content: '';
@@ -711,7 +697,6 @@ input[type="number"] {
     right: -48px;
 }
 
-/* Grid Editor */
 #timeline-grid-container {
     position: relative;
     background: rgba(0, 0, 0, 0.4);
@@ -750,7 +735,6 @@ input[type="number"] {
     text-align: center;
 }
 
-/* Modals */
 .modal {
     display: none;
     position: fixed;
@@ -761,6 +745,7 @@ input[type="number"] {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     align-items: center;
     justify-content: center;
     animation: fadeIn 0.2s ease;
@@ -778,6 +763,7 @@ input[type="number"] {
 .modal-content {
     background: rgba(30, 41, 59, 0.9);
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-radius: 24px;
     border: 1px solid rgba(34, 197, 94, 0.2);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
@@ -841,7 +827,6 @@ input[type="number"] {
     color: #f1f5f9;
 }
 
-/* Notification System */
 #notification-container {
     position: fixed;
     top: 20px;
@@ -856,6 +841,7 @@ input[type="number"] {
 .notification {
     background: rgba(30, 41, 59, 0.9);
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border-radius: 0 12px 12px 0;
     padding: 16px 20px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -903,7 +889,6 @@ input[type="number"] {
     }
 }
 
-/* Responsive Design */
 @media (max-width: 1400px) {
     #animator-content {
         grid-template-columns: 1fr;
@@ -948,7 +933,6 @@ input[type="number"] {
     }
 }
 
-/* === Inline styles extracted from animator.html === */
 #import-json-input {
     display: none;
 }

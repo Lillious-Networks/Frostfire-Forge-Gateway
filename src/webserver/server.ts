@@ -39,6 +39,14 @@ const service_worker_js = await Bun.file(
   new URL("./public/js/web/service-worker.js", import.meta.url)
 ).text();
 
+// 2FA/email verification codes are stored uppercase and compare
+// case-insensitively, so "ab12cd" matches "AB12CD" on any database
+// (SQLite string comparison is case-sensitive, unlike MySQL's default).
+function codesMatch(stored: unknown, supplied: unknown): boolean {
+  if (typeof stored !== 'string' || typeof supplied !== 'string') return false;
+  return stored.toUpperCase() === supplied.toUpperCase();
+}
+
 function getClientIP(req: Request): string | undefined {
   return req.headers.get("X-Real-Client-IP") || undefined;
 }
@@ -356,7 +364,7 @@ async function authenticate(req: Request) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
 
-  const result = await query("SELECT * FROM accounts WHERE token = ? AND username = ? AND verification_code = ? LIMIT 1", [token, username, code]) as any;
+  const result = await query("SELECT * FROM accounts WHERE token = ? AND username = ? AND UPPER(verification_code) = ? LIMIT 1", [token, username, code.toUpperCase()]) as any;
   if (result.length === 0) {
     return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
   }
@@ -803,7 +811,7 @@ async function handleChangeEmail(req: Request) {
       "SELECT verification_code FROM accounts WHERE username = ?",
       [username]
     ) as any[];
-    if (!result.length || result[0].verification_code !== body.oldEmailCode) {
+    if (!result.length || !codesMatch(result[0].verification_code, body.oldEmailCode)) {
       return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
     }
 
@@ -830,7 +838,7 @@ async function handleChangeEmail(req: Request) {
       "SELECT verification_code, pending_email FROM accounts WHERE username = ?",
       [username]
     ) as any[];
-    if (!result.length || result[0].verification_code !== body.emailCode || result[0].pending_email !== email.toLowerCase()) {
+    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode) || result[0].pending_email !== email.toLowerCase()) {
       return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
     }
     await query("UPDATE accounts SET email = pending_email, email_verified = 1, verification_code = NULL, pending_email = NULL WHERE username = ?", [username]);
@@ -892,7 +900,7 @@ async function handleChangePassword(req: Request) {
         "SELECT verification_code FROM accounts WHERE username = ?",
         [username]
       ) as any[];
-      if (!result.length || result[0].verification_code !== body.emailCode) {
+      if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
         return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
       }
       await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
@@ -1004,7 +1012,7 @@ async function handleDisableTOTP(req: Request) {
       "SELECT verification_code FROM accounts WHERE username = ?",
       [username]
     ) as any[];
-    if (!result.length || result[0].verification_code !== body.emailCode) {
+    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
       return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
     }
     await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
@@ -1146,7 +1154,7 @@ async function handleRemoveWebAuthn(req: Request) {
       "SELECT verification_code FROM accounts WHERE username = ?",
       [username]
     ) as any[];
-    if (!result.length || result[0].verification_code !== body.emailCode) {
+    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
       return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
     }
     await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);
@@ -1312,7 +1320,7 @@ async function handleVerify2FAEmail(req: Request) {
     "SELECT verification_code FROM accounts WHERE username = ?",
     [username]
   ) as any[];
-  if (!result.length || result[0].verification_code !== code) {
+  if (!result.length || !codesMatch(result[0].verification_code, code)) {
     return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
   }
 
@@ -1524,7 +1532,7 @@ async function handleSet2FARequirement(req: Request) {
       "SELECT verification_code FROM accounts WHERE username = ?",
       [username]
     ) as any[];
-    if (!result.length || result[0].verification_code !== body.emailCode) {
+    if (!result.length || !codesMatch(result[0].verification_code, body.emailCode)) {
       return new Response(JSON.stringify({ message: "Invalid verification code" }), { status: 400 });
     }
     await query("UPDATE accounts SET verification_code = NULL WHERE username = ?", [username]);

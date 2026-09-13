@@ -803,7 +803,11 @@ function toggleUI(element: HTMLElement, _toggleFlag?: boolean, _hidePosition?: n
 }
 
 function toggleDebugContainer() {
-  debugContainer.style.display = debugContainer.style.display === "block" ? "none" : "block";
+  const show = debugContainer.style.display !== "block";
+  debugContainer.style.display = show ? "block" : "none";
+  // The FPS readout lives with the debug menu.
+  const fpsCounter = document.getElementById("fps-counter");
+  if (fpsCounter) fpsCounter.style.display = show ? "block" : "none";
 }
 
 const statScreenClose = document.getElementById("stat-screen-close") as HTMLButtonElement;

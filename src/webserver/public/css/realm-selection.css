@@ -1,4 +1,3 @@
-/* Realm Selection Page */
 .realm-selection-page {
     display: flex;
     flex-direction: column;
@@ -8,12 +7,10 @@
     overflow: hidden;
 }
 
-/* Header */
 .realm-header {
     background: transparent;
     border-bottom: 1px solid var(--color-border);
     padding: 1.5rem 2rem;
-    backdrop-filter: blur(10px);
     z-index: 20;
 }
 
@@ -67,7 +64,6 @@
     margin: 0.375rem 0 0 0;
 }
 
-/* Main Content */
 .realm-main-content {
     flex: 1;
     overflow: hidden;
@@ -84,7 +80,6 @@
     margin: 0 auto;
 }
 
-/* List Panel */
 .realm-list-panel {
     display: flex;
     flex-direction: column;
@@ -96,7 +91,19 @@
     overflow: visible;
 }
 
-/* Realm Cards Container */
+.realm-list-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0 0.25rem 0.6rem;
+}
+
+.refresh-timestamp {
+    font-size: 0.72rem;
+    color: var(--color-text-muted);
+}
+
 .realm-cards-container {
     display: flex;
     flex-direction: column;
@@ -126,7 +133,6 @@
     flex: 1;
 }
 
-/* Realm Card */
 .realm-card {
     background: transparent;
     border: 1px solid transparent;
@@ -155,7 +161,6 @@
     background: rgba(34, 197, 94, 0.08);
 }
 
-/* Realm Divider */
 .realm-divider {
     width: calc(100% - 0.5rem);
     height: 1px;
@@ -165,7 +170,6 @@
     border: none;
 }
 
-/* Card Content Structure */
 .realm-card-info {
     flex: 1;
 }
@@ -262,7 +266,6 @@
     font-weight: 700;
 }
 
-/* Details Wrapper */
 .realm-details-wrapper {
     display: flex;
     flex-direction: column;
@@ -270,7 +273,6 @@
     height: 100%;
 }
 
-/* Details Panel */
 .realm-details-panel {
     flex: 1;
     display: flex;
@@ -319,7 +321,6 @@
     max-width: 300px;
 }
 
-/* Realm Continue Button */
 .realm-continue-button {
     width: 100%;
     padding: 0.75rem 1.25rem;
@@ -383,7 +384,6 @@
     background: rgba(34, 197, 94, 0.5);
 }
 
-/* Responsive Design */
 @media (max-width: 1024px) {
     .realm-grid-container {
         grid-template-columns: 1fr;
@@ -398,6 +398,7 @@
 @media (max-width: 768px) {
     .realm-header {
         padding: 1rem;
+        padding-top: max(1rem, env(safe-area-inset-top, 0px));
     }
 
     .realm-page-title {
@@ -409,7 +410,7 @@
     }
 
     .realm-main-content {
-        padding: 1rem 0.5rem;
+        padding: 1rem max(0.75rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(0.75rem, env(safe-area-inset-left, 0px));
     }
 
     .realm-grid-container {
@@ -418,19 +419,38 @@
 
     .realm-list-panel,
     .realm-details-panel {
-        padding: 1rem;
+        padding: 0;
     }
 
     .realm-card {
-        padding: 0.75rem;
+        background: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(71, 85, 105, 0.55);
+        border-radius: 12px;
+        padding: 1.25rem;
+        width: 100%;
+        min-height: 64px;
+    }
+
+    .realm-card:hover {
+        transform: none;
+    }
+
+    .realm-card.selected {
+        border-color: var(--color-primary);
+        background: rgba(34, 197, 94, 0.12);
+        box-shadow: 0 0 0 1px var(--color-primary), 0 4px 16px rgba(34, 197, 94, 0.15);
+    }
+
+    .realm-divider {
+        display: none;
+    }
+
+    #realm-list {
+        gap: 0.6rem;
     }
 
     .realm-name {
-        font-size: 0.875rem;
-    }
-    .realm-continue-button {
-        padding: 0.875rem 1rem;
-        font-size: 0.75rem;
+        font-size: 1rem;
     }
 }
 
@@ -443,28 +463,105 @@
         font-size: 1rem;
     }
 
+    .realm-main-content {
+        padding: 0.75rem max(0.6rem, env(safe-area-inset-right, 0px)) max(0.75rem, env(safe-area-inset-bottom, 0px)) max(0.6rem, env(safe-area-inset-left, 0px));
+    }
+
     .realm-card {
-        padding: 0.5rem;
+        padding: 0.85rem;
+        min-height: 60px;
+        border-radius: 10px;
     }
 
     .realm-name {
-        font-size: 0.75rem;
+        font-size: 0.9rem;
     }
 
     .realm-card-stats {
-        flex-direction: column;
-        gap: 0.25rem;
+        gap: 0.5rem;
     }
 
-    .realm-right {
-        gap: 0.25rem;
+    .realm-status {
+        font-size: 0.65rem;
+        padding: 0.25rem 0.5rem;
     }
+
+    .realm-latency {
+        font-size: 0.7rem;
+    }
+
     .no-selection-icon {
         font-size: 2.5rem;
     }
 }
 
-/* Mobile landscape optimization */
+@media (max-width: 768px) and (orientation: portrait) {
+    .realm-main-content {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .realm-grid-container {
+        height: auto;
+        min-height: 100%;
+    }
+
+    #realm-list {
+        overflow: visible;
+    }
+
+    .realm-details-wrapper {
+        display: none;
+        height: auto;
+    }
+
+    body.has-selection .realm-details-wrapper {
+        display: flex;
+
+        padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    }
+
+    body.has-selection .realm-details-panel {
+        animation: realm-details-in 0.3s ease;
+    }
+
+    .realm-details-panel {
+        background: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(71, 85, 105, 0.55);
+        border-radius: 12px;
+        padding: 1.25rem;
+    }
+
+    body.has-selection .realm-continue-button {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+        z-index: 30;
+        min-height: 52px;
+        font-size: 0.85rem;
+        background: var(--color-primary);
+        color: var(--color-bg);
+        border-color: transparent;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+
+    body.has-selection .realm-continue-button:active {
+        transform: translateY(1px);
+    }
+}
+
+@keyframes realm-details-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 @media (max-height: 500px) and (orientation: landscape) {
     .realm-selection-page {
         height: 100dvh;
@@ -473,7 +570,7 @@
     }
 
     .realm-header {
-        padding: 0.5rem 1rem;
+        padding: 0.5rem max(1rem, env(safe-area-inset-right, 0px)) 0.5rem max(1rem, env(safe-area-inset-left, 0px));
     }
 
     .realm-page-title {
@@ -485,7 +582,7 @@
     }
 
     .realm-main-content {
-        padding: 0.5rem;
+        padding: 0.5rem max(0.5rem, env(safe-area-inset-right, 0px)) max(0.5rem, env(safe-area-inset-bottom, 0px)) max(0.5rem, env(safe-area-inset-left, 0px));
     }
 
     .realm-grid-container {
@@ -525,7 +622,6 @@
         font-size: 0.7rem;
     }}
 
-/* Mobile portrait optimization */
 @media (max-width: 480px) and (orientation: portrait) {
     .realm-selection-page {
         height: 100dvh;
@@ -542,5 +638,11 @@
     .realm-continue-button {
         padding: 0.75rem 1rem;
         margin-bottom: 0.5rem;
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .back-button {
+        display: none;
     }
 }

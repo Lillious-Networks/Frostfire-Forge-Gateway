@@ -305,7 +305,7 @@ document.getElementById('email-2fa-submit')?.addEventListener('click', async () 
   }
 
   if (codeVisible) {
-    const code = (document.getElementById('email-2fa-code-input') as HTMLInputElement).value.trim();
+    const code = (document.getElementById('email-2fa-code-input') as HTMLInputElement).value.trim().toUpperCase();
     if (!code || code.length !== 6) {
       window.Notify('error', 'Enter a valid 6-digit code');
       return;
@@ -474,7 +474,7 @@ document.getElementById('password-2fa-cancel')?.addEventListener('click', () => 
 document.getElementById('password-2fa-submit')?.addEventListener('click', async () => {
   const totpVisible = !document.getElementById('password-2fa-totp')!.classList.contains('hidden');
   const totpCode = (document.getElementById('password-2fa-totp-input') as HTMLInputElement).value;
-  const emailCode = (document.getElementById('password-2fa-email-input') as HTMLInputElement).value;
+  const emailCode = (document.getElementById('password-2fa-email-input') as HTMLInputElement).value.toUpperCase();
 
   if (totpVisible && (!totpCode || totpCode.length !== 6)) {
     window.Notify('error', 'Enter a valid 6-digit code');
@@ -715,7 +715,7 @@ document.getElementById('disable-totp-cancel')?.addEventListener('click', () => 
 });
 
 document.getElementById('disable-totp-submit')?.addEventListener('click', async () => {
-  const code = (document.getElementById('disable-totp-code') as HTMLInputElement).value.trim();
+  const code = (document.getElementById('disable-totp-code') as HTMLInputElement).value.trim().toUpperCase();
   if (!code || code.length !== 6) {
     window.Notify('error', 'Enter a valid 6-digit code');
     return;
@@ -768,7 +768,7 @@ document.getElementById('disable-email-cancel')?.addEventListener('click', () =>
 });
 
 document.getElementById('disable-email-submit')?.addEventListener('click', async () => {
-  const code = (document.getElementById('disable-email-code') as HTMLInputElement).value.trim();
+  const code = (document.getElementById('disable-email-code') as HTMLInputElement).value.trim().toUpperCase();
   if (!code || code.length !== 6) {
     window.Notify('error', 'Enter a valid 6-digit code');
     return;
@@ -838,7 +838,7 @@ document.getElementById('totp-setup-password-btn')?.addEventListener('click', as
 });
 
 document.getElementById('totp-verify-btn')?.addEventListener('click', async () => {
-  const code = (document.getElementById('totp-code') as HTMLInputElement).value;
+  const code = (document.getElementById('totp-code') as HTMLInputElement).value.toUpperCase();
   if (!code || code.length !== 6) {
     window.Notify('error', 'Enter a valid 6-digit code');
     return;
@@ -1141,7 +1141,7 @@ document.getElementById('remove-key-cancel')?.addEventListener('click', () => {
 
 document.getElementById('remove-key-submit')?.addEventListener('click', async () => {
   if (isAwaitingEmailCode) {
-    const code = (document.getElementById('remove-key-totp-input') as HTMLInputElement).value.trim();
+    const code = (document.getElementById('remove-key-totp-input') as HTMLInputElement).value.trim().toUpperCase();
     if (!code || code.length !== 6) {
       window.Notify('error', 'Enter a valid 6-digit code');
       return;

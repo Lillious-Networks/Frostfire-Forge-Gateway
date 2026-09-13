@@ -2,12 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gateway Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/dashboard.css">
+    <script defer src="js/web/pulltorefresh.js"></script>
 </head>
 <body>
+    <div id="ptr-indicator" aria-hidden="true">
+        <svg id="ptr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        <span id="ptr-label">Pull to refresh</span>
+    </div>
     <div class="home-button" onclick="location.href='/'">←</div>
 
     <div class="header">

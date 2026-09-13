@@ -15,9 +15,9 @@ let selectedServerId: string | null = null;
 let servers: any[] = [];
 const serverPings = new Map<string, number>();
 
-function isMobileDevice(): boolean {
-    return window.innerWidth <= 768 || window.matchMedia("(hover: none) and (pointer: coarse)").matches;
-}
+const REFRESH_INTERVAL_MS = 5000;
+let lastRefreshAt = 0;
+let loadInFlight = false;
 
 async function measureServerPing(server: any): Promise<number | null> {
     try {
@@ -51,6 +51,8 @@ async function measureAllPings(): Promise<void> {
 }
 
 async function loadServers(): Promise<void> {
+    if (loadInFlight) return;
+    loadInFlight = true;
     try {
         const loadingEl = document.getElementById('loading-message');
         if (loadingEl) {
@@ -71,14 +73,18 @@ async function loadServers(): Promise<void> {
         serverPings.clear();
 
         renderServers();
+        lastRefreshAt = Date.now();
+        updateRefreshTimestamp();
 
-        measureAllPings();
+        await measureAllPings();
     } catch (error) {
         const loadingEl = document.getElementById('loading-message');
         if (loadingEl) {
             loadingEl.innerHTML =
                 `<span style="color: #fca5a5;">Failed to load realms. Please try refreshing.</span>`;
         }
+    } finally {
+        loadInFlight = false;
     }
 }
 
@@ -122,7 +128,7 @@ function renderServers(): void {
         statusBadges.push(`<div class="realm-status ${statusClass}">${statusText}</div>`);
 
         return `
-            <div class="realm-card ${status === 'offline' ? 'disabled' : ''}" data-server-id="${server.id}" ${status === 'offline' ? 'style="pointer-events: none; opacity: 0.5;"' : ''}>
+            <div class="realm-card${status === 'offline' ? ' disabled' : ''}${server.id === selectedServerId ? ' selected' : ''}" data-server-id="${server.id}" ${status === 'offline' ? 'style="pointer-events: none; opacity: 0.5;"' : ''}>
                 <div class="realm-card-info">
                     <div class="realm-name">${realmName}</div>
                     <div class="realm-card-stats">
@@ -165,9 +171,14 @@ function renderServers(): void {
                 }
             }
 
-            // On mobile, join immediately
-            if (isMobileDevice()) {
-                continueToGame(selectedServerId);
+            // Reveal the details panel (on mobile it only appears after a
+            // selection) and bring it into view on small screens. Joining
+            // always goes through the Enter Realm button.
+            document.body.classList.add('has-selection');
+            const detailsWrapper = document.querySelector('.realm-details-wrapper');
+            if (detailsWrapper && window.matchMedia('(max-width: 768px)').matches) {
+                const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                detailsWrapper.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' });
             }
         });
     });
@@ -188,8 +199,29 @@ document.getElementById('continue-button')?.addEventListener('click', () => {
     continueToGame(selectedServerId);
 });
 
-document.getElementById('refresh-button')?.addEventListener('click', () => {
-    loadServers();
-});
+function updateRefreshTimestamp(): void {
+    const el = document.getElementById('refresh-timestamp');
+    if (!el) return;
+    if (!lastRefreshAt) {
+        el.textContent = 'Loading…';
+        return;
+    }
+    const secs = Math.max(0, Math.round((Date.now() - lastRefreshAt) / 1000));
+    el.textContent = secs <= 1
+        ? 'Last refreshed just now'
+        : secs < 60
+            ? `Last refreshed ${secs}s ago`
+            : `Last refreshed ${Math.round(secs / 60)}m ago`;
+}
 
+function startAutoRefresh(): void {
+    window.setInterval(updateRefreshTimestamp, 1000);
+    window.setInterval(() => {
+        if (document.hidden || loadInFlight) return; // skip background tabs and slow fetches
+        loadServers();
+    }, REFRESH_INTERVAL_MS);
+}
+
+updateRefreshTimestamp();
 loadServers();
+startAutoRefresh();

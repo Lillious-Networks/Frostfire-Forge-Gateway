@@ -2,12 +2,18 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache">
     <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Frostfire Forge - Gateway Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/login.css">
+    <script defer src="js/web/pulltorefresh.js"></script>
 </head>
 <body>
+    <div id="ptr-indicator" aria-hidden="true">
+        <svg id="ptr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        <span id="ptr-label">Pull to refresh</span>
+    </div>
     <div class="login-card">
         <h2 class="login-title">Gateway Login</h2>
 
@@ -82,7 +88,10 @@
             errorMessage.classList.add('show');
         }
 
-        authKeyInput.focus();
+        // Desktop only: focusing on load pops the keyboard open on mobile.
+        if (!('ontouchstart' in window) && navigator.maxTouchPoints <= 0) {
+            authKeyInput.focus();
+        }
     </script>
 </body>
 </html>

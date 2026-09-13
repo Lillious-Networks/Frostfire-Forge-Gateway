@@ -1,5 +1,3 @@
-/* === Editor shared styles === */
-
 html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
 
 #editor-layout {
@@ -8,7 +6,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   height: 100%;
 }
 
-/* --- Toolbar --- */
 #editor-toolbar {
   flex-shrink: 0;
   display: flex;
@@ -60,14 +57,12 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   cursor: not-allowed;
 }
 
-/* --- Main area --- */
 #editor-main {
   flex: 1;
   display: flex;
   min-height: 0;
 }
 
-/* --- Sidebar --- */
 #editor-sidebar {
   flex-shrink: 0;
   width: 200px;
@@ -94,7 +89,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   user-select: none;
 }
 
-/* --- Shared list/panel items --- */
 .editor-list {
   padding: 4px;
   flex: 1;
@@ -143,7 +137,7 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   margin-left: 4px;
   font-size: 12px;
 }
-/* --- Tabs --- */
+
 #editor-tab-bar {
   flex-shrink: 0;
   display: flex;
@@ -186,7 +180,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
 .editor-tab-panel { display: none; }
 .editor-tab-panel.active { display: block; }
 
-/* --- Content area --- */
 .editor-content-area {
   flex: 1;
   display: flex;
@@ -200,7 +193,6 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   border-radius: 3px;
 }
 
-/* --- Form inputs --- */
 .editor-form-input {
   width: 100%;
   padding: 6px 8px;
@@ -315,7 +307,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 }
 .editor-form-section > * + * { margin-top: 8px; }
 
-/* --- Danger button --- */
 .editor-danger-btn {
   padding: 4px 10px;
   background: rgba(255, 80, 80, 0.15);
@@ -329,7 +320,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 }
 .editor-danger-btn:hover { background: rgba(255, 80, 80, 0.3); }
 
-/* --- Search input --- */
 .editor-search {
   width: 100%;
   padding: 7px 10px;
@@ -344,14 +334,12 @@ input[type="range"].editor-range::-moz-range-thumb {
 }
 .editor-search::placeholder { color: rgba(255, 255, 255, 0.3); }
 
-/* --- Display name --- */
 .editor-display-name {
   color: #e0e7ff;
   font-family: 'Space Mono', monospace;
   font-size: 12px;
 }
 
-/* --- Modal --- */
 .editor-modal-overlay {
   position: fixed;
   top: 0; left: 0; width: 100%; height: 100%;
@@ -413,7 +401,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 }
 .editor-modal-actions .btn-danger:hover { background: rgba(255, 80, 80, 0.35); }
 
-/* --- Preview area --- */
 .editor-preview-area {
   position: fixed;
   bottom: 8px;
@@ -421,7 +408,6 @@ input[type="range"].editor-range::-moz-range-thumb {
   z-index: 10;
 }
 
-/* === Map-editor specific === */
 #editor-layers-list { padding: 4px; flex: 1; overflow-y: auto; min-height: 0; }
 #editor-layers-list::-webkit-scrollbar { width: 4px; }
 #editor-layers-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
@@ -436,7 +422,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 #editor-tileset-container::-webkit-scrollbar-corner { background: rgba(0, 0, 0, 0.2); }
 #editor-tileset-canvas { display: block; cursor: crosshair; image-rendering: pixelated; -webkit-box-shadow: 0 0 8px rgba(0, 0, 0, 0.4); box-shadow: 0 0 8px rgba(0, 0, 0, 0.4); }
 
-/* map-editor bridge class names — same as .editor-item pattern */
 .te-layer-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; margin: 2px 0; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 3px; background: rgba(255, 255, 255, 0.03); font-size: 11px; color: #fff; }
 .te-layer-item:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(46, 204, 113, 0.3); }
 .te-layer-item.active { background: rgba(46, 204, 113, 0.15); border-color: rgba(46, 204, 113, 0.4); }
@@ -454,7 +439,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 .te-tileset-tab:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(46, 204, 113, 0.3); }
 .te-tileset-tab.active { background: rgba(46, 204, 113, 0.3); border-color: rgba(46, 204, 113, 0.6); -webkit-box-shadow: 0 0 8px rgba(46, 204, 113, 0.2); box-shadow: 0 0 8px rgba(46, 204, 113, 0.2); }
 
-/* === Particle-editor specific === */
 #particle-list { padding: 4px; flex: 1; overflow-y: auto; min-height: 0; }
 #particle-list::-webkit-scrollbar { width: 4px; }
 #particle-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
@@ -466,20 +450,14 @@ input[type="range"].editor-range::-moz-range-thumb {
 #ne-particle-options label { display: flex; align-items: center; padding: 4px 6px; margin: 1px 0; cursor: pointer; color: rgba(255, 255, 255, 0.7); font-family: 'Comic Relief', Arial, sans-serif; font-size: 11px; }
 #ne-particle-options label input[type="checkbox"] { width: auto; accent-color: rgba(46, 204, 113, 0.8); cursor: pointer; flex-shrink: 0; margin-right: 6px; }
 
-/* === Inline styles extracted from editor HTML pages === */
-/* NPC editor conditional sprite sections (visibility toggled via JS style.display) */
 #sprite-fields,
 #sprite-animated-fields { display: none; }
 
-/* NPC editor small hint text inside labels (e.g. "(500 max)") */
 .editor-hint { color: rgba(255,255,255,0.4); font-size: 10px; }
 
-/* NPC editor dialog/script text areas */
 #inp-dialog,
 #inp-script { resize: vertical; }
 
-/* NPC editor particle search spacing */
 #ne-particle-search { margin-bottom: 8px; }
 
-/* Loot editor item results dropdown (visibility toggled via JS style.display) */
 #le-item-results { display: none; }

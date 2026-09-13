@@ -1,6 +1,9 @@
 const register = document.getElementById('register-button') as HTMLButtonElement;
 const email = document.getElementById('register-email') as HTMLInputElement;
-email.focus();
+// Desktop only: focusing on load pops the keyboard open on mobile.
+if (!('ontouchstart' in window) && navigator.maxTouchPoints <= 0) {
+  email.focus();
+}
 const username = document.getElementById('register-username') as HTMLInputElement;
 const password = document.getElementById('register-password') as HTMLInputElement;
 const password2 = document.getElementById('register-confirm-password') as HTMLInputElement;

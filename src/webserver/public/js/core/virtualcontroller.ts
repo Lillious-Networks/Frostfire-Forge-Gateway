@@ -1,6 +1,6 @@
 
 
-import { mount } from './input.js';
+import { mount, keyHandlers } from './input.js';
 
 interface JoystickState {
     active: boolean;
@@ -22,7 +22,7 @@ const state: JoystickState = {
 
 const CONFIG = {
     maxDistance: 35,
-    deadzone: 0.05,
+    deadzone: 0.1,
     updateRate: 16
 };
 
@@ -208,9 +208,70 @@ function initializeMountButton(): void {
         return;
     }
 
+    // Tap mounts; holding opens the mount collection instead. The hold is
+    // detected on a timer so it fires while the finger is still down.
+    const LONG_PRESS_MS = 550;
+    const MOVE_SLOP_PX = 12;
+    let pressTimer = 0;
+    let suppressClick = false;
+    let startX = 0;
+    let startY = 0;
+
+    function clearPressTimer(): void {
+        if (pressTimer) {
+            window.clearTimeout(pressTimer);
+            pressTimer = 0;
+        }
+    }
+
+    function openMountCollection(): void {
+        // Same path as the Collectables hotkey: close other panels first.
+        keyHandlers.KeyK();
+    }
+
+    mountButton.addEventListener('touchstart', (event) => {
+        if (event.touches.length !== 1) return;
+        suppressClick = false;
+        startX = event.touches[0].clientX;
+        startY = event.touches[0].clientY;
+        clearPressTimer();
+        pressTimer = window.setTimeout(() => {
+            pressTimer = 0;
+            suppressClick = true;
+            mountButton.classList.add('holding');
+            if (navigator.vibrate) navigator.vibrate(15);
+            openMountCollection();
+        }, LONG_PRESS_MS);
+    }, { passive: true });
+
+    mountButton.addEventListener('touchmove', (event) => {
+        if (!pressTimer || event.touches.length !== 1) return;
+        const dx = event.touches[0].clientX - startX;
+        const dy = event.touches[0].clientY - startY;
+        if (Math.hypot(dx, dy) > MOVE_SLOP_PX) {
+            clearPressTimer();
+            suppressClick = true;
+        }
+    }, { passive: true });
+
+    function endPress(): void {
+        clearPressTimer();
+        mountButton.classList.remove('holding');
+    }
+
+    mountButton.addEventListener('touchend', endPress);
+    mountButton.addEventListener('touchcancel', () => {
+        endPress();
+        suppressClick = true;
+    });
+
     mountButton.addEventListener('click', (event) => {
         event.preventDefault();
-
+        // Swallow the tap that follows a long-press or a drag-off.
+        if (suppressClick) {
+            suppressClick = false;
+            return;
+        }
         mount();
     });
 

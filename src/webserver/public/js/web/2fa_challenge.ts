@@ -93,7 +93,10 @@ function startMethod(method: string) {
   document.getElementById('code-section')!.classList.remove('hidden');
   const input = document.getElementById('code-input') as HTMLInputElement;
   input.value = '';
-  input.focus();
+  // Desktop only: focusing pops the keyboard open on mobile.
+  if (!('ontouchstart' in window) && navigator.maxTouchPoints <= 0) {
+    input.focus();
+  }
 
   document.getElementById('code-label')!.textContent = 'Authenticator Code';
   document.getElementById('challenge-message')!.textContent = 'Enter your authenticator code';
@@ -174,7 +177,7 @@ async function startWebAuthn() {
 }
 
 document.getElementById('code-submit-btn')?.addEventListener('click', async () => {
-  const code = (document.getElementById('code-input') as HTMLInputElement).value.trim();
+  const code = (document.getElementById('code-input') as HTMLInputElement).value.trim().toUpperCase();
   if (!code || code.length !== 6) {
     window.Notify('error', 'Enter a valid 6-digit code');
     return;

@@ -3,7 +3,10 @@ const guestLogin = document.getElementById('guest-login-link') as HTMLAnchorElem
 const username = document.getElementById('username') as HTMLInputElement;
 const password = document.getElementById('password') as HTMLInputElement;
 const passwordForm = document.getElementById('password-form-group') as HTMLFormElement;
-username.focus();
+// Desktop only: focusing on load pops the keyboard open on mobile.
+if (!('ontouchstart' in window) && navigator.maxTouchPoints <= 0) {
+  username.focus();
+}
 if (!login) {
   throw new Error('login-button not found');
 }
@@ -103,4 +106,14 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
         login.click();
     }
+});
+
+// If Safari panned the page for the keyboard, settle back to the top
+// once editing ends so the card is never left pushed up.
+document.addEventListener('focusout', () => {
+    window.setTimeout(() => {
+        if (document.activeElement === document.body) {
+            window.scrollTo(0, 0);
+        }
+    }, 100);
 });
