@@ -126,6 +126,7 @@ declare interface LayeredAnimation {
     armor_weapon: Nullable<AnimationLayer>;
   };
   currentAnimationName: string;
+  _animAppliedAt?: number;
   syncFrames: boolean;
 }
 

@@ -26,9 +26,13 @@ export class AnimationStateManager {
         // datagrams, so a lost "stop walking" packet can leave a sprite
         // walking indefinitely. The server only sends MOVEXY while the player
         // is actually moving - a stale lastServerUpdate means they stopped.
+        // The walk pose itself must also be stale: a freshly applied walk
+        // whose position datagrams are still in flight must not be reverted.
         const animName = player.layeredAnimation.currentAnimationName || "";
+        const animAppliedAt = player.layeredAnimation._animAppliedAt || 0;
         if (
           animName.includes("walk") &&
+          now - animAppliedAt > STALL_REVERT_MS &&
           typeof player.lastServerUpdate === "number" &&
           player.lastServerUpdate > 0 &&
           now - player.lastServerUpdate > STALL_REVERT_MS

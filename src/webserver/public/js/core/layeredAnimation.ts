@@ -284,6 +284,7 @@ export async function initializeLayeredAnimation(
       armor_weapon: armorWeaponLayer as AnimationLayer,
     },
     currentAnimationName: initialAnimation,
+    _animAppliedAt: performance.now(),
     syncFrames: true
   };
 }
@@ -437,6 +438,10 @@ export async function changeLayeredAnimation(
   if (layeredAnim.currentAnimationName === newAnimationName) return;
 
   layeredAnim.currentAnimationName = newAnimationName;
+  // Timestamp of the last applied pose change. The stall-revert fallback
+  // must not kill a freshly applied walk state whose position datagrams
+  // simply haven't arrived yet (UDP reorder after a pause).
+  layeredAnim._animAppliedAt = performance.now();
   // Monotonic change token: frame builds resolve asynchronously, so a fast
   // stop/start sequence can have an older animation's rebuild land AFTER a
   // newer one. Without the token the stale frames overwrite the current
