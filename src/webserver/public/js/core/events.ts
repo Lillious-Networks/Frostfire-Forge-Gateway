@@ -1,4 +1,5 @@
 import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName } from "./socket.js";
+import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getCameraX, getCameraY } from "./renderer.js";
@@ -156,6 +157,7 @@ window.addEventListener("gamepaddisconnected", () => {
 
 window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
   if (!getIsLoaded() || !getMovementAllowed()) return;
+  if (isSelfDead()) return;
   if (pauseMenu.style.display == "block") return;
 
   const x = e.detail.x;
@@ -284,6 +286,8 @@ window.addEventListener("keydown", async (e) => {
 
   if (e.code === "KeyE") {
     if (e.repeat) return;
+    // Corpses and ghosts cannot pick up loot.
+    if (isSelfActionLocked()) return;
     const cache = Cache.getInstance();
     const lootItems = cache.loot || [];
     const localUsername = Array.from(cache.players).find(p => p.id === cachedPlayerId)?.username;
@@ -304,6 +308,8 @@ window.addEventListener("keydown", async (e) => {
 
   if (e.code === "KeyF") {
     if (e.repeat) return;
+    // Corpses and ghosts cannot open chests.
+    if (isSelfActionLocked()) return;
     const cache = Cache.getInstance();
     if ((cache.lootChests || []).length > 0) {
       chestKeyDownTime = performance.now();
@@ -672,6 +678,9 @@ document.addEventListener("contextmenu", (event) => {
   const clickedPlayer = Array.from(cache.players).find(player => {
     const playerX = player.position.x;
     const playerY = player.position.y;
+    // Corpses cannot be targeted. Ghosts can be targeted and interacted with,
+    // except while their graveyard teleport is still pending (not rendered).
+    if (player.isDead || (player.isGhost && player.ghostTeleportPending)) return false;
     return (
       worldX >= playerX - 16 && worldX <= playerX + 32 &&
       worldY >= playerY - 24 && worldY <= playerY + 48
@@ -719,7 +728,8 @@ canvas.addEventListener("touchstart", (e) => {
 
     const clickedPlayer = Array.from(cache.players).find(player => {
       return worldX >= player.position.x - 16 && worldX <= player.position.x + 32 &&
-             worldY >= player.position.y - 24 && worldY <= player.position.y + 48;
+             worldY >= player.position.y - 24 && worldY <= player.position.y + 48 &&
+             !player.isDead && !(player.isGhost && player.ghostTeleportPending);
     });
 
     if (clickedPlayer) {
@@ -867,6 +877,12 @@ document.addEventListener("click", (event) => {
   const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
 
   if (cache.groundTargetingSpell) {
+    // Corpses and ghosts cannot cast.
+    if (isSelfActionLocked()) {
+      cache.groundTargetingSpell = null;
+      document.body.style.cursor = '';
+      return;
+    }
     const spellName = cache.groundTargetingSpell;
     cache.groundTargetingSpell = null;
     document.body.style.cursor = '';

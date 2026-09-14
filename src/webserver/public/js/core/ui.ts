@@ -60,6 +60,10 @@ const weatherCanvas = document.getElementById("weather") as HTMLCanvasElement;
 const weatherCtx = weatherCanvas.getContext("2d");
 const lightCanvas = document.getElementById("light-overlay") as HTMLCanvasElement;
 const lightCtx = lightCanvas.getContext("2d");
+const ghostCanvas = document.getElementById("ghost-layer") as HTMLCanvasElement;
+const ghostCtx = ghostCanvas ? ghostCanvas.getContext("2d") : null;
+const aboveCanvas = document.getElementById("game-above") as HTMLCanvasElement;
+const aboveCtx = aboveCanvas ? aboveCanvas.getContext("2d") : null;
 const guildContainer = document.getElementById("guild-container") as HTMLDivElement;
 const guildName = document.getElementById("guild-name") as HTMLDivElement;
 const guildRank = document.getElementById("guild-rank") as HTMLDivElement;
@@ -2355,7 +2359,7 @@ export {
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
-    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, guildContainer, guildName, guildRank, guildMembersList,
+    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,

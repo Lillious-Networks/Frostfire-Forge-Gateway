@@ -279,6 +279,10 @@ function renderMinimap() {
   for (const player of playersArray) {
     if (!player || player.id === cachedPlayerId) continue;
     if (player.isStealth && !currentPlayer.isAdmin) continue;
+    // Corpses despawn for everyone else; ghosts stay visible.
+    if (player.isDead) continue;
+    // Ghosts pending teleport render only once their spawn confirm lands.
+    if (player.isGhost && player.ghostTeleportPending) continue;
     const px = halfSize + (player.position.x - playerX) / minimapZoom;
     const py = halfSize + (player.position.y - playerY) / minimapZoom;
     if (Math.hypot(px - halfSize, py - halfSize) <= radius - 2) {

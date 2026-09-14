@@ -78,6 +78,7 @@ function resolveParticles(particles: any[]): any[] {
   });
 }
 import { createPlayer } from "./player.ts";
+import { setSelfDead, setSelfGhost, clearSelfDeath, showReviveOfferPopup, hideReviveOfferPopup, noteGhostDestination, setCorpseMarker, clearCorpseMarker } from "./death.js";
 import { updateFriendsList } from "./friends.ts";
 import { startStatPreview, noteSelfSpritesChanged } from "./preview.js";
 import { createInvitationPopup } from "./invites.ts";
@@ -1134,6 +1135,32 @@ async function handleLoadPlayersPacket(data: any) {
         handleLoadPlayersPacket(queuedData);
       }, 0);
     }
+  }
+}
+
+// Death/ghost/revive transitions leave a stale mount layer and frozen pose on
+// observers (self rebuilds on spawn snapshots, they don't). Reset to a clean
+// unmounted idle. Mirrors the dismount branch of SPRITE_SHEET_ANIMATION.
+async function resetDeathAnimation(target: any): Promise<void> {
+  if (!target) return;
+  try {
+    target.mounted = false;
+    target.mount_type = null;
+    target.castingSpell = null;
+    target.castingInterrupted = false;
+    target._layerCanvases = {};
+    if (target.layeredAnimation) {
+      target.layeredAnimation.layers.mount = null;
+      const { changeLayeredAnimation } = await import("./layeredAnimation.js");
+      // lastDirection can be uppercase ("RIGHT") from movement input while
+      // templates are lowercase: sanitize or the lookup misses and stale
+      // walk frames stick around under the idle name.
+      const rawDir = String(target.lastDirection || target.location?.position?.direction || "down").toLowerCase();
+      const dirs = ["up", "down", "left", "right", "upleft", "upright", "downleft", "downright"];
+      await changeLayeredAnimation(target.layeredAnimation, `idle_${dirs.includes(rawDir) ? rawDir : "down"}`);
+    }
+  } catch (e) {
+    console.error("[death] animation reset failed:", e);
   }
 }
 
@@ -2308,6 +2335,19 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       if (data.id === cachedPlayerId) {
         updateCurrencyDisplay();
 
+        // Relogging while dead: restore the phase from the spawn snapshot.
+        if (data.isDead) {
+          setSelfDead(true);
+        } else if (data.isGhost) {
+          setSelfGhost(true);
+        } else {
+          clearCorpseMarker();
+        }
+        // Ghosts resume with their persisted corpse marker.
+        if ((data.isDead || data.isGhost) && data.corpse && typeof data.corpse.x === "number") {
+          setCorpseMarker(String(data.corpse.map || ""), data.corpse.x, data.corpse.y);
+        }
+
         const noclipButton = document.getElementById("admin-noclip");
         const stealthButton = document.getElementById("admin-stealth");
 
@@ -2620,7 +2660,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           // draws on a fractional pixel (that is the "blurry while moving").
           const dx = sx - player.position.x;
           const dy = sy - player.position.y;
-          if (dx * dx + dy * dy > 48 * 48) {
+          const { getIsMoving, getIsKeyPressed } = await import("./input.js");
+          // Idle jumps (release teleport, admin warp) apply instantly.
+          // While moving, trust prediction and only hard-correct divergence.
+          if ((!getIsMoving() && !getIsKeyPressed()) || dx * dx + dy * dy > 48 * 48) {
             player.position.x = sx;
             player.position.y = sy;
           }
@@ -2628,6 +2671,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         } else {
           player.position.x = sx;
           player.position.y = sy;
+          // Teleports (release, admin warp) snap the render position too so
+          // observers never watch a glide. Normal steps are far smaller.
+          if (player.renderPosition) {
+            const rdx = sx - player.renderPosition.x;
+            const rdy = sy - player.renderPosition.y;
+            if (rdx * rdx + rdy * rdy > 100 * 100) {
+              player.renderPosition.x = sx;
+              player.renderPosition.y = sy;
+            }
+          }
         }
       } else if (!snapshotApplied) {
         pendingMovements.push({ id: playerId, _data: moveData, revision: data.r || 0 });
@@ -2760,6 +2813,15 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (playerId != cachedPlayerId) {
           player.position.x = Math.round(moveData.x);
           player.position.y = Math.round(moveData.y);
+          // Teleports snap the render position too (see MOVEXY case).
+          if (player.renderPosition) {
+            const rdx = player.position.x - player.renderPosition.x;
+            const rdy = player.position.y - player.renderPosition.y;
+            if (rdx * rdx + rdy * rdy > 100 * 100) {
+              player.renderPosition.x = player.position.x;
+              player.renderPosition.y = player.position.y;
+            }
+          }
         } else {
           player.position.x = Math.round(moveData.x);
           player.position.y = Math.round(moveData.y);
@@ -2959,6 +3021,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           if (teWasActive) await te!.toggle();
         }
 
+        // New map: drop markers from the previous map; the fresh login
+        // snapshot below reloads the ones inside the AOI.
+        import("./skeletons.js").then((m) => m.clearSkeletons());
+        hideReviveOfferPopup();
         loaded = await loadMap(data);
 
         if (loaded) {
@@ -3004,6 +3070,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (cache?.players) {
           cache.players.clear();
         }
+        // Fresh login: drop any stale death UI. The spawn snapshot below
+        // re-applies the persisted phase, if any.
+        clearSelfDeath();
 
   sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
 
@@ -3012,7 +3081,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         animationUpdateBuffer = [];
         pendingMovements = [];
         pendingSpriteAnimations = [];
-      pendingSpriteAnimations = [];
+        pendingSpriteAnimations = [];
+        import("./skeletons.js").then((m) => m.clearSkeletons());
 
         const sessionToken = getCookie("token");
         if (!sessionToken) {
@@ -3313,10 +3383,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               slot.addEventListener("click", () => {
 
                 if (data[i].type === "mount") {
-                  cache.mount = data[i].item;
-                  sendRequest({
-                    type: "MOUNT",
-                    data: { mount: data[i].item},
+                  import("./death.js").then((m) => {
+                    if (m.isSelfActionLocked()) return;
+                    cache.mount = data[i].item;
+                    sendRequest({
+                      type: "MOUNT",
+                      data: { mount: data[i].item},
+                    });
                   });
                 }
               });
@@ -3452,8 +3525,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       slot.addEventListener("click", () => {
         if (data.type === "mount") {
-          cache.mount = data.item;
-          sendRequest({ type: "MOUNT", data: { mount: data.item } });
+          import("./death.js").then((m) => {
+            if (m.isSelfActionLocked()) return;
+            cache.mount = data.item;
+            sendRequest({ type: "MOUNT", data: { mount: data.item } });
+          });
         }
       });
 
@@ -3843,6 +3919,70 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import("./lootWindow.js").then(({ showLootChestPopup }) => { showLootChestPopup(d.chestId, d.items); });
       break;
     }
+    case "LOAD_SKELETONS": {
+      const list = Array.isArray(data?.skeletons) ? data.skeletons : [];
+      import("./skeletons.js").then((m) => m.setSkeletons(list));
+      break;
+    }
+    case "ADD_SKELETON": {
+      if (!data) break;
+      import("./skeletons.js").then((m) => m.addSkeleton(data));
+      break;
+    }
+    case "REMOVE_SKELETON": {
+      if (data?.id === undefined || data?.id === null) break;
+      import("./skeletons.js").then((m) => m.removeSkeleton(data.id));
+      break;
+    }
+    case "PLAYER_DIED": {
+      if (!data || String(data.id) !== String(cachedPlayerId)) break;
+      try {
+        setSelfDead(true);
+        // Mark the corpse: outlives the skeleton, guides the ghost back.
+        if (data.corpse && typeof data.corpse.x === "number" && typeof data.corpse.y === "number") {
+          setCorpseMarker(String(data.corpse.map || ""), data.corpse.x, data.corpse.y);
+        } else {
+          const self = Array.from(cache.players).find((p) => p.id === cachedPlayerId);
+          const map = (window as any).mapData?.name || "";
+          if (self?.position && map) setCorpseMarker(map, self.position.x, self.position.y);
+        }
+      } catch (e) {
+        console.error("[death] setSelfDead failed:", e);
+      }
+      import("./input.js").then((input) => input.stopMovement()).catch((e) => {
+        console.error("[death] stopMovement failed:", e);
+      });
+      break;
+    }
+    case "PLAYER_GHOST": {
+      if (!data || data.id === undefined || data.id === null) break;
+      const ghosted = Array.from(cache.players).find(
+        (player) => String(player.id) === String(data.id)
+      );
+      if (ghosted) {
+        ghosted.isGhost = !!data.ghost;
+        ghosted.ghostTeleportPending = !!data.ghost && (data as any).pendingTeleport === true;
+        if (!data.ghost) {
+          ghosted.isDead = false;
+        } else {
+          // Released: no longer a corpse (now a visible ghost, once the
+          // pending teleport lands and the spawn confirm arrives).
+          ghosted.isDead = false;
+          void resetDeathAnimation(ghosted);
+        }
+      }
+      if (String(data.id) === String(cachedPlayerId)) {
+        if (data.ghost) {
+          setSelfGhost(true);
+          noteGhostDestination(data);
+        } else clearSelfDeath();
+      }
+      break;
+    }
+    case "REVIVE_OFFER": {
+      showReviveOfferPopup(data);
+      break;
+    }
     case "TOGGLE_LOOT_EDITOR": {
       import('./looteditor.js').then((module) => { module.default.toggle(); });
       break;
@@ -4168,6 +4308,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           t.stats = { ...t.stats, ...stats };
           t.max_health = stats.total_max_health;
           t.max_stamina = stats.total_max_stamina;
+          // 0 HP means dead-awaiting-release (the server only ever sends it
+          // on death): despawn the body for observers, clear targeting.
+          if (stats.health <= 0) {
+            t.isDead = true;
+            t.targeted = false;
+            void resetDeathAnimation(t);
+          }
         }
 
         if (statUI.style.display === "block" && statUI.getAttribute("data-id") === String(target)) {
@@ -4216,8 +4363,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       target.stats = data.stats;
       target.max_health = data.stats.total_max_health;
       target.max_stamina = data.stats.total_max_stamina;
+      target.isDead = false;
+      target.isGhost = false;
+      target.ghostTeleportPending = false;
+      void resetDeathAnimation(target);
 
       const isSelf = target.id.toString() === cachedPlayerId;
+
+      if (isSelf) {
+        clearSelfDeath();
+      }
 
       if (!isSelf) {
         target.targeted = false;

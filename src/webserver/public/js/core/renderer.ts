@@ -9,6 +9,8 @@ import { updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateSelfStatu
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { renderShadows } from './shadows.js';
 import { renderLoot, renderLootInteractionHint } from './loot.js';
+import { renderSkeletons } from './skeletons.js';
+import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps } from './death.js';
 import { renderLightMap } from './lightmap.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -31,7 +33,7 @@ const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
 // Tileset lookup cache for fast tile->tileset resolution
 let tilesetLookupCache: Map<number, {tileset: any, index: number}> = new Map();
 
-import { canvas, ctx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
+import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
 
 const SERVER_TICK_RATE = 30;
 const SERVER_FRAME_TIME = 1000 / SERVER_TICK_RATE;
@@ -46,6 +48,8 @@ function updateLocalPlayerPrediction(currentPlayer: any, now: number) {
   if (!currentPlayer) return;
   // Movement stays locked until the loading screen begins to fade.
   if (!getMovementAllowed()) return;
+  // Corpses awaiting release cannot move. Ghosts walk normally.
+  if (isSelfDead()) return;
   
   const isMoving = getIsMoving() && getIsKeyPressed();
   
@@ -790,15 +794,15 @@ function getCurrentAnimationTileId(animation: Array<{ tileid: number; duration: 
 
 // Draw a chunk's animated tiles (which are skipped during static chunk baking) on
 // top of the matching segment's pre-rendered canvas, at the current frame.
-function drawChunkAnimatedTiles(chunkData: any, segment: number, screenX: number, screenY: number, alpha: number, now: number) {
-  if (!ctx || !window.mapData) return;
+function drawChunkAnimatedTiles(chunkData: any, segment: number, screenX: number, screenY: number, alpha: number, now: number, targetCtx: CanvasRenderingContext2D | null = ctx) {
+  if (!targetCtx || !window.mapData) return;
   const animatedTiles = chunkData?.animatedTiles;
   if (!animatedTiles || animatedTiles.length === 0 || alpha <= 0) return;
 
   const mapTileW = window.mapData.tilewidth;
   const mapTileH = window.mapData.tileheight;
-  const prevAlpha = ctx.globalAlpha;
-  ctx.globalAlpha = alpha;
+  const prevAlpha = targetCtx.globalAlpha;
+  targetCtx.globalAlpha = alpha;
 
   for (const at of animatedTiles) {
     if (at.segment !== segment) continue;
@@ -828,19 +832,19 @@ function drawChunkAnimatedTiles(chunkData: any, segment: number, screenX: number
         let effH = flipH;
         let effV = flipV;
         if (flipD) { rot = Math.PI / 2; effH = flipV; effV = !flipH; }
-        ctx.save();
-        ctx.translate(cx, cy);
-        if (rot !== 0) ctx.rotate(rot);
-        ctx.scale(effH ? -1 : 1, effV ? -1 : 1);
-        ctx.drawImage(
+        targetCtx.save();
+        targetCtx.translate(cx, cy);
+        if (rot !== 0) targetCtx.rotate(rot);
+        targetCtx.scale(effH ? -1 : 1, effV ? -1 : 1);
+        targetCtx.drawImage(
           image, srcX, srcY,
           tileset.tilewidth, tileset.tileheight,
           -mapTileW / 2, -mapTileH / 2,
           mapTileW, mapTileH
         );
-        ctx.restore();
+        targetCtx.restore();
       } else {
-        ctx.drawImage(
+        targetCtx.drawImage(
           image,
           srcX, srcY,
           tileset.tilewidth, tileset.tileheight,
@@ -853,7 +857,7 @@ function drawChunkAnimatedTiles(chunkData: any, segment: number, screenX: number
     }
   }
 
-  ctx.globalAlpha = prevAlpha;
+  targetCtx.globalAlpha = prevAlpha;
 }
 
 // Draws the Tiled-style "infinite paint zone" outside the current map bounds while
@@ -922,8 +926,8 @@ function renderInfiniteZone() {
 // dynamic silhouette at its own zIndex between segments. The 'below' phase draws
 // every segment up to the player cut (zIndex < PLAYER_Z_INDEX); the 'above' phase
 // draws the remaining segments.
-function renderMap(phase: 'below' | 'above' = 'below') {
-  if (!ctx || !window.mapData) return;
+function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderingContext2D | null = ctx) {
+  if (!targetCtx || !window.mapData) return;
 
   const cuts: Array<{ key: number; shadowZ: number | null; player: boolean }> = window.mapData.layerCuts || [];
   let playerCutIndex = cuts.findIndex((c) => c.player);
@@ -966,14 +970,14 @@ function renderMap(phase: 'below' | 'above' = 'below') {
 
   // Set up clipping region to prevent rendering outside map bounds (extended to
   // include any negative/expanded area while editing an infinite map).
-  ctx.save();
-  ctx.beginPath();
+  targetCtx.save();
+  targetCtx.beginPath();
   const clipMinTileX = window.mapData.minTileX ?? 0;
   const clipMinTileY = window.mapData.minTileY ?? 0;
   const clipMinX = clipMinTileX * window.mapData.tilewidth;
   const clipMinY = clipMinTileY * window.mapData.tileheight;
-  ctx.rect(offsetX + clipMinX, offsetY + clipMinY, mapWidth - clipMinX, mapHeight - clipMinY);
-  ctx.clip();
+  targetCtx.rect(offsetX + clipMinX, offsetY + clipMinY, mapWidth - clipMinX, mapHeight - clipMinY);
+  targetCtx.clip();
 
   const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
   const nowSeconds = performance.now() / 1000;
@@ -1002,10 +1006,10 @@ function renderMap(phase: 'below' | 'above' = 'below') {
         }
 
         try {
-          ctx.globalAlpha = chunkAlpha;
-          ctx.drawImage(chunkCanvas, screenX, screenY);
-          ctx.globalAlpha = 1;
-          drawChunkAnimatedTiles(chunkData, segment, screenX, screenY, chunkAlpha, now);
+          targetCtx.globalAlpha = chunkAlpha;
+          targetCtx.drawImage(chunkCanvas, screenX, screenY);
+          targetCtx.globalAlpha = 1;
+          drawChunkAnimatedTiles(chunkData, segment, screenX, screenY, chunkAlpha, now, targetCtx);
         } catch (error) {
           console.error("Error drawing chunk canvas:", error);
         }
@@ -1017,11 +1021,11 @@ function renderMap(phase: 'below' | 'above' = 'below') {
     if (segment < cuts.length) {
       const cut = cuts[segment];
       if (cut.shadowZ !== null) {
-        renderShadows(ctx, visibleChunks, cut.shadowZ, offsetX, offsetY);
+        renderShadows(targetCtx, visibleChunks, cut.shadowZ, offsetX, offsetY);
       }
     }
   }
-  ctx.restore();
+  targetCtx.restore();
 }
 
 function renderGroundAoeZones(ctx: CanvasRenderingContext2D, deltaTime: number) {
@@ -1283,7 +1287,7 @@ function animationLoop() {
   (window as any).cameraX = cameraX;
   (window as any).cameraY = cameraY;
 
-  if (getMovementAllowed() && getIsMoving() && getIsKeyPressed()) {
+  if (getMovementAllowed() && getIsMoving() && getIsKeyPressed() && !isSelfDead()) {
     if (document.activeElement === chatInput || document.activeElement === friendsListSearch) {
       setIsMoving(false);
       lastDirection = "";
@@ -1338,12 +1342,19 @@ function animationLoop() {
 
   const visiblePlayers = playersArray.filter(p => {
     const inView = isInView(p.position.x, p.position.y);
-    const isOwn = p.id === cachedPlayerId;
-    const notStealth = !p.isStealth;
-    const isAdmin = p.isStealth && currentPlayer.isAdmin;
-    const visible = inView && (isOwn || notStealth || isAdmin);
-
-    return visible;
+    if (!inView) return false;
+    // Own corpse stays visible; everyone else's despawns (no admin bypass).
+    if (p.id === cachedPlayerId) {
+      // Hidden through the release cinematic until just after the teleport
+      // lands, so you reappear at the graveyard before the fade lifts.
+      if (isReleaseHidden()) return false;
+      return true;
+    }
+    if (p.isDead) return false;
+    // Ghosts pending teleport render only once their spawn confirm lands.
+    if (p.isGhost && p.ghostTeleportPending) return false;
+    if (p.isStealth) return currentPlayer.isAdmin;
+    return true;
   });
 
   if (currentPlayer) {
@@ -1493,6 +1504,14 @@ function animationLoop() {
 
   renderGroundAoeZones(ctx, deltaTime);
 
+  // Death skeletons lie on the ground: above the first (ground) z-index
+  // layers and ground effects, below characters and loot.
+  renderSkeletons(ctx);
+    tickDeathOffer();
+    tickReleaseCinematic();
+    tickCorpseMarker();
+    tickDeathWisps();
+
   const npcEditor = (window as any).npcEditor;
 
   if (wireframeDebugCheckbox.checked) {
@@ -1537,7 +1556,25 @@ function animationLoop() {
     }
   } else {
 
-    for (const p of visiblePlayers) p.show(ctx, currentPlayer);
+    // Ghosts render on an unfiltered overlay layer so the death greyscale
+    // never touches them (sprite, glow, or nameplate).
+    if (ghostCanvas && ghostCtx) {
+      if (ghostCanvas.width !== canvas.width || ghostCanvas.height !== canvas.height) {
+        ghostCanvas.width = canvas.width;
+        ghostCanvas.height = canvas.height;
+        ghostCanvas.style.width = canvas.style.width;
+        ghostCanvas.style.height = canvas.style.height;
+      }
+      ghostCtx.setTransform(1, 0, 0, 1, 0, 0);
+      ghostCtx.clearRect(0, 0, ghostCanvas.width, ghostCanvas.height);
+      ghostCtx.setTransform(ctx.getTransform());
+      ghostCtx.imageSmoothingEnabled = false;
+    }
+
+    for (const p of visiblePlayers) {
+      if (p.isGhost && ghostCtx) p.show(ghostCtx, currentPlayer);
+      else p.show(ctx, currentPlayer);
+    }
 
     for (const npc of visibleNpcs) {
       npc.show(ctx);
@@ -1782,14 +1819,34 @@ function animationLoop() {
 
   ctx.restore();
 
+  // Above-player layers live on their own canvas above the ghost layer, so
+  // roofs/canopies cover ghosts exactly like living players.
+  if (aboveCanvas && aboveCtx) {
+    if (aboveCanvas.width !== canvas.width || aboveCanvas.height !== canvas.height) {
+      aboveCanvas.width = canvas.width;
+      aboveCanvas.height = canvas.height;
+      aboveCanvas.style.width = canvas.style.width;
+      aboveCanvas.style.height = canvas.style.height;
+    }
+    aboveCtx.setTransform(1, 0, 0, 1, 0, 0);
+    aboveCtx.clearRect(0, 0, aboveCanvas.width, aboveCanvas.height);
+    aboveCtx.setTransform(ctx.getTransform());
+    aboveCtx.imageSmoothingEnabled = false;
+  }
+
   if (!wireframeDebugCheckbox.checked) {
-    renderMap('above');
+    if (aboveCtx) {
+      renderMap('above', aboveCtx);
+    } else {
+      renderMap('above');
+    }
 
     // Render upper particles (zIndex >= 3) after upper map layers
-    ctx.save();
+    const upperCtx = aboveCtx || ctx;
+    upperCtx.save();
     const upperOffsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
     const upperOffsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
-    ctx.translate(upperOffsetX, upperOffsetY);
+    upperCtx.translate(upperOffsetX, upperOffsetY);
 
     // Get all zIndex values >= 3 and sort them
     const upperZIndices = Array.from(particlesByLayer.keys())
@@ -1800,13 +1857,13 @@ function animationLoop() {
       const particlesAtLayer = particlesByLayer.get(zIdx);
       if (particlesAtLayer) {
         for (const { particle, source } of particlesAtLayer) {
-          source.updateParticle(particle, source, ctx, deltaTime);
+          source.updateParticle(particle, source, upperCtx, deltaTime);
         }
 
   }
   }
 
-  ctx.restore();
+  upperCtx.restore();
     // Render graveyards and warps on top of all tile layers when tile editor is active
     const tileEditor = (window as any).tileEditor;
     if (tileEditor?.isActive) {

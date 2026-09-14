@@ -1,4 +1,5 @@
 import {sendRequest, cachedPlayerId} from "./socket.js";
+import { isSelfDead } from "./death.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import encryptRsa from "./crypto.js";
@@ -6,6 +7,8 @@ import { chatInput } from "./ui.js";
 const isCryptoSupported = typeof window?.crypto?.subtle === "object" && Object.keys(window.crypto.subtle).length !== 0;
 
 async function handleChatMessage(message: string) {
+  // Corpses cannot talk. Ghost /s is filtered server-side (admins exempt).
+  if (isSelfDead()) return;
   if (isCryptoSupported) {
     const chatDecryptionKey = sessionStorage.getItem("chatDecryptionKey");
     if (!chatDecryptionKey) return;
@@ -30,6 +33,8 @@ async function handleChatMessage(message: string) {
 }
 
 async function handleCommand(message: string) {
+  // Corpses may use chat channels (/p /w /g); the server filters the rest.
+  // Ghost party/whisper/guild flows to the server, which filters only /s.
   const command = message.substring(1);
   if (isCryptoSupported) {
     const chatDecryptionKey = sessionStorage.getItem("chatDecryptionKey");

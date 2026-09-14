@@ -91,6 +91,9 @@ async function createPlayer(data: any) {
     chat: "",
     isStealth: data.isStealth,
     isVanished: data.isVanished || false,
+    isDead: data.isDead || false,
+    isGhost: data.isGhost || false,
+    ghostTeleportPending: data.ghostTeleportPending || false,
     isAdmin: data.isAdmin,
     isGuest: data.isGuest || false,
     _adminColorHue: Math.floor(Math.random() * 360),
@@ -541,8 +544,20 @@ async function createPlayer(data: any) {
 
       context.imageSmoothingEnabled = false;
 
+      // Ghosts render translucent with a bluish tint and pulsing glow so the
+      // dead are visible but unmistakable.
+      const ghostPulse = this.isGhost ? 0.5 + 0.5 * Math.sin(performance.now() * 0.004) : 0;
       if (this.isStealth || this.isVanished) {
         context.globalAlpha = 0.5;
+      } else if (this.isGhost) {
+        context.globalAlpha = 0.45 + 0.2 * ghostPulse;
+        context.filter = "saturate(0.45) brightness(1.3)";
+      }
+
+      if (this.isGhost) {
+        // Tight pulsing outline follows the sprite silhouette.
+        context.shadowColor = "rgba(140, 200, 255, 0.95)";
+        context.shadowBlur = 6 + 4 * ghostPulse;
       }
 
       for (const layer of layers) {
@@ -664,6 +679,8 @@ async function createPlayer(data: any) {
         nameColor = "#ffe561";
       } else if (this.isStealth) {
         nameColor = "rgba(97, 168, 255, 1)";
+      } else if (this.isGhost) {
+        nameColor = "#9fd0ff";
       } else if (!nameColor) {
         if (currentPlayer.party?.includes(this.username)) {
           nameColor = "#00ff88ff";
@@ -730,7 +747,7 @@ async function createPlayer(data: any) {
         context.shadowBlur = 2;
       }
 
-      if (!this.isStealth) {
+      if (!this.isStealth && !this.isDead && !this.isGhost) {
         if (data.id === cachedPlayerId || this.targeted) {
           context.fillStyle = "rgba(0, 0, 0, 0.8)";
           context.fillRect(this.renderPosition.x - 50, this.renderPosition.y + 46 + guildOffset + uiOffset, 100, 3);

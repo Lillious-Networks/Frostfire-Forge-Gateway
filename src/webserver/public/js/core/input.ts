@@ -1,4 +1,5 @@
 import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
+import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns } from "./ui.js";
@@ -189,6 +190,7 @@ const blacklistedKeys = new Set([
 ]);
 
 function cast(hotbar_index: number) {
+    if (isSelfActionLocked()) return;
     const keyName = `Digit${hotbar_index + 1}`;
     if (isKeyOnCooldown(keyName)) return;
     if (Date.now() < cache.spellLockoutUntil) return;
@@ -246,6 +248,7 @@ function cast(hotbar_index: number) {
 }
 
 function mount() {
+    if (isSelfActionLocked()) return;
     if (isKeyOnCooldown("Mount")) return;
     putKeyOnCooldown("Mount");
     sendRequest({ type: "MOUNT", data: { mount: cache.mount || "unicorn" } });
@@ -467,6 +470,7 @@ async function handleEnterKey() {
 
 function handleKeyPress() {
   if (!getIsLoaded() || controllerConnected || pauseMenu.style.display === "block" || isMoving) return;
+  if (isSelfDead()) return;
   isMoving = true;
   setDirection("");
   setPendingRequest(false);

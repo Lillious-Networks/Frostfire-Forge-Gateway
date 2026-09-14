@@ -42,6 +42,7 @@ class Cache {
   bags: any = {};
   loot: any[] = [];
   lootChests: any[] = [];
+  skeletons: any[] = [];
 
   private constructor() {}
 

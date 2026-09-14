@@ -437,6 +437,12 @@ export async function changeLayeredAnimation(
   if (layeredAnim.currentAnimationName === newAnimationName) return;
 
   layeredAnim.currentAnimationName = newAnimationName;
+  // Monotonic change token: frame builds resolve asynchronously, so a fast
+  // stop/start sequence can have an older animation's rebuild land AFTER a
+  // newer one. Without the token the stale frames overwrite the current
+  // pose, leaving e.g. idle frames under a walk name (stuck-idle bug).
+  const changeToken =
+    ((layeredAnim as any)._animChangeToken = ((layeredAnim as any)._animChangeToken || 0) + 1);
 
   const isMounted = layeredAnim.layers.mount !== null;
 
@@ -493,12 +499,19 @@ export async function changeLayeredAnimation(
       const spriteName = (layer.spriteSheet as any).name || layer.type;
       const normalizedSpriteName = spriteName.toLowerCase();
       const frameCacheKey = `${layer.type}:${normalizedSpriteName}`;
-      layer.frames = await getOrBuildAnimationFrames(
+      const frames = await getOrBuildAnimationFrames(
         frameCacheKey,
         actualAnimationName,
         cached.template,
         cached.extractedFramesMap
       );
+
+      // A newer animation change superseded this one while the frames were
+      // building: discard the stale result or it would pin the sprite to the
+      // wrong pose (walk name with idle frames, etc.).
+      if ((layeredAnim as any)._animChangeToken !== changeToken) return;
+
+      layer.frames = frames;
 
       // Reset this layer's animation state
       layer.currentFrame = 0;
