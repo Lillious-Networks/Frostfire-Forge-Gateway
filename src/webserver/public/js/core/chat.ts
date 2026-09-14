@@ -6,9 +6,14 @@ import encryptRsa from "./crypto.js";
 import { chatInput } from "./ui.js";
 const isCryptoSupported = typeof window?.crypto?.subtle === "object" && Object.keys(window.crypto.subtle).length !== 0;
 
+// Monotonic send counter: the bubble-clear timer below must only clear the
+// message from its own send, not a newer one typed since.
+let chatSendSeq = 0;
+
 async function handleChatMessage(message: string) {
   // Corpses cannot talk. Ghost /s is filtered server-side (admins exempt).
   if (isSelfDead()) return;
+  const mySeq = ++chatSendSeq;
   if (isCryptoSupported) {
     const chatDecryptionKey = sessionStorage.getItem("chatDecryptionKey");
     if (!chatDecryptionKey) return;
@@ -25,8 +30,12 @@ async function handleChatMessage(message: string) {
   }
 
   setTimeout(() => {
+    // Match by send order, not content: the server may echo back altered
+    // text (e.g. ghost spirit-tongue), which would never equal `message`
+    // and leave the bubble up forever.
+    if (chatSendSeq !== mySeq) return;
     const currentPlayer = Array.from(cache.players).find(player => player.id === cachedPlayerId);
-    if (currentPlayer?.chat === message) {
+    if (currentPlayer?.chat) {
       sendRequest({ type: "CHAT", data: null });
     }
   }, 7000 + message.length * 35);
