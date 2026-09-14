@@ -5,7 +5,7 @@ import { getParticleSprite, particlePool } from "./npc.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
-import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
+import { updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateSelfStatus } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { renderShadows } from './shadows.js';
 import { renderLoot, renderLootInteractionHint } from './loot.js';
@@ -1353,6 +1353,8 @@ function animationLoop() {
     updateHealthBar(healthBar, healthPercent);
     updateStaminaBar(staminaBar, staminaPercent);
     updateAbsorptionBar(absorbtion || 0, total_max_health);
+    // Mobile self card (top-left): same source as the desktop bars.
+    updateSelfStatus(currentPlayer.username, health, total_max_health, stamina, total_max_stamina, absorbtion || 0);
   }
 
   const visibleNpcs = cache.npcs.filter(npc =>

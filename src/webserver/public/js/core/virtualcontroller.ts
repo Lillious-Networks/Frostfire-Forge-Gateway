@@ -204,6 +204,13 @@ function initializeMountButton(): void {
 
     if (!mountButton) return;
 
+    // Never let a long-press reach the document contextmenu handler (it would
+    // treat the touch as a canvas click) or the native menu.
+    mountButton.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
     if (!('ontouchstart' in window)) {
         return;
     }

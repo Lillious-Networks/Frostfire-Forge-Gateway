@@ -79,6 +79,7 @@ function resolveParticles(particles: any[]): any[] {
 }
 import { createPlayer } from "./player.ts";
 import { updateFriendsList } from "./friends.ts";
+import { startStatPreview, noteSelfSpritesChanged } from "./preview.js";
 import { createInvitationPopup } from "./invites.ts";
 import { updateFriendOnlineStatus } from "./friends.js";
 import loadMap, { isChunkCached } from "./map.ts";
@@ -86,6 +87,7 @@ import {
   createPartyUI,
   createGuildUI,
   updateGuildMemberOnlineStatus,
+  updatePartyMemberOnlineStatus,
   updatePartyMemberStats,
   positionText,
   fpsSlider,
@@ -973,6 +975,7 @@ async function handleLoadPlayersPacket(data: any) {
       } else if (existingByUsername) {
         cache.onlinePlayers.add(player.username.toLowerCase());
         updateGuildMemberOnlineStatus(player.username, true);
+        updatePartyMemberOnlineStatus(player.username, true);
         // Update stealth state for existing players (fixes admin unstealth visibility issue)
         existingByUsername.isStealth = player.isStealth;
       }
@@ -1788,6 +1791,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "UPDATE_ONLINE_STATUS": {
       updateFriendOnlineStatus(data.username, data.online);
+      updatePartyMemberOnlineStatus(data.username, data.online);
       break;
     }
     case "ONLINE_PLAYERS_LIST": {
@@ -2034,6 +2038,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
             if (data.id === cachedPlayerId) {
               setSelfPlayerSpriteLoaded(true);
+              noteSelfSpritesChanged(data);
             }
 
             if (cache.pendingPlayers && cache.pendingPlayers.has(data.id)) {
@@ -2150,6 +2155,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               cache.pendingPlayers.delete(animationData.id);
               cache.players.add(targetPlayer);
             }
+
+            if (animationData.id === cachedPlayerId) {
+              noteSelfSpritesChanged(animationData);
+            }
           }
         }
 
@@ -2206,6 +2215,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       } else if (existingByUsername) {
         cache.onlinePlayers.add(data.username.toLowerCase());
         updateGuildMemberOnlineStatus(data.username, true);
+        updatePartyMemberOnlineStatus(data.username, true);
         // Update existing player instead of recreating to avoid duplicates
         Object.assign(existingByUsername, data);
         // Update sprite data if provided
@@ -2347,6 +2357,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       cache.onlinePlayers.delete(data.username.toLowerCase());
       updateGuildMemberOnlineStatus(data.username, false);
+      updatePartyMemberOnlineStatus(data.username, false);
       updateFriendOnlineStatus(data.username, false);
 
       const player = Array.from(cache.players).find(
@@ -2369,6 +2380,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       if (player) {
         cache.onlinePlayers.delete(player.username.toLowerCase());
         updateGuildMemberOnlineStatus(player.username, false);
+        updatePartyMemberOnlineStatus(player.username, false);
         updateFriendOnlineStatus(player.username, false);
         cache.players.delete(player);
       }
@@ -2390,6 +2402,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         if (player) {
           cache.onlinePlayers.delete(player.username.toLowerCase());
           updateGuildMemberOnlineStatus(player.username, false);
+          updatePartyMemberOnlineStatus(player.username, false);
           updateFriendOnlineStatus(player.username, false);
           cache.players.delete(player);
         }
@@ -2955,6 +2968,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           // Brief settle so the first baked frames paint before the loading
           // screen is removed (was 1000ms - loadMap already bakes synchronously).
           await new Promise(resolve => setTimeout(resolve, 200));
+          // Re-arm the first-frame gates: anything drawn from here on is the new
+          // map, so hideLoadingScreen fades only over painted canvas + minimap.
+          (window as any).__firstFrameRendered = false;
+          (window as any).__minimapRendered = false;
           hideLoadingScreen();
         }
 
@@ -4464,6 +4481,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       statUI.setAttribute("data-id", data.id);
 
       statUI.style.display = "block";
+
+      // Player preview: self builds from live spriteData, others from their
+      // live animation templates (see preview.ts).
+      startStatPreview(String(data.id));
       break;
     }
     case "NOTIFY": {
@@ -4811,20 +4832,45 @@ export function setSelfPlayerSpriteLoaded(value: boolean) {
 
 let _hideScreenTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Resolves once the main canvas completes a full draw pass (animationLoop
+// sets __firstFrameRendered at its end, past all early-returns) AND the
+// minimap completes one (renderMinimap sets __minimapRendered the same way),
+// or after timeoutMs so a stalled renderer can't trap the player on the
+// loading screen forever. rAF polling keeps this aligned to presented
+// frames; the timeout covers hidden tabs where rAF is throttled. Note the
+// minimap only draws every 15th frame, so it typically lags the main canvas.
+function waitForInitialFrames(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    if ((window as any).__firstFrameRendered && (window as any).__minimapRendered) {
+      resolve();
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    const check = () => {
+      if ((window as any).__firstFrameRendered && (window as any).__minimapRendered) finish();
+      else if (!done) requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  });
+}
+
 async function hideLoadingScreen() {
   const { loadingScreen, progressBar, progressBarContainer } = await import('./ui.js');
 
+  // Gate the fade on real painted frames instead of a fixed delay: the flags
+  // are re-armed after loadMap, so the first true means the new map drew.
+  await waitForInitialFrames(5000);
+
   const isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   if (isMobile) {
-    if (!(window as any).__firstFrameRendered) {
-      await new Promise<void>(resolve => {
-        const check = () => {
-          if ((window as any).__firstFrameRendered) resolve();
-          else setTimeout(check, 100);
-        };
-        check();
-      });
-    }
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
 
@@ -4836,8 +4882,6 @@ async function hideLoadingScreen() {
   }
 
   if (loadingScreen) {
-    await new Promise(resolve => setTimeout(resolve, 500));
-
     // Unlock player movement exactly as the loading screen begins to fade out.
     movementAllowed = true;
 

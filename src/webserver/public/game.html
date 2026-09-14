@@ -76,6 +76,18 @@
       <!-- Mobile UI Backdrop -->
       <div id="mobile-ui-backdrop"></div>
       <div id="server-time-container" class="ui"><p id="server-time-value">7:40:46 PM</p></div>
+      <div id="self-status" class="ui">
+        <div id="self-status-username" class="party-member-username ui"></div>
+        <div class="party-member-bars ui">
+          <div class="party-member-health-bar ui">
+            <div id="self-status-health-progress" class="party-member-health-progress ui green"></div>
+            <div id="self-status-absorb" class="party-member-health-absorb ui"></div>
+          </div>
+          <div class="party-member-stamina-bar ui">
+            <div id="self-status-stamina-progress" class="party-member-stamina-progress ui"></div>
+          </div>
+        </div>
+      </div>
       <div id="debug-container" class="ui">
         <div id="onlinecount" class="ui"></div>
         <div id="packets-sent-received" class="ui">Sent: 0, Received: 0</div>
@@ -163,6 +175,7 @@
         <div id="stats-screen-username-container" class="ui">
           <label id="stats-screen-username-label" class="ui">Username</label>
         </div>
+        <canvas id="stat-screen-preview" class="ui" width="160" height="160"></canvas>
         <div id="equipment-left-column" class="ui">
           <div class="slot empty ui" data-slot="helmet"></div>
           <div class="slot empty ui" data-slot="necklace"></div>
@@ -290,8 +303,8 @@
           <div id="guild-create-section" class="ui">
             <label id="guild-create-label" class="guild-label ui">Create Guild</label>
             <input type="text" id="guild-create-input" class="guild-input ui" placeholder="Guild Name" autocomplete="off" spellcheck="false">
-            <button type="button" id="guild-create-button" class="guild-button ui">Create</button>
           </div>
+          <button type="button" id="guild-create-button" class="guild-button ui">Create</button>
         </div>
           <div id="guild-leave-button" class="ui">Leave Guild</div>
           <div id="guild-invite-input-container" class="ui">

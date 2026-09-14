@@ -277,6 +277,11 @@ window.addEventListener("keydown", async (e) => {
   );
   if (isTypingInInput && !["Enter", "Escape"].includes(e.code)) return;
 
+  // Ignore OS key auto-repeat for everything except movement: holding an
+  // action key must not re-fire its handler. (Placed after the input guard
+  // so chat typing still repeats normally.)
+  if (e.repeat && !movementKeys.has(e.code)) return;
+
   if (e.code === "KeyE") {
     if (e.repeat) return;
     const cache = Cache.getInstance();

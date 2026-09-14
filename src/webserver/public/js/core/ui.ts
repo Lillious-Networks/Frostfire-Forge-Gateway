@@ -1,5 +1,6 @@
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
+import { stopStatPreview } from "./preview.js";
 const cache = Cache.getInstance();
 import { cast } from "./input.js";
 import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip } from "./tooltip.js";
@@ -815,12 +816,14 @@ if (statScreenClose) {
   statScreenClose.addEventListener("click", (e) => {
     e.stopPropagation();
     statUI.style.display = "none";
+    stopStatPreview();
   });
 }
 
 function handleStatsUI() {
   if (statUI.style.display === "block") {
     statUI.style.display = "none";
+    stopStatPreview();
   } else {
     sendRequest({ type: "INSPECTPLAYER", data: null });
   }
@@ -1101,7 +1104,9 @@ document.addEventListener("touchend", (e: TouchEvent) => {
   if (touchDragSource === "spellbook") {
     if (hotbarSlot && touchDragSpellName) {
       hotbarSlot.dataset.spellName = touchDragSpellName;
+      const existingKey = hotbarSlot.querySelector(".hotbar-key");
       hotbarSlot.innerHTML = "";
+      if (existingKey) hotbarSlot.appendChild(existingKey);
       hotbarSlot.classList.remove("empty");
       if (touchDragImageSrc) {
         const iconImage = new Image();
@@ -1109,7 +1114,7 @@ document.addEventListener("touchend", (e: TouchEvent) => {
         iconImage.draggable = false;
         hotbarSlot.appendChild(iconImage);
       } else {
-        hotbarSlot.innerText = touchDragSpellName;
+        hotbarSlot.appendChild(document.createTextNode(touchDragSpellName));
       }
       saveHotbarConfiguration();
     }
@@ -1121,7 +1126,9 @@ document.addEventListener("touchend", (e: TouchEvent) => {
       const targetImageSrc = targetImg ? targetImg.src : null;
 
       hotbarSlot.dataset.spellName = touchDragSpellName;
+      const targetKey = hotbarSlot.querySelector(".hotbar-key");
       hotbarSlot.innerHTML = "";
+      if (targetKey) hotbarSlot.appendChild(targetKey);
       hotbarSlot.classList.remove("empty");
       if (touchDragImageSrc) {
         const iconImage = new Image();
@@ -1129,14 +1136,16 @@ document.addEventListener("touchend", (e: TouchEvent) => {
         iconImage.draggable = false;
         hotbarSlot.appendChild(iconImage);
       } else {
-        hotbarSlot.innerText = touchDragSpellName;
+        hotbarSlot.appendChild(document.createTextNode(touchDragSpellName));
       }
 
       if (touchDragSourceIndex !== targetIndex && touchDragSourceIndex >= 0) {
         const sourceSlot = hotbarSlots[touchDragSourceIndex];
         if (targetSpellName && targetSpellName !== touchDragSpellName) {
           sourceSlot.dataset.spellName = targetSpellName;
+          const sourceKey = sourceSlot.querySelector(".hotbar-key");
           sourceSlot.innerHTML = "";
+          if (sourceKey) sourceSlot.appendChild(sourceKey);
           sourceSlot.classList.remove("empty");
           if (targetImageSrc) {
             const iconImage = new Image();
@@ -1144,10 +1153,12 @@ document.addEventListener("touchend", (e: TouchEvent) => {
             iconImage.draggable = false;
             sourceSlot.appendChild(iconImage);
           } else {
-            sourceSlot.innerText = targetSpellName;
+            sourceSlot.appendChild(document.createTextNode(targetSpellName));
           }
         } else {
+          const sourceKey = sourceSlot.querySelector(".hotbar-key");
           sourceSlot.innerHTML = "";
+          if (sourceKey) sourceSlot.appendChild(sourceKey);
           sourceSlot.classList.add("empty");
           delete sourceSlot.dataset.spellName;
         }
@@ -1156,7 +1167,9 @@ document.addEventListener("touchend", (e: TouchEvent) => {
       saveHotbarConfiguration();
     } else if (touchDragSourceIndex >= 0) {
       const sourceSlot = hotbarSlots[touchDragSourceIndex];
+      const sourceKey = sourceSlot.querySelector(".hotbar-key");
       sourceSlot.innerHTML = "";
+      if (sourceKey) sourceSlot.appendChild(sourceKey);
       sourceSlot.classList.add("empty");
       delete sourceSlot.dataset.spellName;
       saveHotbarConfiguration();
@@ -1327,6 +1340,9 @@ function createPartyUI(partyMembers: string[], players?: any[]) {
       const memberElement = document.createElement("div");
       memberElement.className = "party-member ui";
       memberElement.dataset.username = lowerName;
+      if (!Cache.getInstance().onlinePlayers.has(lowerName)) {
+        memberElement.classList.add("party-offline");
+      }
 
       const usernameElement = document.createElement("div");
       usernameElement.className = "party-member-username ui";
@@ -1341,6 +1357,10 @@ function createPartyUI(partyMembers: string[], players?: any[]) {
       healthProgress.className = "party-member-health-progress ui green";
       healthProgress.style.setProperty("--health-scale", "1");
       healthBarContainer.appendChild(healthProgress);
+      const absorbOverlay = document.createElement("div");
+      absorbOverlay.className = "party-member-health-absorb ui";
+      absorbOverlay.style.display = "none";
+      healthBarContainer.appendChild(absorbOverlay);
 
       const staminaBarContainer = document.createElement("div");
       staminaBarContainer.className = "party-member-stamina-bar ui";
@@ -1377,13 +1397,19 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
   if (!guildMembersList) return;
 
   if (!guildNameValue) {
-    if (guildNameEl) guildNameEl.style.display = "none";
+    // Create mode: the header carries the title; the in-section label is
+    // hidden via CSS.
+    if (guildNameEl) {
+      guildNameEl.textContent = "Create Guild";
+      guildNameEl.style.display = "block";
+    }
     if (guildRank) guildRank.style.display = "none";
     if (guildMemberCount) guildMemberCount.style.display = "none";
     if (guildMembersList) guildMembersList.style.display = "none";
     if (guildMemberInviteInput) guildMemberInviteInput.style.display = "none";
     if (guildMemberInviteButton) guildMemberInviteButton.style.display = "none";
     if (guildCreateSection) guildCreateSection.style.display = "block";
+    if (guildCreateButton) guildCreateButton.style.display = "block";
 
     const separator = document.getElementById("guild-header-separator");
     if (separator) separator.style.display = "none";
@@ -1397,6 +1423,7 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
   }
 
   if (guildCreateSection) guildCreateSection.style.display = "none";
+  if (guildCreateButton) guildCreateButton.style.display = "none";
   if (guildMembersList) guildMembersList.style.display = "block";
 
   const separator = document.getElementById("guild-header-separator");
@@ -1419,7 +1446,7 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
   }
 
   if (guildMemberCount) {
-    guildMemberCount.textContent = `Members: ${guildMembers.length}`;
+    guildMemberCount.textContent = `${guildMembers.length}`;
     guildMemberCount.style.display = "block";
   }
 
@@ -1467,9 +1494,12 @@ function createGuildUI(guildMembers: string[], guildNameValue: string | null) {
     }
   }
 
-  guildMembers.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  // Sort a COPY for display. Sorting in place would mutate currentPlayer.guild
+  // (passed by reference), breaking leader-first ordering that the context-menu
+  // leader checks (guild[0] === leader) rely on.
+  const sortedMembers = [...guildMembers].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
-  for (const member of guildMembers) {
+  for (const member of sortedMembers) {
     const lowerName = member.toLowerCase();
     if (!existingNames.has(lowerName)) {
       const memberElement = document.createElement("div");
@@ -1504,6 +1534,16 @@ function updateGuildMemberOnlineStatus(username: string, isOnline: boolean) {
   if (!statusElement) return;
   statusElement.classList.toggle("guild-online", isOnline);
   statusElement.classList.toggle("guild-offline", !isOnline);
+}
+
+function updatePartyMemberOnlineStatus(username: string, isOnline: boolean) {
+  const partyContainer = document.getElementById("party-container");
+  if (!partyContainer) return;
+  const memberElement = partyContainer.querySelector(
+    `.party-member[data-username="${username.toLowerCase()}"]`
+  ) as HTMLElement;
+  if (!memberElement) return;
+  memberElement.classList.toggle("party-offline", !isOnline);
 }
 
 function updatePartyMemberStats(username: string, health: number, maxHealth: number, stamina: number, maxStamina: number) {
@@ -1547,6 +1587,84 @@ function updatePartyMemberStats(username: string, health: number, maxHealth: num
   if (staminaProgress && maxStamina > 0) {
     const staminaScale = Math.max(0, Math.min(1, stamina / maxStamina));
     staminaProgress.style.setProperty("--stamina-scale", staminaScale.toString());
+  }
+
+  // Barrier absorb overlay: read from cached stats (merged on every STATS /
+  // damage packet before this runs), so no packet plumbing changes needed.
+  const absorbOverlay = memberElement.querySelector(".party-member-health-absorb") as HTMLElement;
+  if (absorbOverlay) {
+    const memberData = Array.from(Cache.getInstance().players).find(
+      (p: any) => p.username?.toLowerCase() === lowerUsername
+    ) as any;
+    const absorbtion = memberData?.stats?.absorbtion || 0;
+    if (absorbtion > 0 && maxHealth > 0) {
+      const absorbScale = Math.max(0, Math.min(1, absorbtion / maxHealth));
+      absorbOverlay.style.setProperty("--absorb-scale", absorbScale.toString());
+      absorbOverlay.style.display = "block";
+    } else {
+      absorbOverlay.style.display = "none";
+    }
+  }
+}
+
+// Mobile-only self status card (top-left): same bars as a party member card.
+// Driven every frame from the render loop (like the desktop bars); DOM writes
+// are skipped unless something actually changed.
+let lastSelfStatus = "";
+function updateSelfStatus(username: string, health: number, maxHealth: number, stamina: number, maxStamina: number, absorbtion: number = 0) {
+  const key = `${username}|${health}|${maxHealth}|${stamina}|${maxStamina}|${absorbtion}`;
+  if (key === lastSelfStatus) return;
+  lastSelfStatus = key;
+
+  const card = document.getElementById("self-status");
+  if (!card) return;
+
+  const nameElement = document.getElementById("self-status-username");
+  if (nameElement) {
+    nameElement.innerText = username.charAt(0).toUpperCase() + username.slice(1);
+  }
+
+  const healthProgress = document.getElementById("self-status-health-progress");
+  const staminaProgress = document.getElementById("self-status-stamina-progress");
+
+  if (healthProgress && maxHealth > 0) {
+    const healthPercent = (health / maxHealth) * 100;
+    const healthScale = Math.max(0, Math.min(1, health / maxHealth));
+    (healthProgress as HTMLElement).style.setProperty("--health-scale", healthScale.toString());
+
+    let colorClass = "green";
+    if (healthPercent < 30) {
+      colorClass = "red";
+    } else if (healthPercent < 50) {
+      colorClass = "orange";
+    } else if (healthPercent < 80) {
+      colorClass = "yellow";
+    }
+
+    const current = Array.from(healthProgress.classList).find(c =>
+      ["green", "yellow", "orange", "red"].includes(c)
+    );
+
+    if (current !== colorClass) {
+      healthProgress.classList.remove("green", "yellow", "orange", "red");
+      healthProgress.classList.add(colorClass);
+    }
+  }
+
+  if (staminaProgress && maxStamina > 0) {
+    const staminaScale = Math.max(0, Math.min(1, stamina / maxStamina));
+    (staminaProgress as HTMLElement).style.setProperty("--stamina-scale", staminaScale.toString());
+  }
+
+  const absorbOverlay = document.getElementById("self-status-absorb");
+  if (absorbOverlay) {
+    if (absorbtion > 0 && maxHealth > 0) {
+      const absorbScale = Math.max(0, Math.min(1, absorbtion / maxHealth));
+      (absorbOverlay as HTMLElement).style.setProperty("--absorb-scale", absorbScale.toString());
+      (absorbOverlay as HTMLElement).style.display = "block";
+    } else {
+      (absorbOverlay as HTMLElement).style.display = "none";
+    }
   }
 }
 
@@ -2232,7 +2350,7 @@ if (guildCreateButton) {
 }
 
 export {
-    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
+    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateSelfStatus, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,

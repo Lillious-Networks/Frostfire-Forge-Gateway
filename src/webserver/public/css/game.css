@@ -566,8 +566,8 @@ body {
 
 #guild-member-count {
   position: absolute;
-  top: 32px;
-  left: 30px;
+  top: 52px;
+  left: 45px;
   font-size: 0.85em;
   color: #FFF1DA;
   font-family: 'Comic Relief';
@@ -589,8 +589,9 @@ body {
 
 #guild-rank {
   position: absolute;
-  top: 32px;
-  right: 30px;
+  bottom: 20px;
+  right: 78px;
+  opacity: 0;
   font-size: 0.85em;
   color: #FFF1DA;
   font-family: 'Comic Relief';
@@ -600,8 +601,8 @@ body {
 #guild-header-separator {
   position: absolute;
   top: 80px;
-  left: 35px;
-  right: 35px;
+  left: 40px;
+  right: 40px;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(147, 111, 85, 0.6), transparent);
 }
@@ -609,9 +610,9 @@ body {
 #guild-members-list {
   font-size: 0.8em;
   position: absolute;
-  top: 125px;
-  left: 25px;
-  right: 25px;
+  top: 130px;
+  left: 40px;
+  right: 40px;
   bottom: 65px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -659,35 +660,38 @@ body {
 }
 
 .guild-member-status {
-  width: 8px;
-  height: 8px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   flex-shrink: 0;
   margin-left: 8px;
   box-sizing: border-box;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
 }
 
 .guild-online {
-  background: #7a9a7a;
-  border: 1px solid #6a8e6a;
-  -webkit-box-shadow: 0 0 6px 2px rgba(122, 154, 122, 0.5);
-  box-shadow: 0 0 6px 2px rgba(122, 154, 122, 0.5);
+  background-image: url("../img/ui/crystal_online.png");
 }
 
 .guild-offline {
-  background: #b86565;
-  border: 1px solid #a55858;
-  -webkit-box-shadow: 0 0 6px 2px rgba(184, 101, 101, 0.5);
-  box-shadow: 0 0 6px 2px rgba(184, 101, 101, 0.5);
+  background-image: url("../img/ui/crystal_offline.png");
+  opacity: 0.6;
 }
 
 #guild-leave-button {
   position: absolute;
-  bottom: 20px;
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   height: 28px;
-  padding: 0 16px;
+  /* Fixed width matching the bottom cartouche inset, so Disband and Leave
+     render identically. */
+  width: 120px;
+  padding: 0;
+  text-align: center;
+  line-height: 24px;
   background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
   border: 2px solid #7a3838;
   border-radius: 4px;
@@ -717,9 +721,9 @@ body {
 
 #guild-invite-input-container {
   position: absolute;
-  top: 90px;
-  left: 30px;
-  right: 30px;
+  top: 100px;
+  left: 45px;
+  right: 45px;
   display: flex;
   gap: 6px;
 }
@@ -802,9 +806,36 @@ body {
 
 #guild-create-section {
   position: absolute;
-  top: 60px;
-  left: 30px;
-  right: 30px;
+  top: 100px;
+  left: 45px;
+  right: 45px;
+}
+
+/* Redundant now that the panel header carries the title. */
+#guild-create-label {
+  display: none;
+}
+
+/* Create button lives in the bottom cartouche, same placement/size as the
+   leave/disband button. Hover/active preserve the centering transform. */
+#guild-create-button {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 28px;
+  padding: 0;
+  text-align: center;
+  line-height: 24px;
+}
+
+#guild-create-button:hover {
+  transform: translateX(-50%) translateY(-2px);
+}
+
+#guild-create-button:active {
+  transform: translateX(-50%) translateY(0px);
 }
 
 #friends-list-container {
@@ -879,26 +910,24 @@ body {
 }
 
 .friend-item .friend-status {
-  width: 8px;
-  height: 8px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   flex-shrink: 0;
   margin-left: 8px;
   box-sizing: border-box;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
 }
 
 .online {
-  background: #7a9a7a;
-  border: 1px solid #6a8e6a;
-  -webkit-box-shadow: 0 0 6px 2px rgba(122, 154, 122, 0.5);
-  box-shadow: 0 0 6px 2px rgba(122, 154, 122, 0.5);
+  background-image: url("../img/ui/crystal_online.png");
 }
 
 .offline {
-  background: #b86565;
-  border: 1px solid #a55858;
-  -webkit-box-shadow: 0 0 6px 2px rgba(184, 101, 101, 0.5);
-  box-shadow: 0 0 6px 2px rgba(184, 101, 101, 0.5);
+  background-image: url("../img/ui/crystal_offline.png");
+  opacity: 0.6;
 }
 
 #friends-list::-webkit-scrollbar {
@@ -2174,6 +2203,20 @@ body.timelapse-active .ui-hidden-in-timelapse {
   z-index: 101;
 }
 
+/* Player preview: idle animation with live equipment, centered in the free
+   band between the equipment columns. pointer-events none so equipment
+   slot clicks/drags pass through. */
+#stat-screen-preview {
+  position: absolute;
+  left: 118px;
+  top: 220px;
+  width: 160px;
+  height: 160px;
+  z-index: 100;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
 #stats-screen-username-label {
   font-size: 1em;
   font-weight: 700;
@@ -3011,7 +3054,7 @@ input[type=range]:disabled {
   padding-left: 25px;
   padding-right: 10px;
   text-align: left;
-  text-shadow: 0 0 5px #000000;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -3046,6 +3089,20 @@ input[type=range]:disabled {
   will-change: transform;
 }
 
+/* Barrier absorb overlay: translucent blue fill from the left with a glowing
+   right edge, mirroring the desktop absorption bar. Width driven by
+   --absorb-scale (absorbtion / max health). */
+.party-member-health-absorb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: calc(var(--absorb-scale, 0) * 100%);
+  background: rgba(180, 220, 255, 0.4);
+  box-shadow: 0 0 4px rgba(180, 220, 255, 0.7), inset -2px 0 0 rgba(210, 235, 255, 0.6);
+  pointer-events: none;
+}
+
 .party-member-stamina-progress {
   height: 100%;
   background: url("../img/ui/ui-party-stamina.png");
@@ -3054,6 +3111,37 @@ input[type=range]:disabled {
   transform: scaleX(var(--stamina-scale, 1));
   transform-origin: left;
   will-change: transform;
+}
+
+/* Offline party members: greyscale the bars (toggled via .party-offline). */
+.party-member.party-offline .party-member-health-progress,
+.party-member.party-offline .party-member-stamina-progress,
+.party-member.party-offline .party-member-health-absorb {
+  filter: grayscale(1);
+  opacity: 0.65;
+}
+
+/* Self health/stamina card (mobile only): same look as a party member card. */
+#self-status {
+  position: fixed;
+  z-index: 99;
+  top: 25px;
+  left: 25px;
+  background: url("../img/ui/ui-party.png");
+  background-size: cover;
+  width: 128px;
+  height: 72px;
+  padding: 5px;
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  #self-status {
+    display: flex;
+  }
 }
 
 .notification {
@@ -3517,6 +3605,14 @@ body.mobile-landscape {
     padding: 3px;
   }
 
+  /* Self card mirrors .party-member (separate id so party tap/right-click
+     menus never trigger on it). */
+  #self-status {
+    width: 80px;
+    height: 40px;
+    padding: 3px;
+  }
+
   .party-member-username {
     font-size: 0.7em;
   }
@@ -3540,8 +3636,8 @@ body.mobile-landscape {
   #minimap-container {
     width: 154px;
     height: 154px;
-    top: 25px;
-    right: 25px;
+    top: 15px;
+    right: 15px;
     transform: scale(0.7);
     transform-origin: top right;
   }
@@ -3661,8 +3757,8 @@ body.ios-device.mobile-landscape #collectables-container,
 body.ios-device.mobile-landscape #friends-list-container,
 body.ios-device.mobile-landscape #guild-container,
 body.ios-device.mobile-landscape #admin-panel-container {
-  right: 10px !important;
-  top: 10px !important;
+  right: 16px !important;
+  top: 14px !important;
   transform: none !important;
   zoom: 0.8;
 }
@@ -3963,7 +4059,7 @@ body.tiny-landscape .notification {
 #virtual-joystick-container {
   position: absolute;
   bottom: 30px;
-  left: 60px;
+  left: 30px;
   width: 220px;
   height: 220px;
   pointer-events: auto;
@@ -4146,7 +4242,7 @@ body.tiny-landscape .notification {
 @media (max-height: 600px) and (orientation: landscape) {
   #virtual-joystick-container {
     bottom: 22px;
-    left: 44px;
+    left: 22px;
     width: 170px;
     height: 170px;
     --sorbit: 0.77;
@@ -4172,7 +4268,7 @@ body.tiny-landscape .notification {
 @media (max-height: 450px) and (orientation: landscape) {
   #virtual-joystick-container {
     bottom: 16px;
-    left: 36px;
+    left: 16px;
     width: 130px;
     height: 130px;
     --sorbit: 0.59;
@@ -4198,7 +4294,7 @@ body.tiny-landscape .notification {
 @media (max-height: 380px) and (orientation: landscape) {
   #virtual-joystick-container {
     bottom: 12px;
-    left: 28px;
+    left: 12px;
     width: 105px;
     height: 105px;
     --sorbit: 0.48;
@@ -4228,40 +4324,46 @@ body.tiny-landscape .notification {
   left: auto;
   width: 70px !important;
   height: 70px !important;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: url("../img/ui/ui-mount-button.png") center / contain no-repeat;
+  border: none;
+  border-radius: 0;
   pointer-events: auto;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  color: rgba(255, 255, 255, 0.8);
-  transition: all 0.2s ease;
+  font-size: 0;
+  color: transparent;
+  transition: transform 0.2s ease;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  -webkit-user-drag: none;
+  outline: none !important;
   touch-action: manipulation;
   padding: 0;
   z-index: 1001;
 }
 
+#virtual-mount-button:focus,
+#virtual-mount-button:focus-visible,
+#virtual-mount-button:active {
+  outline: none !important;
+  box-shadow: none;
+}
+
+#virtual-mount-button span {
+  display: none;
+}
+
 #virtual-mount-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
   transform: scale(1.05);
 }
 
 #virtual-mount-button:active {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
   transform: scale(0.95);
 }
 
 #virtual-mount-button.holding {
-  border-color: rgba(34, 197, 94, 0.6);
-  box-shadow: 0 0 16px rgba(34, 197, 94, 0.45);
+  transform: scale(0.95);
 }
 
 @media (hover: none) and (pointer: coarse) and (orientation: portrait) {
@@ -4298,6 +4400,23 @@ body.tiny-landscape #hotbar {
   bottom: 10px !important;
   transform: translateX(-50%) scale(0.6) !important;
   transform-origin: bottom center !important;
+}
+
+/* Stat screen tracks the hotbar's scaled visual left edge per variant. */
+body.mobile-landscape #stat-screen {
+  left: max(calc(50% - 297px), env(safe-area-inset-left, 0px)) !important;
+}
+
+body.small-landscape #stat-screen {
+  left: max(calc(50% - 277px), env(safe-area-inset-left, 0px)) !important;
+}
+
+body.tiny-landscape #stat-screen {
+  left: max(calc(50% - 238px), env(safe-area-inset-left, 0px)) !important;
+}
+
+body.ipad-device.landscape-mode #stat-screen {
+  left: max(calc(50% - 337px), env(safe-area-inset-left, 0px)) !important;
 }
 
 body.mobile-landscape #server-time-container,
@@ -5021,16 +5140,13 @@ body.ipad-device #game-notification-container {
   right: 16px;
   width: 60px;
   height: 60px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  font-size: 24px;
+  background: url("../img/ui/ui-action-menu.png") center / contain no-repeat;
+  border: none;
+  border-radius: 0;
+  font-size: 0;
+  color: transparent;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.8);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease;
   z-index: 9000;
   padding: 0;
   margin: 0;
@@ -5067,8 +5183,6 @@ body.ipad-device #game-notification-container {
 }
 
 .radial-menu-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
   transform: scale(1.05);
 }
 
@@ -5077,8 +5191,7 @@ body.ipad-device #game-notification-container {
 }
 
 .radial-menu-btn.active {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
+  filter: brightness(1.2);
 }
 
 @keyframes fadeInStagger {
@@ -5229,7 +5342,24 @@ body.ipad-device #game-notification-container {
   }
 
   #buff-bar {
-    top: 60px !important;
+    top: 14px !important;
+    right: 16px !important;
+  }
+
+  /* Cast bar sits just above the hotbar (overrides all landscape top-docked
+     variants below in specificity via !important). */
+  #castbar,
+  #castbar-active-clone {
+    top: auto !important;
+    bottom: 90px !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) !important;
+    transform-origin: bottom center !important;
+  }
+
+  #castbar-text {
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45) !important;
   }
 
   #game-notification-container {
@@ -5245,7 +5375,8 @@ body.ipad-device #game-notification-container {
     position: fixed !important;
     top: 50% !important;
     bottom: auto !important;
-    left: max(10px, env(safe-area-inset-left)) !important;
+    left: auto !important;
+    right: 10px !important;
     width: auto !important;
     height: auto !important;
     display: flex !important;
@@ -5255,24 +5386,58 @@ body.ipad-device #game-notification-container {
   }
 
   .party-member {
-    width: 80px !important;
-    height: 40px !important;
+    width: 96px !important;
+    height: 52px !important;
     margin: 0 !important;
-    padding: 3px !important;
+    padding: 3px 3px 2px !important;
+  }
+
+  /* Self card: 2x card + bars, text stays at party size. background-size
+     100% 100% shows the full frame (cover cropped the bottom rail).
+     Bar/name offsets match the stretched grooves (health y46-57,
+     stamina y62-73, plate y14-34). Separate id so party tap/right-click
+     menus never trigger on it. */
+  #self-status {
+    width: 160px !important;
+    height: 80px !important;
+    padding: 6px !important;
+    background-size: 100% 100% !important;
+  }
+
+  #self-status-username {
+    font-size: 0.7em !important;
+    padding-top: 10px !important;
+    padding-left: 28px !important;
+    padding-right: 10px !important;
+    text-align: left !important;
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45) !important;
+  }
+
+  #self-status .party-member-bars {
+    gap: 3px !important;
+  }
+
+  #self-status .party-member-health-bar,
+  #self-status .party-member-stamina-bar {
+    width: 120px !important;
+    height: 12px !important;
+    margin-left: 8px !important;
   }
 
   .party-member-username {
     font-size: 0.6em !important;
-    padding-top: 2px !important;
+    padding-top: 5px !important;
     padding-left: 18px !important;
+    padding-right: 10px !important;
+    text-align: left !important;
   }
 
   .party-member-health-bar,
   .party-member-stamina-bar {
-    width: 60px !important;
-    height: 6px !important;
-    margin-left: 4px !important;
-    margin-bottom: 1px !important;
+    width: 72px !important;
+    height: 7px !important;
+    margin-left: 5px !important;
+    margin-bottom: 2px !important;
   }
 
   #inventory {
@@ -5298,9 +5463,9 @@ body.ipad-device #game-notification-container {
 
   #spell-book-container {
     position: fixed !important;
-    top: 10px !important;
+    top: 14px !important;
     bottom: auto !important;
-    right: 10px !important;
+    right: 16px !important;
     left: auto !important;
     transform: none !important;
     zoom: 0.62;
@@ -5315,9 +5480,9 @@ body.ipad-device #game-notification-container {
   #guild-container,
   #admin-panel-container {
     position: fixed !important;
-    top: 10px !important;
+    top: 14px !important;
     bottom: auto !important;
-    right: 10px !important;
+    right: 16px !important;
     left: auto !important;
     transform: none !important;
     zoom: 0.62;
@@ -5382,10 +5547,17 @@ body.ipad-device #game-notification-container {
   #stat-screen {
     width: 600px !important;
     height: 513px !important;
-    transform: scale(0.55);
+    transform: scale(0.65);
     transform-origin: top left;
-    top: max(10px, env(safe-area-inset-top)) !important;
-    left: max(85px, calc(75px + env(safe-area-inset-left, 0px)));
+    top: max(14px, env(safe-area-inset-top)) !important;
+    /* Align left edge with the centered hotbar (10x72px slots + 9x8px gaps
+       = 792px layout, portrait scale 0.85 -> 673px visual). Landscape
+       variants override below with their own hotbar scale. */
+    left: max(calc(50% - 337px), env(safe-area-inset-left, 0px)) !important;
+  }
+
+  #stats-screen-username-label {
+    font-size: 1.3em !important;
   }
 
   #hotbar {

@@ -355,6 +355,10 @@ function renderMinimap() {
   ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
   ctx.lineWidth = 1;
   ctx.stroke();
+
+  // Signal a completed draw pass (reached only past all early-returns above).
+  // hideLoadingScreen waits on this alongside the main canvas first frame.
+  (window as any).__minimapRendered = true;
 }
 
 let minimapFrameCounter = 0;

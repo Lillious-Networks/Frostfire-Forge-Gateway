@@ -3,7 +3,7 @@ const cache = Cache.getInstance();
 import { cachedPlayerId, setSelfPlayerSpriteLoaded } from "./socket.js";
 import { updateFriendOnlineStatus, updateFriendsList } from "./friends.js";
 import { getCameraX, getCameraY, setCameraX, setCameraY, getWeatherType } from "./renderer.js";
-import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, positionText } from "./ui.js";
+import { createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, positionText } from "./ui.js";
 import { updateXp } from "./xp.js";
 import { getLines } from "./chat.js";
 import { getCachedImage } from "./images.js";
@@ -21,6 +21,7 @@ async function createPlayer(data: any) {
   updateFriendOnlineStatus(data.username, true);
   cache.onlinePlayers.add(data.username.toLowerCase());
   updateGuildMemberOnlineStatus(data.username, true);
+  updatePartyMemberOnlineStatus(data.username, true);
 
   let layeredAnimationPromise = null;
 
@@ -69,6 +70,9 @@ async function createPlayer(data: any) {
     _layerCanvases: {} as Record<string, HTMLCanvasElement>,
     lastDirection: "down" as string,
     friends: data.friends || [],
+    // Retained so the character sheet preview (and anything else) can rebuild
+    // the layered animation from live equipment without new packets.
+    spriteData: data.spriteData || null,
     position: {
       x: Math.round(data.location.x),
       y: Math.round(data.location.y),
