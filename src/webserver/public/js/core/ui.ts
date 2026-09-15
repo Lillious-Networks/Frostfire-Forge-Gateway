@@ -3,7 +3,7 @@ import Cache from "./cache.js";
 import { stopStatPreview } from "./preview.js";
 const cache = Cache.getInstance();
 import { cast } from "./input.js";
-import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip } from "./tooltip.js";
+import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip, formatDuration } from "./tooltip.js";
 import { config } from "../web/global.js";
 const debugContainer = document.getElementById("debug-container") as HTMLDivElement;
 const statUI = document.getElementById("stat-screen") as HTMLDivElement;
@@ -162,6 +162,9 @@ function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = fals
           value: entry.info?.value,
           interval: entry.info?.interval,
           stacks: entry.info?.stacks,
+          kind: entry.info?.kind,
+          amount: entry.info?.amount,
+          description: entry.info?.description,
           remaining: Math.max(0, Math.ceil((entry.endTime - Date.now()) / 1000)),
         },
       };
@@ -204,7 +207,7 @@ function tickBuffTimers() {
       removeBuffElement(entry);
       buffElements.delete(id);
     } else {
-      entry.timerEl.innerText = `${remaining}`;
+      entry.timerEl.innerText = formatDuration(remaining);
     }
   }
 }

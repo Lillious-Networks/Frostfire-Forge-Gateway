@@ -1,6 +1,9 @@
 import Cache from "./cache.js";
 import { cachedPlayerId } from "./socket.js";
 import { serverTime } from "./ui.js";
+import { getCorpseMarkerTarget } from "./death.js";
+import { getCachedImage } from "./images.js";
+import { getSkeletonSpriteUrl } from "./skeletons.js";
 
 const cache = Cache.getInstance();
 
@@ -315,6 +318,27 @@ function renderMinimap() {
     }
   }
 
+  // Own corpse: skeleton icon when inside the minimap, clamped to the rim
+  // when outside so the direction is always visible.
+  const corpse = getCorpseMarkerTarget();
+  if (corpse) {
+    const corpseImg = getCachedImage(getSkeletonSpriteUrl());
+    if (corpseImg.complete && corpseImg.naturalWidth > 0) {
+      const iconSize = 22;
+      let ix = halfSize + (corpse.x - playerX) / minimapZoom;
+      let iy = halfSize + (corpse.y - playerY) / minimapZoom;
+      const dx = ix - halfSize;
+      const dy = iy - halfSize;
+      const dist = Math.hypot(dx, dy);
+      const rim = radius - 6 - iconSize / 2;
+      if (dist > rim && dist > 0) {
+        ix = halfSize + (dx / dist) * rim;
+        iy = halfSize + (dy / dist) * rim;
+      }
+      ctx.drawImage(corpseImg, ix - iconSize / 2, iy - iconSize / 2, iconSize, iconSize);
+    }
+  }
+
   // Current player marker
   ctx.fillStyle = "#4488FF";
   ctx.beginPath();
@@ -366,7 +390,7 @@ function renderMinimap() {
 }
 
 let minimapFrameCounter = 0;
-const MINIMAP_FRAME_INTERVAL = 15;
+const MINIMAP_FRAME_INTERVAL = 2;
 
 function minimapLoop() {
   minimapFrameCounter++;

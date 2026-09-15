@@ -11,6 +11,7 @@ import { config } from "../web/global.js";
 import { particlePool, getParticleSprite } from "./npc.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
+import { formatDuration } from "./tooltip.js";
 
 async function createPlayer(data: any) {
 
@@ -319,13 +320,14 @@ async function createPlayer(data: any) {
 
           const remaining = Math.ceil((effect.endTime - now) / 1000);
           if (remaining > 0) {
+            const label = formatDuration(remaining);
             context.font = "bold 10px 'Comic Relief'";
             context.textAlign = "center";
             context.fillStyle = "white";
             context.strokeStyle = "black";
             context.lineWidth = 2;
-            context.strokeText(`${remaining}`, x + iconSize / 2, y + iconSize + timerHeight - 2);
-            context.fillText(`${remaining}`, x + iconSize / 2, y + iconSize + timerHeight - 2);
+            context.strokeText(label, x + iconSize / 2, y + iconSize + timerHeight - 2);
+            context.fillText(label, x + iconSize / 2, y + iconSize + timerHeight - 2);
           }
 
           x += iconSize + gap;
@@ -544,17 +546,19 @@ async function createPlayer(data: any) {
 
       context.imageSmoothingEnabled = false;
 
-      // Ghosts render translucent with a bluish tint and pulsing glow so the
-      // dead are visible but unmistakable.
+      // Ghosts render translucent with a pulsing outline so the dead are
+      // visible but unmistakable. The blue tint is baked into cached layer
+      // canvases (not a per-frame ctx.filter) so it looks identical on all
+      // browsers, including ones without canvas-filter support.
       const ghostPulse = this.isGhost ? 0.5 + 0.5 * Math.sin(performance.now() * 0.004) : 0;
+      const ghostTint = !!this.isGhost;
       if (this.isStealth || this.isVanished) {
         context.globalAlpha = 0.5;
-      } else if (this.isGhost) {
+      } else if (ghostTint) {
         context.globalAlpha = 0.45 + 0.2 * ghostPulse;
-        context.filter = "saturate(0.45) brightness(1.3)";
       }
 
-      if (this.isGhost) {
+      if (ghostTint) {
         // Tight pulsing outline follows the sprite silhouette.
         context.shadowColor = "rgba(140, 200, 255, 0.95)";
         context.shadowBlur = 6 + 4 * ghostPulse;
@@ -567,7 +571,7 @@ async function createPlayer(data: any) {
         if (!frame || !frame.imageElement?.complete) continue;
 
         const isMounted: boolean = this.layeredAnimation.layers.mount !== null;
-        const layerKey = `${layer.type}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}`;
+        const layerKey = `${layer.type}_${this.layeredAnimation.currentAnimationName}_${layer.currentFrame}_${isMounted}_${ghostTint ? "ghost" : "live"}`;
         if (!this._layerCanvases[layerKey]) {
           const layerCanvas = document.createElement('canvas');
           layerCanvas.width = frame.width;
@@ -579,6 +583,13 @@ async function createPlayer(data: any) {
             layerCtx.imageSmoothingEnabled = false;
             layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
             layerCtx.drawImage(frame.imageElement, 0, 0);
+            if (ghostTint) {
+              layerCtx.save();
+              layerCtx.globalCompositeOperation = 'source-atop';
+              layerCtx.fillStyle = 'rgba(150,195,255,0.55)';
+              layerCtx.fillRect(0, 0, layerCanvas.width, layerCanvas.height);
+              layerCtx.restore();
+            }
           }
 
           this._layerCanvases[layerKey] = layerCanvas;

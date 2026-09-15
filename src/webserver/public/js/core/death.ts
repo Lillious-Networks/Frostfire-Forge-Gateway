@@ -1,6 +1,11 @@
 import { sendRequest, cachedPlayerId } from "./socket.js";
 import Cache from "./cache.js";
-import { SKELETON_TTL_MS } from "./skeletons.js";
+import { SKELETON_TTL_MS, getScreenView, worldToScreenCss } from "./skeletons.js";
+
+// Whether this device uses the zoomed-out mobile viewport (mirrors map.ts).
+function isTouchViewport(): boolean {
+  return window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+}
 
 // Self death state. The authoritative copy lives on the game server
 // (accounts.is_dead); these flags only drive local UI locks and popups.
@@ -42,11 +47,15 @@ function syncSelfPlayerFlags(): void {
   }
 }
 
-// The world turns grey-blue and softly blurred while dead or haunting.
-// Applies to the main canvas and the above-player layer; the ghost layer
-// stays unfiltered.
+// The world turns grey while dead or haunting as a ghost (blur is
+// desktop-only: fullscreen CSS blur tanks mobile GPUs). Applies to the main
+// canvas and the above-player layer; the ghost layer stays unfiltered.
 function syncGreyscale(): void {
-  const filter = (selfDead || selfGhost) ? "grayscale(1) blur(0.5px) sepia(0.4) hue-rotate(185deg) saturate(2.2)" : "";
+  const filter = !(selfDead || selfGhost)
+    ? ""
+    : isTouchViewport()
+      ? "grayscale(1)"
+      : "grayscale(1) blur(0.5px) sepia(0.4) hue-rotate(185deg) saturate(2.2)";
   const canvas = document.getElementById("game") as HTMLCanvasElement | null;
   if (canvas) canvas.style.filter = filter;
   const above = document.getElementById("game-above") as HTMLCanvasElement | null;
@@ -83,9 +92,14 @@ export function clearSelfDeath(): void {
   selfDead = false;
   selfGhost = false;
   reviveOfferPos = null;
+  graveyardOfferAt = 0;
+  graveyardOfferArmed = false;
+  graveyardOfferSuppressed = false;
+  graveyardAnchor = null;
   clearCorpseMarker();
   hideReleasePopup();
   hideReviveOfferPopup();
+  hideGraveyardOfferPopup();
   syncSelfPlayerFlags();
   syncGreyscale();
 }
@@ -104,8 +118,7 @@ export function clearCorpseMarker(): void {
   corpseMarker = null;
 }
 
-function activeDeathTarget(): { map: string; x: number; y: number } | null {
-  if (!isSelfGhost()) return null;
+function activeDeathTarget(): { map: string; x: number; y: number } | null {  if (!isSelfGhost()) return null;
   const cache = Cache.getInstance();
   const map = (window as any).mapData?.name || "";
   if (!map) return null;
@@ -125,6 +138,12 @@ function activeDeathTarget(): { map: string; x: number; y: number } | null {
     if (skel) return { map: skel.map, x: skel.x, y: skel.y };
   }
   return null;
+}
+
+// Own corpse position for the minimap (null unless a ghost with a known
+// corpse/skeleton on the current map).
+export function getCorpseMarkerTarget(): { map: string; x: number; y: number } | null {
+  return activeDeathTarget();
 }
 
 // Corpse marker lives in unfiltered DOM layers (above the greyscaled world
@@ -185,22 +204,10 @@ function ensureCorpseSkeleton(m: { map: string; x: number; y: number } | null): 
 }
 
 function corpseScreenCss(m: { x: number; y: number }): { x: number; y: number } | null {
-  const camX = (window as any).cameraX;
-  const camY = (window as any).cameraY;
-  if (!Number.isFinite(camX) || !Number.isFinite(camY)) return null;
-  const canvas = document.getElementById("game") as HTMLCanvasElement | null;
-  const dpr = window.devicePixelRatio || 1;
-  const viewW = (canvas?.width || window.innerWidth * dpr) / dpr;
-  const viewH = (canvas?.height || window.innerHeight * dpr) / dpr;
-  const md = (window as any).mapData;
-  let centerX = 0;
-  if (md && md.width * md.tilewidth < window.innerWidth) {
-    centerX = (window.innerWidth - md.width * md.tilewidth) / 2;
-  }
-  return {
-    x: m.x - camX + viewW / 2 + centerX,
-    y: m.y - 10 - camY + viewH / 2,
-  };
+  const view = getScreenView();
+  if (!view) return null;
+  const pos = worldToScreenCss(m.x, m.y, view);
+  return { x: pos.x, y: pos.y - 10 };
 }
 
 export function tickCorpseMarker(): void {
@@ -255,21 +262,34 @@ function updateCorpseEdge(m: { x: number; y: number }, pos: { x: number; y: numb
     el.innerHTML = `<div class="corpse-edge-arrow"></div><div class="corpse-edge-dist"></div>`;
     document.body.appendChild(el);
   }
+  // Skip DOM writes when nothing visible changed (per-frame style writes
+  // force layout work, which matters on mobile GPUs).
+  const rx = Math.round(ax);
+  const ry = Math.round(ay);
+  const ra = Math.round(angleDeg);
+  const label = `${Math.round(worldDist)}m`;
+  const distEl = el.lastChild as HTMLElement | null;
+  if (
+    (el as any)._edgeKey === `${rx}:${ry}:${ra}` &&
+    distEl?.textContent === label
+  ) {
+    return;
+  }
+  (el as any)._edgeKey = `${rx}:${ry}:${ra}`;
   el.style.cssText =
     "position:fixed;left:0;top:0;pointer-events:none;z-index:600;text-align:center;" +
-    `transform:translate(${Math.round(ax)}px, ${Math.round(ay)}px) translate(-50%, -50%);`;
+    `transform:translate(${rx}px, ${ry}px) translate(-50%, -50%);`;
   const arrow = el.firstChild as HTMLElement | null;
   if (arrow) {
     arrow.style.cssText =
       "width:0;height:0;margin:0 auto;" +
       "border-top:10px solid transparent;border-bottom:10px solid transparent;border-left:18px solid #ff4646;" +
-      `transform:rotate(${angleDeg.toFixed(1)}deg);` +
+      `transform:rotate(${ra}deg);` +
       "filter:drop-shadow(0 0 6px rgba(255,40,40,0.9));";
   }
-  const dist = el.lastChild as HTMLElement | null;
-  if (dist) {
-    dist.textContent = `${Math.round(worldDist)}m`;
-    dist.style.cssText =
+  if (distEl) {
+    distEl.textContent = label;
+    distEl.style.cssText =
       "margin-top:4px;font:bold 12px 'Comic Relief',sans-serif;color:#FFD9D9;" +
       "text-shadow:1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000;";
   }
@@ -333,6 +353,109 @@ export function showReviveOfferPopup(data?: any): void {
 
 export function hideReviveOfferPopup(): void {
   document.getElementById("revive-popup")?.remove();
+}
+
+// Graveyard resurrection offer: 5s after the release cinematic ends, a ghost
+// near a graveyard may resurrect on the spot at the price of 15-min
+// Resurrection Sickness (-20% health, -10% all other stats) instead of
+// walking back to the corpse. Gated on real proximity (with hysteresis, like
+// the corpse offer) so it never pops up mid corpse-run.
+let graveyardOfferAt = 0;
+let graveyardOfferArmed = false;
+// Cancel only snoozes the offer: leaving the graveyard area re-arms it, so
+// walking back in shows it again (mirrors the corpse offer's re-arm).
+let graveyardOfferSuppressed = false;
+let graveyardAnchor: { map: string; x: number; y: number } | null = null;
+const GRAVEYARD_OFFER_DELAY_MS = 5000;
+const GRAVEYARD_OFFER_RADIUS = 150;
+const GRAVEYARD_OFFER_HIDE_RADIUS = 200;
+
+export function scheduleGraveyardOffer(delayMs: number = GRAVEYARD_OFFER_DELAY_MS): void {
+  graveyardOfferSuppressed = false;
+  graveyardOfferArmed = false;
+  graveyardOfferAt = performance.now() + delayMs;
+}
+
+// Distance to the nearest graveyard on the current map, or null when it
+// can't be determined. Candidates are the map's graveyard metadata plus the
+// recorded teleport landing spot (covers maps without metadata).
+function distToGraveyard(): number | null {
+  const cache = Cache.getInstance();
+  const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+  const map = (window as any).mapData?.name || "";
+  if (!self?.position || !map) return null;
+  let best: number | null = null;
+  const consider = (x: unknown, y: unknown) => {
+    const nx = Number(x);
+    const ny = Number(y);
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
+    const d = Math.hypot(self.position.x - nx, self.position.y - ny);
+    if (best === null || d < best) best = d;
+  };
+  const gy = (window as any).mapData?.graveyards;
+  if (gy) {
+    const entries = Array.isArray(gy) ? gy : Object.values(gy);
+    for (const g of entries as any[]) {
+      consider(g?.position?.x ?? g?.x, g?.position?.y ?? g?.y);
+    }
+  }
+  if (graveyardAnchor && graveyardAnchor.map === map) {
+    consider(graveyardAnchor.x, graveyardAnchor.y);
+  }
+  return best;
+}
+
+export function tickGraveyardOffer(): void {
+  if (!isSelfGhost()) return;
+  if (!graveyardOfferArmed) {
+    if (!graveyardOfferAt || performance.now() < graveyardOfferAt) return;
+    graveyardOfferArmed = true;
+  }
+  const popup = document.getElementById("graveyard-resurrect-popup");
+  const dist = distToGraveyard();
+  const far = dist === null || dist > GRAVEYARD_OFFER_HIDE_RADIUS;
+  if (far) {
+    // Outside the area: hide an open popup and lift any Cancel snooze, so
+    // re-entering the graveyard shows the offer again.
+    graveyardOfferSuppressed = false;
+    if (popup) hideGraveyardOfferPopup();
+    return;
+  }
+  if (popup || graveyardOfferSuppressed) return;
+  if (dist <= GRAVEYARD_OFFER_RADIUS) {
+    showGraveyardOfferPopup();
+  }
+}
+
+export function showGraveyardOfferPopup(): void {
+  if (!isSelfGhost()) return;
+  if (document.getElementById("graveyard-resurrect-popup")) return;
+  const popup = document.createElement("div");
+  popup.id = "graveyard-resurrect-popup";
+  popup.className = "popup";
+  popup.innerHTML = `
+    <h2>Resurrect here?</h2>
+    <p>Return to life at the graveyard now, but suffer Resurrection Sickness for 15 minutes: -20% health, -10% all other stats.</p>
+    <div class="button-container">
+      <button id="confirm-graveyard-revive">Resurrect</button>
+      <button id="decline-graveyard-revive">Cancel</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+  document.getElementById("confirm-graveyard-revive")?.addEventListener("click", () => {
+    sendRequest({ type: "CONFIRM_GRAVEYARD_REVIVE", data: null });
+    // Stays up until the server confirms with REVIVE.
+  });
+  document.getElementById("decline-graveyard-revive")?.addEventListener("click", () => {
+    // Snooze until the ghost leaves the graveyard area; coming back
+    // re-shows the offer.
+    graveyardOfferSuppressed = true;
+    hideGraveyardOfferPopup();
+  });
+}
+
+export function hideGraveyardOfferPopup(): void {
+  document.getElementById("graveyard-resurrect-popup")?.remove();
 }
 
 // Release cinematic: hide popup and corpse, a clean blue orb rises from the
@@ -554,6 +677,17 @@ export function tickReleaseCinematic(): void {
     cinematic = null;
     document.getElementById("release-fade")?.remove();
     removeReleaseFx();
+    // Record the teleport landing spot as a graveyard anchor (movement is
+    // still locked, so this is exactly the graveyard), then arm the offer.
+    const cache = Cache.getInstance();
+    const self = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
+    const map = (window as any).mapData?.name || "";
+    graveyardAnchor =
+      self?.position && map
+        ? { map, x: Math.round(self.position.x), y: Math.round(self.position.y) }
+        : null;
+    // The graveyard offer lands 5s after the cinematic, not with it.
+    scheduleGraveyardOffer();
   }
 }
 
@@ -583,17 +717,12 @@ function updateReleaseOrb(): void {
   const worldX = cinematic.fromX + sway;
   const worldY = cinematic.fromY - 20 - rise;
 
-  const canvas = document.getElementById("game") as HTMLCanvasElement | null;
-  const dpr = window.devicePixelRatio || 1;
-  const viewW = (canvas?.width || window.innerWidth * dpr) / dpr;
-  const viewH = (canvas?.height || window.innerHeight * dpr) / dpr;
-  const md = (window as any).mapData;
-  let centerX = 0;
-  if (md && md.width * md.tilewidth < window.innerWidth) {
-    centerX = (window.innerWidth - md.width * md.tilewidth) / 2;
+  const view = getScreenView();
+  if (!view) {
+    existing?.remove();
+    return;
   }
-  const screenX = worldX - camX + viewW / 2 + centerX;
-  const screenY = worldY - camY + viewH / 2;
+  const { x: screenX, y: screenY } = worldToScreenCss(worldX, worldY, view);
 
   let orb = existing;
   if (!orb) {

@@ -2756,7 +2756,8 @@ input[type=range]:disabled {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-#decline-invitation {
+#decline-invitation,
+#decline-graveyard-revive {
   width: 100px;
   height: 32px;
   border: none;
@@ -2775,21 +2776,29 @@ input[type=range]:disabled {
   transition: all 0.2s ease;
 }
 
-#decline-invitation:hover {
+#decline-invitation:hover,
+#decline-graveyard-revive:hover {
   background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
   transform: translateY(-2px);
   -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
 }
 
-#decline-invitation:active {
+#decline-invitation:active,
+#decline-graveyard-revive:active {
   transform: translateY(0px);
   -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
+/* Same size as the green confirm buttons (the shared decline rule is 100px). */
+#decline-graveyard-revive {
+  width: 160px;
+}
+
 #death-popup,
-#revive-popup {
+#revive-popup,
+#graveyard-resurrect-popup {
   position: fixed;
   z-index: 1000;
   top: 50%;
@@ -2799,7 +2808,7 @@ input[type=range]:disabled {
   transform: translate(-50%, -50%);
   background: url("../img/ui/ui-message-popup.png") no-repeat center center;
   background-size: cover;
-  padding: 110px 20px 20px 20px;
+  padding: 110px 70px 30px 70px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2807,14 +2816,16 @@ input[type=range]:disabled {
 }
 
 #death-popup button,
-#revive-popup button {
+#revive-popup button,
+#graveyard-resurrect-popup button {
   border-radius: 5px;
   border: none;
   outline: none;
 }
 
 #death-popup h2,
-#revive-popup h2 {
+#revive-popup h2,
+#graveyard-resurrect-popup h2 {
   margin: 0;
   margin-bottom: 10px;
   font-family: Comic Relief;
@@ -2826,7 +2837,8 @@ input[type=range]:disabled {
 }
 
 #death-popup p,
-#revive-popup p {
+#revive-popup p,
+#graveyard-resurrect-popup p {
   margin: 10px 0;
   font-family: Comic Relief;
   font-size: 0.85em;
@@ -2838,15 +2850,20 @@ input[type=range]:disabled {
 }
 
 #death-popup .button-container,
-#revive-popup .button-container {
+#revive-popup .button-container,
+#graveyard-resurrect-popup .button-container {
   display: flex;
   flex-direction: row;
   gap: 10px;
   justify-content: center;
+  flex-wrap: wrap;
+  margin-top: auto;
+  margin-bottom: 20px;
 }
 
 #release-spirit,
-#confirm-revive {
+#confirm-revive,
+#confirm-graveyard-revive {
   width: 160px;
   height: 32px;
   border: none;
@@ -2866,7 +2883,8 @@ input[type=range]:disabled {
 }
 
 #release-spirit:hover,
-#confirm-revive:hover {
+#confirm-revive:hover,
+#confirm-graveyard-revive:hover {
   background: linear-gradient(180deg, #6aa06a 0%, #5a8f5a 100%);
   transform: translateY(-2px);
   -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
@@ -2874,7 +2892,8 @@ input[type=range]:disabled {
 }
 
 #release-spirit:active,
-#confirm-revive:active {
+#confirm-revive:active,
+#confirm-graveyard-revive:active {
   transform: translateY(0px);
   -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -5454,24 +5473,33 @@ body.ipad-device #game-notification-container {
   }
 
   #death-popup,
-  #revive-popup {
+  #revive-popup,
+  #graveyard-resurrect-popup {
     width: 340px;
     max-width: 90vw;
     height: 230px;
-    padding: 75px 14px 14px 14px;
+    padding: 75px 50px 22px 50px;
     background-size: 100% 100%;
   }
 
   #death-popup h2,
-  #revive-popup h2 {
+  #revive-popup h2,
+  #graveyard-resurrect-popup h2 {
     font-size: 1.1em;
     margin-bottom: 6px;
   }
 
   #death-popup p,
-  #revive-popup p {
+  #revive-popup p,
+  #graveyard-resurrect-popup p {
     font-size: 0.8em;
     margin: 6px 0;
+  }
+
+  /* Two 160px buttons don't fit the 240px mobile content width. */
+  #confirm-graveyard-revive,
+  #decline-graveyard-revive {
+    width: 110px;
   }
 
   #virtual-joystick-wrapper {

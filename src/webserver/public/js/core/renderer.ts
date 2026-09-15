@@ -10,7 +10,7 @@ import { updateWeatherCanvas, weather } from './weather.ts';
 import { renderShadows } from './shadows.js';
 import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
-import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps } from './death.js';
+import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
 import { renderLightMap } from './lightmap.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -1511,6 +1511,7 @@ function animationLoop() {
     tickReleaseCinematic();
     tickCorpseMarker();
     tickDeathWisps();
+    tickGraveyardOffer();
 
   const npcEditor = (window as any).npcEditor;
 

@@ -161,9 +161,9 @@ async function handleSkeletonTap(e: TouchEvent): Promise<void> {
   const canvas = document.getElementById("game");
   if (!canvas) return;
   const rect = canvas.getBoundingClientRect();
-  const { getCameraX, getCameraY } = await import("./renderer.js");
-  const worldX = touch.clientX - rect.left - window.innerWidth / 2 + getCameraX();
-  const worldY = touch.clientY - rect.top - window.innerHeight / 2 + getCameraY();
+  const view = getScreenView();
+  if (!view) return;
+  const { x: worldX, y: worldY } = screenToWorldCss(touch.clientX - rect.left, touch.clientY - rect.top, view);
   const hit = findSkeletonAt(worldX, worldY, TAP_RADIUS);
   tappedId = hit ? hit.id : null;
   tappedAt = Date.now();
@@ -172,6 +172,56 @@ async function handleSkeletonTap(e: TouchEvent): Promise<void> {
 function displayName(username: string): string {
   if (!username) return "";
   return username.charAt(0).toUpperCase() + username.slice(1);
+}
+
+// World <-> CSS-px projection shared by DOM overlays (orb, corpse marker,
+// tap hit-testing). Mirrors the game canvas transform from map.ts loadMap,
+// including the 0.85 mobile zoom - without it every overlay lands up to ~15%
+// of half-viewport off on touch devices.
+export interface ScreenView {
+  viewW: number;
+  viewH: number;
+  zoom: number;
+  centerX: number;
+  camX: number;
+  camY: number;
+}
+
+export function getScreenView(): ScreenView | null {
+  const camX = (window as any).cameraX;
+  const camY = (window as any).cameraY;
+  if (!Number.isFinite(camX) || !Number.isFinite(camY)) return null;
+  const canvas = document.getElementById("game") as HTMLCanvasElement | null;
+  const rawDpr = window.devicePixelRatio || 1;
+  const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  const zoom = isTouch ? 0.85 : 1;
+  const canvasDpr = isTouch ? Math.min(rawDpr, 2) : rawDpr;
+  const viewW = (canvas?.width || window.innerWidth * canvasDpr) / canvasDpr;
+  const viewH = (canvas?.height || window.innerHeight * canvasDpr) / canvasDpr;
+  const md = (window as any).mapData;
+  let centerX = 0;
+  if (md && md.width * md.tilewidth < window.innerWidth) {
+    centerX = (window.innerWidth - md.width * md.tilewidth) / 2;
+  }
+  return { viewW, viewH, zoom, centerX, camX, camY };
+}
+
+export function worldToScreenCss(worldX: number, worldY: number, v: ScreenView): { x: number; y: number } {
+  const tx = v.zoom === 1 ? 0 : (v.viewW * (1 - v.zoom)) / (2 * v.zoom);
+  const ty = v.zoom === 1 ? 0 : (v.viewH * (1 - v.zoom)) / (2 * v.zoom);
+  return {
+    x: (worldX - v.camX + v.viewW / 2 + v.centerX) * v.zoom + tx * v.zoom,
+    y: (worldY - v.camY + v.viewH / 2) * v.zoom + ty * v.zoom,
+  };
+}
+
+export function screenToWorldCss(sx: number, sy: number, v: ScreenView): { x: number; y: number } {
+  const tx = v.zoom === 1 ? 0 : (v.viewW * (1 - v.zoom)) / (2 * v.zoom);
+  const ty = v.zoom === 1 ? 0 : (v.viewH * (1 - v.zoom)) / (2 * v.zoom);
+  return {
+    x: (sx - tx * v.zoom) / v.zoom - v.viewW / 2 + v.camX - v.centerX,
+    y: (sy - ty * v.zoom) / v.zoom - v.viewH / 2 + v.camY,
+  };
 }
 
 export function renderSkeletons(ctx: CanvasRenderingContext2D): void {

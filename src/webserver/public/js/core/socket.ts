@@ -78,7 +78,7 @@ function resolveParticles(particles: any[]): any[] {
   });
 }
 import { createPlayer } from "./player.ts";
-import { setSelfDead, setSelfGhost, clearSelfDeath, showReviveOfferPopup, hideReviveOfferPopup, noteGhostDestination, setCorpseMarker, clearCorpseMarker } from "./death.js";
+import { setSelfDead, setSelfGhost, clearSelfDeath, showReviveOfferPopup, hideReviveOfferPopup, noteGhostDestination, setCorpseMarker, clearCorpseMarker, scheduleGraveyardOffer } from "./death.js";
 import { updateFriendsList } from "./friends.ts";
 import { startStatPreview, noteSelfSpritesChanged } from "./preview.js";
 import { createInvitationPopup } from "./invites.ts";
@@ -2340,6 +2340,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setSelfDead(true);
         } else if (data.isGhost) {
           setSelfGhost(true);
+          // No cinematic replays on relog: the graveyard offer still lands
+          // on its normal delay so the choice isn't lost.
+          scheduleGraveyardOffer();
         } else {
           clearCorpseMarker();
         }

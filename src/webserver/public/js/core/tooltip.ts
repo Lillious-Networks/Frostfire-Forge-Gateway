@@ -1,5 +1,14 @@
 import Cache from "./cache.js";
 
+// Buff/debuff durations: plain seconds under a minute, whole minutes above
+// (e.g. 45, 1m, 15m). Shared by the buff bar, the in-world icons, and
+// tooltips.
+export function formatDuration(totalSeconds: number): string {
+  const sec = Math.max(0, Math.floor(totalSeconds));
+  if (sec < 60) return `${sec}`;
+  return `${Math.ceil(sec / 60)}m`;
+}
+
 const tooltip = document.getElementById("item-tooltip") as HTMLDivElement;
 const tooltipName = document.getElementById("tooltip-name") as HTMLDivElement;
 const tooltipType = document.getElementById("tooltip-type") as HTMLDivElement;
@@ -292,21 +301,49 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
     }
   }
 
-  // Live info for an effect currently applied to the player (buff/debuff bar)
+  // Live info for an effect currently applied to the player (buff/debuff bar).
+  // Each line explains what the effect is actually doing, keyed off the
+  // server-sent kind so a slow never reads as damage, etc.
   if (spellData.activeEffect) {
     const active = spellData.activeEffect;
     const stacks = Number(active.stacks) || 1;
-    const value = Number(active.value) || 0;
-    if (spellData.isDebuff && value > 0) {
+    const kind = active.kind;
+    if (kind === "dot") {
+      const value = Number(active.value) || 0;
       const interval = Number(active.interval) || 1;
-      lines.push({ text: `Taking ${value * stacks} Damage every ${interval}s`, color: "#ff6b6b" });
+      if (value > 0) {
+        lines.push({ text: `Taking ${value * stacks} Damage every ${interval}s`, color: "#ff6b6b" });
+      } else if (value < 0) {
+        lines.push({ text: `Restoring ${Math.abs(value) * stacks} Health every ${interval}s`, color: "#4ade80" });
+      }
+    } else if (kind === "slow") {
+      const value = Number(active.value) || 0;
+      if (value > 0) {
+        lines.push({ text: `Movement slowed by ${value}%`, color: "#7ab8ff" });
+      }
+    } else if (kind === "barrier") {
+      const amount = Number(active.amount) || 0;
+      if (amount > 0) {
+        lines.push({ text: `Absorbs ${amount} damage`, color: "#7ab8ff" });
+      }
+    } else if (!kind) {
+      // Legacy fallback for payloads that predate kinds.
+      const value = Number(active.value) || 0;
+      if (spellData.isDebuff && value > 0) {
+        const interval = Number(active.interval) || 1;
+        lines.push({ text: `Taking ${value * stacks} Damage every ${interval}s`, color: "#ff6b6b" });
+      }
+    }
+    if (typeof active.description === "string" && active.description.length > 0) {
+      lines.push({ text: active.description, color: "#ffd75e" });
     }
     if (stacks > 1) {
       lines.push({ text: `${stacks} Stacks`, color: "#ffd75e" });
     }
     const remaining = Number(active.remaining) || 0;
     if (remaining > 0) {
-      lines.push({ text: `${remaining}s Remaining`, color: "#bdbdbd" });
+      const label = remaining < 60 ? `${remaining}s` : formatDuration(remaining);
+      lines.push({ text: `${label} Remaining`, color: "#bdbdbd" });
     }
   }
 
