@@ -126,6 +126,15 @@ function getMissingIconUrl(): string {
   return `${config.ASSET_SERVER_URL}/icon?name=missing_icon`;
 }
 
+// Debuffs that aren't learned spells (e.g. Resurrection Sickness) have no
+// spellbook sprite: resolve "<effect name snake_cased>.png" from the asset
+// server's icons folder instead. Unknown names serve missing_icon, so this
+// degrades cleanly until the file is added.
+function getEffectIconUrl(spell: string): string {
+  const key = spell.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return `${config.ASSET_SERVER_URL}/icon?name=${encodeURIComponent(key)}`;
+}
+
 function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = false, info: any = null) {
   const el = document.createElement("div");
   el.className = isDebuff ? "buff-icon debuff ui" : "buff-icon ui";
@@ -133,7 +142,7 @@ function createBuffIcon(spell: string, endTime: number, isDebuff: boolean = fals
   const meta = Cache.getInstance().spells[spell];
   const img = new Image();
   img.draggable = false;
-  img.src = meta?.spriteUrl || getMissingIconUrl();
+  img.src = meta?.spriteUrl || (spell ? getEffectIconUrl(spell) : getMissingIconUrl());
   img.addEventListener("error", () => {
     if (img.src !== getMissingIconUrl()) img.src = getMissingIconUrl();
   }, { once: true });
