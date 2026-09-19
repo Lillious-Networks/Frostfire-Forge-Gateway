@@ -14,13 +14,12 @@
       <div id="editor-toolbar">
         <span id="editor-toolbar-title">Creature Editor</span>
         <span class="tool-divider"></span>
-        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button type="button" id="btn-save" title="Save (Ctrl+S)" hidden>Save</button>
         <button type="button" id="btn-new" title="New entry">New</button>
-        <button type="button" id="btn-delete" title="Delete entry">Delete</button>
+        <button type="button" id="btn-delete" title="Delete entry" hidden>Delete</button>
         <span class="tool-divider"></span>
-        <button type="button" id="btn-place" title="Place a spawn point in the world">Place Spawn</button>
-        <button type="button" id="btn-draw-path" title="Draw the selected patrol path in the world">Draw Path</button>
-        <button type="button" id="btn-goto" title="Teleport to the selected spawn">Go To</button>
+        <button type="button" id="btn-place" title="Place a spawn point in the world" hidden>Place Spawn</button>
+        <button type="button" id="btn-goto" title="Teleport to the selected spawn" hidden>Go To</button>
         <span class="tool-divider"></span>
         <label class="editor-inline-label"><input type="checkbox" id="chk-debug"> Debug overlay</label>
         <span id="ce-status" class="editor-status"></span>
@@ -34,9 +33,9 @@
         <div id="editor-content" class="editor-content-area">
           <div id="editor-tab-bar">
             <button class="editor-tab-btn active" data-tab="templates">Templates</button>
-            <button class="editor-tab-btn" data-tab="appearance">Appearance</button>
-            <button class="editor-tab-btn" data-tab="rewards">Rewards</button>
-            <button class="editor-tab-btn" data-tab="abilities">Abilities</button>
+            <button class="editor-tab-btn" data-tab="appearance" hidden>Appearance</button>
+            <button class="editor-tab-btn" data-tab="rewards" hidden>Rewards</button>
+            <button class="editor-tab-btn" data-tab="abilities" hidden>Abilities</button>
             <button class="editor-tab-btn" data-tab="spawns">Spawns</button>
             <button class="editor-tab-btn" data-tab="paths">Patrol Paths</button>
             <button class="editor-tab-btn" data-tab="linkGroups">Link Groups</button>

@@ -85,10 +85,9 @@ class CreatureEditorBridge {
 
   constructor() {
     document.getElementById("btn-save")!.addEventListener("click", () => this.save());
-    document.getElementById("btn-new")!.addEventListener("click", () => this.newEntry());
+    document.getElementById("btn-new")!.addEventListener("click", () => this.toolbarNew());
     document.getElementById("btn-delete")!.addEventListener("click", () => this.deleteEntry());
     document.getElementById("btn-place")!.addEventListener("click", () => this.placeSpawn());
-    document.getElementById("btn-draw-path")!.addEventListener("click", () => this.drawPath());
     document.getElementById("btn-goto")!.addEventListener("click", () => this.goto());
     (document.getElementById("chk-debug") as HTMLInputElement).addEventListener("change", (e) => {
       this.send({ type: "debug", on: (e.target as HTMLInputElement).checked });
@@ -169,8 +168,11 @@ class CreatureEditorBridge {
       } else if (msg.what === "path" && this.draft) {
         this.draft.points = msg.points;
         this.draft.map = msg.map;
+        // Drawn points are unsaved edits: switching entries must confirm first.
+        this.dirty = true;
         this.renderForm();
-        this.status(`${msg.points.length} point(s) - remember to save`);
+        const n = Array.isArray(msg.points) ? msg.points.length : 0;
+        this.status(`${n} point(s) — save when done`);
       }
     }
   }
@@ -537,6 +539,23 @@ class CreatureEditorBridge {
   private renderList(): void {
     const entries = this.collection.filter((e: any) => !this.search || this.label(e).toLowerCase().includes(this.search));
     this.listEl.innerHTML = "";
+    // Non-creature tabs create entries from a pinned row, not the toolbar:
+    // the toolbar New button always starts a creature.
+    const newLabel = this.newRowLabel();
+    if (newLabel) {
+      const row = document.createElement("div");
+      row.className = "editor-item ce-new-row" + (this.selectedId === 0 && this.draft ? " active" : "");
+      const text = document.createElement("span");
+      text.className = "editor-item-label";
+      text.textContent = `+ ${newLabel}`;
+      row.title = newLabel;
+      row.appendChild(text);
+      row.addEventListener("click", () => {
+        if ((this.dirty || this.abilitiesDirty) && !confirm("Discard unsaved changes?")) return;
+        this.newEntry();
+      });
+      this.listEl.appendChild(row);
+    }
     for (const entry of entries) {
       const row = document.createElement("div");
       row.className = "editor-item" + (entry.id === this.selectedId ? " active" : "");
@@ -562,6 +581,17 @@ class CreatureEditorBridge {
     this.renderForm();
   }
 
+  /** Creation row for tabs whose entries are not creatures (toolbar New is creatures only). */
+  private newRowLabel(): string | null {
+    switch (this.tab) {
+      case "spawns": return "New spawn";
+      case "paths": return "New patrol path";
+      case "linkGroups": return "New link group";
+      case "pools": return "New spawn pool";
+      default: return null;
+    }
+  }
+
   private newEntry(): void {
     this.selectedId = 0;
     this.draft = this.blank();
@@ -574,13 +604,24 @@ class CreatureEditorBridge {
     this.status("New entry - fill it in and save");
   }
 
+  /** The toolbar New button always starts a creature, whatever the tab is. */
+  private toolbarNew(): void {
+    if ((this.dirty || this.abilitiesDirty) && !confirm("Discard unsaved changes?")) return;
+    if (!TEMPLATE_TABS.has(this.tab)) this.switchTab("templates");
+    this.newEntry();
+  }
+
   private renderForm(): void {
+    this.updateChrome();
     this.fieldsEl.innerHTML = "";
     this.extraEl.innerHTML = "";
     if (!this.draft) {
       this.fieldsEl.innerHTML = `<div class="editor-empty">Select an entry, or press New.</div>`;
       return;
     }
+    // Live point updates re-render the form while a wait box may be focused;
+    // remember it so typing there is not interrupted.
+    const focusedWait = (document.activeElement as HTMLElement | null)?.dataset?.waitIndex ?? null;
 
     const idRow = document.createElement("div");
     idRow.className = "ce-field ce-field-wide";
@@ -592,7 +633,7 @@ class CreatureEditorBridge {
     this.fieldsEl.appendChild(idRow);
 
     for (const field of orderFields(this.fields())) this.fieldsEl.appendChild(this.renderField(field));
-    if (this.tab === "paths") this.renderPathPoints();
+    if (this.tab === "paths") this.renderPathPoints(focusedWait);
     if (this.tab === "templates" && this.draft.id) this.renderTemplateSummary();
     if (this.tab === "abilities") this.renderAbilities();
   }
@@ -653,6 +694,21 @@ class CreatureEditorBridge {
       this.renderForm();
     });
     this.extraEl.appendChild(add);
+  }
+
+  /**
+   * Buttons and tabs that act on the current entry stay hidden until something
+   * is selected or being created, instead of opening blank menus.
+   */
+  private updateChrome(): void {
+    const has = !!this.draft;
+    for (const id of ["btn-save", "btn-delete", "btn-place", "btn-goto"]) {
+      const el = document.getElementById(id);
+      if (el) el.hidden = !has;
+    }
+    document
+      .querySelectorAll('.editor-tab-btn[data-tab="appearance"], .editor-tab-btn[data-tab="rewards"], .editor-tab-btn[data-tab="abilities"]')
+      .forEach((btn) => ((btn as HTMLElement).hidden = !has));
   }
 
   /**
@@ -810,12 +866,22 @@ class CreatureEditorBridge {
     return row;
   }
 
-  private renderPathPoints(): void {
+  private renderPathPoints(focusWait: string | null = null): void {
     const points = this.draft.points || [];
+    const headRow = document.createElement("div");
+    headRow.className = "ce-points-head";
     const header = document.createElement("div");
     header.className = "sidebar-section-header";
     header.textContent = `Points (${points.length})`;
-    this.extraEl.appendChild(header);
+    headRow.appendChild(header);
+    const draw = document.createElement("button");
+    draw.type = "button";
+    draw.className = "ce-card-btn";
+    draw.textContent = "Draw Path";
+    draw.title = "Draw points in the world";
+    draw.addEventListener("click", () => this.drawPath());
+    headRow.appendChild(draw);
+    this.extraEl.appendChild(headRow);
     points.forEach((p: any, i: number) => {
       const row = document.createElement("div");
       row.className = "ce-point-row";
@@ -827,6 +893,7 @@ class CreatureEditorBridge {
       wait.type = "number";
       wait.value = String(p.wait_ms ?? 0);
       wait.title = "Wait at this point (ms)";
+      wait.dataset.waitIndex = String(i);
       wait.addEventListener("input", () => {
         p.wait_ms = Number(wait.value) || 0;
         this.dirty = true;
@@ -845,6 +912,11 @@ class CreatureEditorBridge {
       row.appendChild(remove);
       this.extraEl.appendChild(row);
     });
+    // A live update rebuilt the list under a focused wait box: hand focus back
+    // so typing continues where it left off.
+    if (focusWait !== null) {
+      this.extraEl.querySelector<HTMLInputElement>(`input[data-wait-index="${focusWait}"]`)?.focus();
+    }
   }
 
   /** Read-only summary of what a template ends up with in game. */
@@ -922,6 +994,7 @@ class CreatureEditorBridge {
     this.selectedId = null;
     this.abilityDraft = [];
     this.abilitiesDirty = false;
+    this.updateChrome();
   }
 
   private placeSpawn(): void {
@@ -939,7 +1012,7 @@ class CreatureEditorBridge {
       return;
     }
     this.send({ type: "drawPath", points: this.draft.points || [] });
-    this.status("Click in the game window to add points, Enter to finish");
+    this.status("Click in the game window to add points — they appear below as you click (Enter/Esc to finish)");
   }
 
   private goto(): void {

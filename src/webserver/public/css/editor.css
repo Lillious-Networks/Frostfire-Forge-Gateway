@@ -56,6 +56,8 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* updateChrome() hides entry-dependent controls until something is selected. */
+#editor-toolbar [hidden], .editor-tab-btn[hidden] { display: none !important; }
 
 #editor-main {
   flex: 1;
@@ -136,6 +138,12 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
 .editor-item-icon {
   margin-left: 4px;
   font-size: 12px;
+}
+/* Pinned creation row at the top of non-creature lists. */
+.ce-new-row {
+  border-style: dashed;
+  border-color: rgba(46, 204, 113, 0.45);
+  color: #bff0d4;
 }
 
 #editor-tab-bar {
@@ -612,6 +620,14 @@ input[type="number"].editor-form-input { color-scheme: dark; }
   gap: 8px;
   align-items: center;
 }
+/* Points header with the in-form Draw Path button. */
+.ce-points-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ce-points-head .sidebar-section-header { flex: 1; }
 .ce-point-label {
   color: #e0e7ff;
   font-family: 'Space Mono', monospace;

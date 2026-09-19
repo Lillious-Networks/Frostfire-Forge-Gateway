@@ -210,19 +210,24 @@ class CreatureEditor {
       document.body.style.cursor = "";
       return;
     }
-    // drawPath: shift-click adds a 2s wait at the new point.
+    // drawPath: shift-click adds a 2s wait at the new point. Every point streams
+    // to the editor popup live, so finishing with Enter is optional - the
+    // popup already holds everything placed so far.
     this.pathPoints.push({ x: point.x, y: point.y, wait_ms: event.shiftKey ? 2000 : 0 });
+    this.toEditor({ type: "pointPicked", what: "path", points: this.pathPoints, map: this.currentMap() });
   }
 
   private onKeyDown(event: KeyboardEvent): void {
     if (!this.isActive || this.mode === "none") return;
     if (event.key === "Escape") {
+      // Just leave draw mode: points were already streamed to the editor, so
+      // there is nothing to lose. Delete strays in the popup's Points list.
       this.mode = "none";
-      this.pathPoints = [];
       document.body.style.cursor = "";
       return;
     }
     if (event.key === "Enter" && this.mode === "drawPath") {
+      // Points are already in the editor; Enter only finishes drawing.
       this.toEditor({ type: "pointPicked", what: "path", points: this.pathPoints, map: this.currentMap() });
       this.mode = "none";
       document.body.style.cursor = "";
