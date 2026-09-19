@@ -3270,29 +3270,6 @@ input[type=range]:disabled {
   opacity: 0.65;
 }
 
-/* Self health/stamina card (mobile only): same look as a party member card. */
-#self-status {
-  position: fixed;
-  z-index: 99;
-  top: 25px;
-  left: 25px;
-  background: url("../img/ui/ui-party.png");
-  background-size: cover;
-  width: 128px;
-  height: 72px;
-  padding: 5px;
-  overflow: hidden;
-  display: none;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-@media (hover: none) and (pointer: coarse) {
-  #self-status {
-    display: flex;
-  }
-}
-
 .notification {
   position: fixed;
   bottom: 25px;
@@ -3751,14 +3728,6 @@ body.mobile-landscape {
     width: 80px;
     height: 40px;
     margin: 3px;
-    padding: 3px;
-  }
-
-  /* Self card mirrors .party-member (separate id so party tap/right-click
-     menus never trigger on it). */
-  #self-status {
-    width: 80px;
-    height: 40px;
     padding: 3px;
   }
 
@@ -4998,10 +4967,6 @@ body.ipad-device #game-notification-container {
   display: flex !important;
 }
 
-#entity-editor-properties-panel {
-  max-height: 50vh;
-}
-
 .ui.modal-overlay,
 .ee-modal,
 .ne-modal {
@@ -5571,38 +5536,6 @@ body.ipad-device #game-notification-container {
     padding: 3px 3px 2px !important;
   }
 
-  /* Self card: 2x card + bars, text stays at party size. background-size
-     100% 100% shows the full frame (cover cropped the bottom rail).
-     Bar/name offsets match the stretched grooves (health y46-57,
-     stamina y62-73, plate y14-34). Separate id so party tap/right-click
-     menus never trigger on it. */
-  #self-status {
-    width: 160px !important;
-    height: 80px !important;
-    padding: 6px !important;
-    background-size: 100% 100% !important;
-  }
-
-  #self-status-username {
-    font-size: 0.7em !important;
-    padding-top: 10px !important;
-    padding-left: 28px !important;
-    padding-right: 10px !important;
-    text-align: left !important;
-    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45) !important;
-  }
-
-  #self-status .party-member-bars {
-    gap: 3px !important;
-  }
-
-  #self-status .party-member-health-bar,
-  #self-status .party-member-stamina-bar {
-    width: 120px !important;
-    height: 12px !important;
-    margin-left: 8px !important;
-  }
-
   .party-member-username {
     font-size: 0.6em !important;
     padding-top: 5px !important;
@@ -5888,11 +5821,179 @@ body.ipad-device #game-notification-container {
 
 #guild-create-section{display:none}
 
-#entity-editor-container{display:none}
-
 .ee-modal-label{display:block;margin-top:16px;font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.5px}
 
 .ee-delete-text{color:rgba(255,255,255,0.8);margin:12px 0 0 0;font-size:13px}
 #ee-delete-entity-name{color:#ff6666;font-weight:600}
 
 #item-tooltip{display:none}
+
+/* Unit frames (target, and your own frame on touch devices). ui-nameplate.png
+   is 240x80; every child is placed in percentages of that image so the whole
+   frame scales with --tf-width. */
+.unit-frame {
+  --tf-width: 330px;
+  position: fixed;
+  z-index: 99;
+  top: 25px;
+  left: 25px;
+  width: var(--tf-width);
+  aspect-ratio: 240 / 80;
+  background: url("../img/ui/ui-nameplate.png") no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  display: none;
+  user-select: none;
+  pointer-events: none;
+  font-family: "Comic Relief";
+}
+.unit-frame.visible { display: block; }
+
+/* Circle on the left: a portrait drawn from the unit's own sprite. */
+.unit-frame .uf-portrait {
+  position: absolute;
+  left: 7%;
+  top: 13.5%;
+  width: 17.6%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  image-rendering: pixelated;
+}
+
+/* Light bar across the top: the name. White, outlined to read on the light bar. */
+.unit-frame .uf-name {
+  position: absolute;
+  left: 29.5%;
+  top: 20%;
+  width: 59.5%;
+  height: 21.25%;
+  display: flex;
+  align-items: center;
+  color: #ffffff;
+  font-size: calc(var(--tf-width) * 0.05);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.85), -1px -1px 0 rgba(0, 0, 0, 0.85), 1px -1px 0 rgba(0, 0, 0, 0.85), -1px 1px 0 rgba(0, 0, 0, 0.85);
+}
+
+/* Brown panel under the name: health. Centred in the brown section, which
+   spans x 64-176 of the 240px image: 100px wide with 6px either side. */
+.unit-frame .uf-health,
+.unit-frame .uf-stamina {
+  position: absolute;
+  left: 29.17%;
+  width: 41.67%;
+  height: 10%;
+}
+.unit-frame .uf-health { top: 62%; }
+.unit-frame .uf-health-fill,
+.unit-frame .uf-stamina-fill {
+  position: absolute;
+  inset: 0;
+  background-size: 100% 100%;
+  transform-origin: left;
+  will-change: transform;
+}
+/* One green image, recoloured by the shared .yellow/.orange/.red hue filters -
+   the same way the player health bar does it. */
+.unit-frame .uf-health-fill {
+  background-image: url("../img/ui/ui-health-green-target.png");
+  transform: scaleX(var(--health-scale, 1));
+}
+/* Barrier absorb: translucent overlay from the left, like the party cards. */
+.unit-frame .uf-absorb {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: calc(var(--absorb-scale, 0) * 100%);
+  background: rgba(180, 220, 255, 0.4);
+  box-shadow: 0 0 4px rgba(180, 220, 255, 0.7), inset -2px 0 0 rgba(210, 235, 255, 0.6);
+}
+.unit-frame .uf-health-text,
+.unit-frame .uf-stamina-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff1da;
+  font-size: calc(var(--tf-width) * 0.04);
+  font-weight: 700;
+  /* The hotbar numbers' outline, plus a soft drop so the numbers stay
+     readable over every bar colour. */
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.9),
+    1px -1px 0 rgba(0, 0, 0, 0.9),
+    -1px 1px 0 rgba(0, 0, 0, 0.9),
+    1px 1px 0 rgba(0, 0, 0, 0.9),
+    0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* Mana (stamina): players only, in a second row under health. */
+.unit-frame .uf-stamina { top: 64%; display: none; }
+.unit-frame .uf-stamina-fill {
+  background-image: url("../img/ui/ui-mana-target.png");
+  transform: scaleX(var(--stamina-scale, 1));
+}
+
+/* With mana showing, health moves up to make room for a second row. The level
+   slot is part of the frame image, so the level stays put either way. */
+.unit-frame.has-mana .uf-stamina { display: block; }
+.unit-frame.has-mana .uf-health { top: 52%; }
+.unit-frame.has-mana .uf-stamina { top: 65%; }
+
+/* Small boxed slot, bottom right: the level, on the health bar's line. */
+.unit-frame .uf-level {
+  position: absolute;
+  left: 75.8%;
+  top: 62%;
+  width: 19.2%;
+  height: 10%;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--tf-width) * 0.048);
+  font-weight: 700;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.85), -1px -1px 0 rgba(0, 0, 0, 0.85), 1px -1px 0 rgba(0, 0, 0, 0.85), -1px 1px 0 rgba(0, 0, 0, 0.85);
+  /* The number font sits high and left in its box: nudge it to the centre
+     of the slot (about 3px on desktop, scaling with the frame). */
+  transform: translate(calc(var(--tf-width) * 0.009), calc(var(--tf-width) * 0.009));
+}
+
+/* Your own frame only exists on touch devices, which have no desktop HUD bars. */
+#self-frame { display: none !important; }
+
+/* Touch devices: your frame at the top left, the target frame beside it. */
+@media (hover: none) and (pointer: coarse) {
+  .unit-frame { --tf-width: 240px; left: 8px; }
+  #self-frame { display: block !important; }
+  /* 8px from the edge + 240px frame - 5px: the frame images overlap slightly. */
+  #target-frame { left: 243px; }
+  /* The desktop outline and drop shadow are too heavy on the smaller frame's
+     text; use the same soft shadow as the other touch HUD text (#castbar-text). */
+  .unit-frame .uf-name,
+  .unit-frame .uf-level {
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
+  }
+  /* The bar numbers need more than that to read over the bars, but still
+     lighter than desktop's full outline. */
+  .unit-frame .uf-health-text,
+  .unit-frame .uf-stamina-text {
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* Numbers use the hotbar's number font (see #hotbar .hotbar-key); canvas
+   numbers match it through js/core/fonts.ts. */
+.currency-amount,
+.buff-icon .buff-timer,
+.buff-icon .buff-stacks,
+.unit-frame .uf-health-text,
+.unit-frame .uf-stamina-text,
+.unit-frame .uf-level {
+  font-family: 'Alfa Slab One', sans-serif;
+}

@@ -76,17 +76,35 @@
       <!-- Mobile UI Backdrop -->
       <div id="mobile-ui-backdrop"></div>
       <div id="server-time-container" class="ui"><p id="server-time-value">7:40:46 PM</p></div>
-      <div id="self-status" class="ui">
-        <div id="self-status-username" class="party-member-username ui"></div>
-        <div class="party-member-bars ui">
-          <div class="party-member-health-bar ui">
-            <div id="self-status-health-progress" class="party-member-health-progress ui green"></div>
-            <div id="self-status-absorb" class="party-member-health-absorb ui"></div>
-          </div>
-          <div class="party-member-stamina-bar ui">
-            <div id="self-status-stamina-progress" class="party-member-stamina-progress ui"></div>
-          </div>
+      <!-- Your own frame (touch devices only), same layout as the target frame -->
+      <div id="self-frame" class="unit-frame ui">
+        <canvas class="uf-portrait ui" width="64" height="64"></canvas>
+        <div class="uf-name ui"></div>
+        <div class="uf-health ui">
+          <div class="uf-health-fill ui green"></div>
+          <div class="uf-absorb ui"></div>
+          <div class="uf-health-text ui"></div>
         </div>
+        <div class="uf-stamina ui">
+          <div class="uf-stamina-fill ui"></div>
+          <div class="uf-stamina-text ui"></div>
+        </div>
+        <div class="uf-level ui"></div>
+      </div>
+      <!-- Target frame: whatever player or creature is targeted -->
+      <div id="target-frame" class="unit-frame ui">
+        <canvas class="uf-portrait ui" width="64" height="64"></canvas>
+        <div class="uf-name ui"></div>
+        <div class="uf-health ui">
+          <div class="uf-health-fill ui green"></div>
+          <div class="uf-absorb ui"></div>
+          <div class="uf-health-text ui"></div>
+        </div>
+        <div class="uf-stamina ui">
+          <div class="uf-stamina-fill ui"></div>
+          <div class="uf-stamina-text ui"></div>
+        </div>
+        <div class="uf-level ui"></div>
       </div>
       <div id="debug-container" class="ui">
         <div id="onlinecount" class="ui"></div>
@@ -375,7 +393,6 @@
       </div>
     </div>
     <!-- NPC Editor -->
-    <div id="entity-editor-container" class="ui"></div>
 
     <!-- New Entity Modal -->
     <div id="ee-new-entity-modal" class="ui ee-modal">

@@ -9,6 +9,7 @@ import { setWeatherType, setWeatherData } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
+import { sampleTime, pushSample } from "./movementsmoothing.ts";
 const cache = Cache.getInstance();
 
 // Pending cooldown/lockout data from CLIENTCONFIG, applied after SPELLS populates the spell cache
@@ -132,6 +133,7 @@ import {
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
 import { createNPC, reinitNpcSprite } from "./npc.ts";
+import { applyCreatureSpawn, applyCreatureDespawn, applyCreatureMove, applyCreatureState, applyCreatureHealth, applyCreatureCombatText, applyCreatureAttackStopped, applyCreatureTap, applyCreatureLootable, applyCreatureXp, applyCreatureCast, applyCreatureCastEnd, applyCreatureAuras, clearCreatures, parseCreatureTarget, creaturePositionFor } from "./creature.ts";
 import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
 import { createCachedImage } from "./images.ts";
@@ -453,7 +455,6 @@ function dispatchProjectileData(data: any, expiresAt: number) {
   const time_to_travel = data?.time;
   const spell = data?.spell;
   const icon = data?.icon;
-  const isEntityTarget = data?.entity || false;
   const isThrown = data?.isThrown || false;
 
   if (!player_id || !time_to_travel) return;
@@ -462,8 +463,8 @@ function dispatchProjectileData(data: any, expiresAt: number) {
     const targetX = Number(data?.targetX) || 0;
     const targetY = Number(data?.targetY) || 0;
 
-    const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
-    const sourcePos = sourcePlayer?.position;
+    const sourcePos = creaturePositionFor(player_id)
+      ?? Array.from(cache.players).find(p => p.id === player_id)?.position;
     if (!sourcePos) {
       queueProjectileForRetry(data, expiresAt);
       return;
@@ -495,7 +496,6 @@ function dispatchProjectileData(data: any, expiresAt: number) {
       duration: time_to_travel * 1000,
       spell: spell || 'unknown',
       isThrown: true,
-      isEntityTarget: false,
       particles: Array.isArray(data?.particles) ? data.particles : [],
       particleArrays: {} as Record<string, any[]>,
       lastEmitTime: {} as Record<string, number>,
@@ -505,29 +505,17 @@ function dispatchProjectileData(data: any, expiresAt: number) {
 
   if (!target_id) return;
 
-  // Source could be a player or entity
-  const sourcePlayer = Array.from(cache.players).find(p => p.id === player_id);
-  const sourceEntity = cache.entities.find((e: any) => e.id === player_id);
-  const sourcePos = sourcePlayer?.position || sourceEntity?.position;
+  // Either end can be a creature ("c:<id>"), so fall back to the creature cache.
+  const sourcePos = creaturePositionFor(player_id)
+    ?? Array.from(cache.players).find(p => p.id === player_id)?.position;
 
-  let targetPos: { x: number; y: number } | null;
-
-  if (isEntityTarget) {
-    // Target is an entity
-    const targetEntity = cache.entities.find((e: any) => e.id === target_id);
-    if (!targetEntity) {
-      queueProjectileForRetry(data, expiresAt);
-      return;
-    }
-    targetPos = targetEntity.position;
-  } else {
-    // Target is a player
-    const targetPlayer = Array.from(cache.players).find(p => p.id === target_id);
-    if (!targetPlayer) {
-      queueProjectileForRetry(data, expiresAt);
-      return;
-    }
-    targetPos = targetPlayer.position;
+  const targetPos: { x: number; y: number } | null =
+    creaturePositionFor(target_id)
+    ?? Array.from(cache.players).find(p => p.id === target_id)?.position
+    ?? null;
+  if (!targetPos) {
+    queueProjectileForRetry(data, expiresAt);
+    return;
   }
 
   if (!sourcePos || !targetPos) {
@@ -561,14 +549,12 @@ function dispatchProjectileData(data: any, expiresAt: number) {
     startX: sourcePos.x,
     startY: sourcePos.y,
     targetPlayerId: target_id,
-    targetEntityId: isEntityTarget ? target_id : undefined,
     targetPos: targetPos,
     currentX: sourcePos.x,
     currentY: sourcePos.y,
     startTime: performance.now(),
     duration: time_to_travel * 1000,
     spell: spell || 'unknown',
-    isEntityTarget: isEntityTarget,
     particles: Array.isArray(data?.particles) ? data.particles : [],
     particleArrays: {} as Record<string, any[]>,
     lastEmitTime: {} as Record<string, number>,
@@ -1171,8 +1157,6 @@ function decodeIncomingBytes(bytes: Uint8Array): { type: string; data: any; enve
     return { type: "BATCH_MOVEXY", data: bytes, envelope: null };
   } else if (FIRST_BYTE === 0x02) {
     return { type: "MOVEXY", data: bytes, envelope: null };
-  } else if (FIRST_BYTE === 0x03) {
-    return { type: "MOVE_ENTITY_BINARY", data: bytes, envelope: null };
   }
 
   try {
@@ -1437,13 +1421,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       });
       break;
     }
-    case "TOGGLE_ENTITY_EDITOR": {
-
-      import('./entityeditor.js').then((module) => {
-        module.default.toggle();
-      });
-      break;
-    }
     case "NPC_LIST": {
 
       if ((window as any).npcEditor && (window as any).npcEditor.setNpcs) {
@@ -1551,7 +1528,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "PARTICLE_LIST": {
 
-      // Store particles in global registry for entity creation
+      // Store particles in the global registry used to resolve particle names
       const particleListData = Array.isArray(data) ? data : (data.data ?? []);
       particleRegistry.clear();
       particleListData.forEach((p: any) => {
@@ -1573,61 +1550,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       // Also feed particle names to NPC editor if open
       if ((window as any).npcEditor && (window as any).npcEditor.setParticleOptions) {
         (window as any).npcEditor.setParticleOptions(particleListData);
-      }
-      // Feed particles to entity editor
-      if ((window as any).entityEditor && (window as any).entityEditor.setParticleOptions) {
-        (window as any).entityEditor.setParticleOptions(particleListData);
-      }
-      break;
-    }
-    case "ENTITY_LIST": {
-      const entityListData = Array.isArray(data) ? data : (data.data ?? []);
-      // Send to editor for UI only - don't update cached game entities
-      if ((window as any).entityEditor && (window as any).entityEditor.setEntities) {
-        (window as any).entityEditor.setEntities(entityListData);
-      }
-      break;
-    }
-    case "ENTITY_UPDATED": {
-      const updatedEntity = data.data ?? data;
-      const cachedEntities = cache.entities || [];
-      const existingIdx = cachedEntities.findIndex((e: any) => e.id === updatedEntity.id);
-      if (existingIdx >= 0) {
-        const liveEntity = cachedEntities[existingIdx];
-        if (updatedEntity.position) {
-          liveEntity.updatePosition(updatedEntity.position.x, updatedEntity.position.y);
-        }
-        if (updatedEntity.health !== undefined) {
-          liveEntity.health = updatedEntity.health;
-        }
-        if (updatedEntity.aggro_type !== undefined) {
-          liveEntity.aggro_type = updatedEntity.aggro_type;
-        }
-        if (updatedEntity.position?.direction !== undefined) {
-          liveEntity.direction = updatedEntity.position.direction;
-        }
-        // Reset animation when combat state changes to idle
-        if (updatedEntity.combatState === 'idle' && liveEntity.combatState !== 'idle') {
-          liveEntity.combatState = 'idle';
-          // Reinitialize sprite to reset animation
-          const { reinitEntitySprite } = await import("./entity.js");
-          reinitEntitySprite(liveEntity);
-        } else if (updatedEntity.combatState !== undefined) {
-        liveEntity.combatState = updatedEntity.combatState;
-      }
-      }
-
-      break;
-    }
-    case "ENTITY_REMOVED": {
-      const removedId = data.data ?? data.id;
-      const cachedEntities = cache.entities || [];
-      const idx = cachedEntities.findIndex((e: any) => e.id === removedId);
-      if (idx >= 0) {
-        cachedEntities.splice(idx, 1);
-      }
-      if ((window as any).entityEditor && (window as any).entityEditor.setEntities) {
-        (window as any).entityEditor.setEntities(cache.entities);
       }
       break;
     }
@@ -1751,7 +1673,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           };
           cache.players.forEach(shiftEntity);
           cache.npcs.forEach(shiftEntity);
-          cache.entities.forEach(shiftEntity);
 
           import("./renderer.js").then(({ panEditorCamera }) => {
             if ((window as any).tileEditor?.isActive) panEditorCamera(shiftX, shiftY);
@@ -2454,150 +2375,112 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
   sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
       break;
     }
-    case "DESPAWN_ENTITY": {
-      if (!data || !data.id) return;
-
-      const entityIndex = cache.entities.findIndex((e: any) => e.id === data.id);
-      if (entityIndex !== -1) {
-        cache.entities.splice(entityIndex, 1);
-      }
-
-      // Untarget the entity if it was targeted
-      if (cache.targetId === data.id) {
+    case "CREATURE_SPAWN": {
+      applyCreatureSpawn(data);
+      break;
+    }
+    case "CREATURE_MOVE": {
+      applyCreatureMove(data);
+      break;
+    }
+    case "CREATURE_STATE": {
+      applyCreatureState(data);
+      break;
+    }
+    case "CREATURE_HEALTH": {
+      applyCreatureHealth(data);
+      break;
+    }
+    case "CREATURE_COMBAT_TEXT": {
+      applyCreatureCombatText(data);
+      break;
+    }
+    case "TOGGLE_ITEM_EDITOR": {
+      import("./itemeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "ITEM_EDITOR_DATA": {
+      import("./itemeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "ITEM_EDITOR_RESULTS": {
+      import("./itemeditor.js").then((m) => m.default.onResults(data));
+      break;
+    }
+    case "ITEM_EDITOR_RESULT": {
+      import("./itemeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "ITEM_EDITOR_UPDATED": {
+      import("./itemeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "TOGGLE_CREATURE_EDITOR": {
+      import("./creatureeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "CREATURE_EDITOR_DATA": {
+      import("./creatureeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "CREATURE_EDITOR_RESULT": {
+      import("./creatureeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "CREATURE_EDITOR_UPDATED": {
+      import("./creatureeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "CREATURE_DEBUG": {
+      import("./creatureeditor.js").then((m) => m.default.onDebug(data));
+      break;
+    }
+    case "CREATURE_TARGETED": {
+      if (typeof data?.id !== "number") break;
+      cache.players.forEach((player) => {
+        player.targeted = false;
+      });
+      cache.targetId = `c:${data.id}`;
+      break;
+    }
+    case "CREATURE_CAST": {
+      applyCreatureCast(data);
+      break;
+    }
+    case "CREATURE_CAST_END": {
+      applyCreatureCastEnd(data);
+      break;
+    }
+    case "CREATURE_AURAS": {
+      applyCreatureAuras(data);
+      break;
+    }
+    case "CREATURE_TAP": {
+      applyCreatureTap(data);
+      break;
+    }
+    case "CREATURE_LOOTABLE": {
+      applyCreatureLootable(data);
+      break;
+    }
+    case "CREATURE_XP": {
+      applyCreatureXp(data, cachedPlayerId);
+      break;
+    }
+    case "CREATURE_LOOT_CONTENTS": {
+      if (typeof data?.id !== "number") break;
+      import("./creatureloot.js").then(({ showCreatureLoot }) => showCreatureLoot(data.id, data.items || [], data.copper || 0));
+      break;
+    }
+    case "CREATURE_ATTACK_STOPPED": {
+      applyCreatureAttackStopped(data);
+      break;
+    }
+    case "CREATURE_DESPAWN": {
+      const removed = applyCreatureDespawn(data);
+      const targetedCreature = parseCreatureTarget(cache.targetId);
+      if (targetedCreature !== null && removed.includes(targetedCreature)) {
         cache.targetId = null;
-      }
-
-      // Respawn is handled server-side via entityAI timer
-      // Client will receive SPAWN_ENTITY packet when entity respawns
-
-      break;
-    }
-    case "SPAWN_ENTITY": {
-      if (!data) return;
-
-      // Check if entity already exists in cache
-      const existingEntityIndex = cache.entities.findIndex((e: any) => e.id === data.id);
-      if (existingEntityIndex !== -1) {
-        // Update existing entity
-        const existingEntity = cache.entities[existingEntityIndex];
-        cache.entities[existingEntityIndex] = {
-          ...existingEntity,
-          ...data,
-          health: data.health || data.max_health,
-          combatState: 'idle',
-        };
-      } else {
-        // Create new entity
-        const { createEntity } = await import("./entity.js");
-        createEntity({
-          id: data.id,
-          name: data.name,
-          location: {
-            x: data.position?.x || 0,
-            y: data.position?.y || 0,
-            direction: data.position?.direction || 'down',
-          },
-          health: data.health || data.max_health,
-          max_health: data.max_health,
-          level: data.level,
-          aggro_type: data.aggro_type,
-          sprite_type: data.sprite_type,
-          spriteLayers: data.spriteLayers,
-          particles: data.particles,
-        });
-      }
-
-      break;
-    }
-    case "MOVE_ENTITY": {
-      const { id, position, direction, isMoving, isCasting, castingSpell, castingProgress } = data;
-      if (!id || !position) break;
-
-      const entity = cache.entities.find((e: any) => e.id === id);
-
-      if (entity) {
-        // Store server position for smooth interpolation in game loop
-        if (!entity.serverPosition) {
-          entity.serverPosition = { x: position.x, y: position.y };
-        } else {
-          entity.serverPosition.x = position.x;
-          entity.serverPosition.y = position.y;
-        }
-        entity.isMoving = isMoving;
-        entity.isCasting = isCasting || false;
-        entity.castingSpell = castingSpell || null;
-        entity.castingProgress = castingProgress || 0;
-
-        if (direction) {
-          entity.direction = direction;
-        }
-
-        // Update animation based on casting or movement state
-        if (entity.layeredAnimation) {
-          let animationName;
-          if (isCasting) {
-            // Use casting idle animation when casting (entities stop moving while casting)
-            animationName = `cast_idle_${direction || entity.direction || 'down'}`;
-          } else {
-            // Use regular walk/idle animation
-            animationName = isMoving
-              ? `walk_${direction || entity.direction || 'down'}`
-              : `idle_${direction || entity.direction || 'down'}`;
-          }
-
-          const { changeLayeredAnimation } = await import('./layeredAnimation.js');
-          changeLayeredAnimation(entity.layeredAnimation, animationName);
-        }
-      }
-      break;
-    }
-    case "MOVE_ENTITY_BINARY": {
-      if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
-        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-        if (bytes.length < 11) break;
-
-        const DIRECTION_MAP = [
-          "up", "down", "left", "right",
-          "upleft", "upright", "downleft", "downright"
-        ];
-
-        const view = new DataView(bytes.buffer, bytes.byteOffset, 11);
-        const entityId = view.getUint32(1, true);
-        const x = view.getInt16(5, true);
-        const y = view.getInt16(7, true);
-        const flags = bytes[9];
-        const direction = (flags >> 4) & 0x0F;
-        const isMoving = (flags >> 3) & 0x01;
-        const isCasting = (flags >> 2) & 0x01;
-        const castingProgress = bytes[10] / 100;
-
-        const entity = cache.entities.find((e: any) => e.id === entityId);
-        if (entity) {
-          if (!entity.serverPosition) {
-            entity.serverPosition = { x, y };
-          } else {
-            entity.serverPosition.x = x;
-            entity.serverPosition.y = y;
-          }
-          entity.isMoving = isMoving ? true : false;
-          entity.isCasting = isCasting ? true : false;
-          entity.castingProgress = castingProgress;
-          entity.direction = DIRECTION_MAP[direction] || "down";
-
-          if (entity.layeredAnimation) {
-            let animationName;
-            if (isCasting) {
-              animationName = `cast_idle_${entity.direction}`;
-            } else if (isMoving) {
-              animationName = `walk_${entity.direction}`;
-            } else {
-              animationName = `idle_${entity.direction}`;
-            }
-
-            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
-            changeLayeredAnimation(entity.layeredAnimation, animationName);
-          }
-        }
       }
       break;
     }
@@ -2618,12 +2501,17 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         const dirStealth = bytes[9];
         const direction = dirStealth & 0x0F;
         const stealth = (dirStealth >> 4) & 0x0F;
+        // Trailing server send time: [u32 seconds][u16 ms].
+        const sentAt = bytes.length >= 17
+          ? new DataView(bytes.buffer, bytes.byteOffset).getUint32(11, true) * 1000 + new DataView(bytes.buffer, bytes.byteOffset).getUint16(15, true)
+          : undefined;
 
         data = {
           i: playerId,
           d: { x, y, dr: DIRECTION_MAP[direction] || "down" },
           r: 0,
-          s: stealth
+          s: stealth,
+          t: sentAt
         };
       }
 
@@ -2648,82 +2536,23 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         player.typing = false;
         const sx = Math.round(moveData.x);
         const sy = Math.round(moveData.y);
+        // The server owns movement: this is where the player is. The renderer
+        // draws it smoothly from these timed steps (movementsmoothing.ts), and
+        // a teleport-sized jump snaps there instead of gliding. An out-of-order
+        // step older than one already applied is dropped.
+        const sentAt = typeof data.t === "number" ? data.t : null;
+        if (!pushSample(player.moveSamples ??= [], sx, sy, sampleTime(sentAt))) break;
         player.serverPosition.x = sx;
         player.serverPosition.y = sy;
         player.lastServerUpdate = performance.now();
+        player.position.x = sx;
+        player.position.y = sy;
 
         if (playerId == cachedPlayerId) {
-          // The local player runs client-side prediction (updateLocalPlayerPrediction
-          // advances position every ~33ms). The server echo trails that
-          // prediction by the round-trip latency plus the server's own tick, so
-          // hard-snapping position to every echo makes the character oscillate
-          // (rubberband + "feels slow"). Trust prediction; only hard-correct
-          // when it has genuinely diverged (packet loss, an unpredicted wall, a
-          // teleport). Keep the render position integral so the sprite never
-          // draws on a fractional pixel (that is the "blurry while moving").
-          const dx = sx - player.position.x;
-          const dy = sy - player.position.y;
-          const { getIsMoving, getIsKeyPressed } = await import("./input.js");
-          // Idle jumps (release teleport, admin warp) apply instantly.
-          // While moving, trust prediction and only hard-correct divergence.
-          if ((!getIsMoving() && !getIsKeyPressed()) || dx * dx + dy * dy > 48 * 48) {
-            player.position.x = sx;
-            player.position.y = sy;
-          }
           positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
-        } else {
-          player.position.x = sx;
-          player.position.y = sy;
-          // Teleports (release, admin warp) snap the render position too so
-          // observers never watch a glide. Normal steps are far smaller.
-          if (player.renderPosition) {
-            const rdx = sx - player.renderPosition.x;
-            const rdy = sy - player.renderPosition.y;
-            if (rdx * rdx + rdy * rdy > 100 * 100) {
-              player.renderPosition.x = sx;
-              player.renderPosition.y = sy;
-            }
-          }
         }
       } else if (!snapshotApplied) {
         pendingMovements.push({ id: playerId, _data: moveData, revision: data.r || 0 });
-      } else {
-        // Handle entity movement
-        const entity = cache.entities.find((e: any) => e.id === playerId);
-        if (entity) {
-          const oldX = entity.position?.x ?? 0;
-          const oldY = entity.position?.y ?? 0;
-          const newX = Math.round(moveData.x);
-          const newY = Math.round(moveData.y);
-          const isMoving = oldX !== newX || oldY !== newY;
-          const isCasting = data.s === 1; // For entities, stealth field indicates casting
-
-          if (!entity.serverPosition) {
-            entity.serverPosition = { x: newX, y: newY };
-          } else {
-            entity.serverPosition.x = newX;
-            entity.serverPosition.y = newY;
-          }
-          entity.position.x = newX;
-          entity.position.y = newY;
-          entity.direction = moveData.dr || "down";
-          entity.isMoving = isMoving;
-          entity.isCasting = isCasting;
-
-          // Update entity animation if it has layered animation
-          if (entity.layeredAnimation) {
-            let animationName;
-            if (isCasting) {
-              animationName = `cast_idle_${entity.direction}`;
-            } else if (isMoving) {
-              animationName = `walk_${entity.direction}`;
-            } else {
-              animationName = `idle_${entity.direction}`;
-            }
-            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
-            changeLayeredAnimation(entity.layeredAnimation, animationName);
-          }
-        }
       }
       break;
     }
@@ -2734,6 +2563,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
 
       let movements: any[] = [];
+      /** Server send time of this batch, when it carries one. */
+      let batchSentAt: number | null = null;
 
       if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -2774,6 +2605,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               s: stealth
             });
           }
+          // Trailing probe after the entries: [u32 seq][u32 seconds][u16 ms].
+          if (offset + 10 <= bytes.length) {
+            const probe = new DataView(bytes.buffer, bytes.byteOffset + offset, 10);
+            batchSentAt = probe.getUint32(4, true) * 1000 + probe.getUint16(8, true);
+          }
         } else {
           try {
             const decoder = new TextDecoder();
@@ -2788,6 +2624,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       } else {
         break;
       }
+
+      // One timeline point for the whole batch: every entry was sent together.
+      const batchTime = movements.length > 0 ? sampleTime(batchSentAt) : 0;
 
       for (const movement of movements) {
 
@@ -2808,31 +2647,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           continue;
         }
 
-        player.typing = false;
-        player.serverPosition.x = Math.round(moveData.x);
-        player.serverPosition.y = Math.round(moveData.y);
-        player.lastServerUpdate = performance.now();
-        
-        if (playerId != cachedPlayerId) {
-          player.position.x = Math.round(moveData.x);
-          player.position.y = Math.round(moveData.y);
-          // Teleports snap the render position too (see MOVEXY case).
-          if (player.renderPosition) {
-            const rdx = player.position.x - player.renderPosition.x;
-            const rdy = player.position.y - player.renderPosition.y;
-            if (rdx * rdx + rdy * rdy > 100 * 100) {
-              player.renderPosition.x = player.position.x;
-              player.renderPosition.y = player.position.y;
-            }
-          }
-        } else {
-          player.position.x = Math.round(moveData.x);
-          player.position.y = Math.round(moveData.y);
-        }
+        // Our own position comes from the per-tick reliable echo (MOVEXY). The
+        // copy in these batches is a few ms apart from it; taking both would
+        // give two samples per tick and uneven motion again.
+        if (playerId == cachedPlayerId) continue;
 
-        if (playerId == cachedPlayerId) {
-          positionText.innerText = `Position: ${player.serverPosition.x}, ${player.serverPosition.y}`;
-        }
+        const sx = Math.round(moveData.x);
+        const sy = Math.round(moveData.y);
+        // Out-of-order datagram older than a step already applied: drop it.
+        if (!pushSample(player.moveSamples ??= [], sx, sy, batchTime)) continue;
+
+        player.typing = false;
+        player.serverPosition.x = sx;
+        player.serverPosition.y = sy;
+        player.lastServerUpdate = performance.now();
+        player.position.x = sx;
+        player.position.y = sy;
       }
       break;
     }
@@ -2846,77 +2676,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       createNPC(data);
       break;
     }
-    case "CREATE_ENTITY": {
+    // Every NPC on the map at once, sent on login (map changes use CREATE_NPC
+    // per NPC). Without this case the login map had no NPCs - and none of
+    // their particle effects - until the player changed maps.
+    case "LOAD_NPCS": {
       await isLoaded();
-      if (!data) return;
-      // Resolve particle names to full definitions
-      if (data.particles) {
-        data.particles = resolveParticles(data.particles);
-      }
-      const { createEntity } = await import('./entity.js');
-      createEntity(data);
-      break;
-    }
-    case "UPDATE_ENTITY": {
-      if (!data || !data.id) return;
-      const entity = cache.entities.find((e: any) => e.id === data.id);
-      if (entity) {
-        if (data.position) {
-          entity.updatePosition(data.position.x, data.position.y);
+      const list = Array.isArray(data?.npcs) ? data.npcs : [];
+      for (const npcData of list) {
+        if (!npcData || cache.npcs.some((n: any) => n.id === npcData.id)) continue;
+        if (npcData.particles) {
+          npcData.particles = resolveParticles(npcData.particles);
         }
-        if (data.direction !== undefined) {
-          entity.direction = data.direction;
-          // Update animation to idle with new direction using proper animation handler
-          if (entity.layeredAnimation) {
-            const { changeLayeredAnimation } = await import('./layeredAnimation.js');
-            changeLayeredAnimation(entity.layeredAnimation, `idle_${data.direction}`);
-          }
-        }
-        if (data.health !== undefined) {
-          entity.health = data.health;
-        }
-        if (data.combatState) {
-          entity.combatState = data.combatState;
-        }
-        if (data.target !== undefined) {
-          entity.target = data.target;
-        }
-      }
-      break;
-    }
-    case "ENTITY_DIED": {
-      if (!data || !data.id) return;
-      const entity = cache.entities.find((e: any) => e.id === data.id);
-      if (entity) {
-        entity.combatState = 'dead';
-        // Remove from cache after a delay for animation
-        setTimeout(() => {
-          const index = cache.entities.indexOf(entity);
-          if (index > -1) {
-            cache.entities.splice(index, 1);
-          }
-        }, 3000);
-      }
-      break;
-    }
-    case "ENTITY_DAMAGE": {
-      if (!data || !data.id) return;
-      const entity = cache.entities.find((e: any) => e.id === data.id);
-      if (entity) {
-        entity.takeDamage(data.damage || 0);
-      }
-      break;
-    }
-    case "UPDATE_ENTITY_HEALTH": {
-      if (!data || !data.id) return;
-      const entity = cache.entities.find((e: any) => e.id === data.id);
-      if (entity) {
-        entity.health = data.health;
-        // Nameplate scaling reads max_health (see entity.ts drawNameplate);
-        // maxHealth was a dead field nobody consumed.
-        if (data.maxHealth != null) {
-          entity.max_health = data.maxHealth;
-        }
+        createNPC(npcData);
       }
       break;
     }
@@ -3006,7 +2777,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setStormAmbience(false);
 
           if (cache?.pendingPlayers) cache.pendingPlayers.clear();
-          if (cache?.entities) cache.entities = [];
+          clearCreatures();
           if (cache?.npcs) cache.npcs = [];
           if (cache?.projectiles) cache.projectiles = [];
           cache.activeGroundAoeZones = {};
@@ -3148,6 +2919,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             aoe_radius: spell.aoe_radius,
             ground_aoe: spell.ground_aoe,
             ground_duration: spell.ground_duration,
+            can_move: spell.can_move,
           };
 
           createSpellIconImage(spell.spriteUrl, (iconImage) => {
@@ -3178,12 +2950,12 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               return;
             }
             const target = Array.from(cache?.players).find(p => p?.targeted) || null;
+            const creatureTarget = target ? null : parseCreatureTarget(cache.targetId);
             sendRequest({
               type: "HOTBAR",
-              data: {
-                spell: slot.dataset.spellName,
-                target
-              }
+              data: creatureTarget !== null
+                ? { spell: slot.dataset.spellName, target: { id: creatureTarget }, creature: true }
+                : { spell: slot.dataset.spellName, target }
             });
           });
 
@@ -3273,6 +3045,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             is_thrown: spell.is_thrown,
             charge_distance: spell.charge_distance,
             teleport_behind: spell.teleport_behind,
+            can_move: spell.can_move,
           };
 
       const slot = document.createElement("div");
@@ -3302,7 +3075,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           return;
         }
         const target = Array.from(cache?.players).find(p => p?.targeted) || null;
-        sendRequest({ type: "HOTBAR", data: { spell: slot.dataset.spellName, target } });
+        const creatureTarget = target ? null : parseCreatureTarget(cache.targetId);
+        sendRequest({
+          type: "HOTBAR",
+          data: creatureTarget !== null
+            ? { spell: slot.dataset.spellName, target: { id: creatureTarget }, creature: true }
+            : { spell: slot.dataset.spellName, target }
+        });
       });
       // Disable tooltips on mobile devices
       if (!window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
@@ -4157,19 +3936,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         break;
       }
 
-      // Check if it's a player or entity
-      const isPlayer = data.username !== undefined;
-
-      if (isPlayer) {
-        // Handle player targeting
-        cache.players.forEach((player) => {
-          player.targeted = player.id === data.id;
-        });
-        cache.targetId = null;
-      } else {
-        // Handle entity targeting
-        cache.targetId = data.id;
-      }
+      cache.players.forEach((player) => {
+        player.targeted = player.id === data.id;
+      });
+      cache.targetId = null;
 
       break;
     }
@@ -4225,19 +3995,11 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "UPDATESTATS": {
-      const { target, stats, isCrit, username, damage, entity, absorb } = data;
+      const { target, stats, isCrit, username, damage, absorb } = data;
 
-      let t;
-
-      if (entity) {
-        // Entity target
-        t = cache.entities.find((e: any) => e.id === target);
-      } else {
-        // Player target
-        t = Array.from(cache.players).find(
-          (player) => player.id === target
-        );
-      }
+      const t = Array.from(cache.players).find(
+        (player) => player.id === target
+      );
 
       const currentPlayer = Array.from(cache.players).find(
         (player) => player.id === cachedPlayerId
@@ -4245,7 +4007,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
       if (t) {
 
-        const oldHealth = entity ? t.health : t.stats.health;
+        const oldHealth = t.stats.health;
         const newHealth = stats.health;
         const healthDiff = newHealth - oldHealth;
 
@@ -4298,16 +4060,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           });
         }
 
-        if (entity) {
-          // For entities, update health directly
-          t.health = stats.health;
-          t.max_health = stats.total_max_health;
-          // Set combatState to 'dead' if health <= 0
-          if (t.health <= 0) {
-            t.combatState = 'dead';
-          }
-        } else {
-          // For players, merge stats object (preserve existing fields)
+        {
+          // Merge stats object (preserve existing fields)
           t.stats = { ...t.stats, ...stats };
           t.max_health = stats.total_max_health;
           t.max_stamina = stats.total_max_stamina;

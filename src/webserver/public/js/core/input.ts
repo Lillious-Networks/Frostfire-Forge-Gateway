@@ -1,6 +1,7 @@
 import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
+import { parseCreatureTarget } from "./creature.js";
 const cache = Cache.getInstance();
 import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
@@ -189,11 +190,20 @@ const blacklistedKeys = new Set([
   'Tab',
 ]);
 
+/** Walking by keyboard, or holding a direction on the joystick / gamepad. */
+function isLocallyMoving(): boolean {
+  return isMoving || (lastSentDirection !== "" && lastSentDirection !== "ABORT");
+}
+
 function cast(hotbar_index: number) {
     if (isSelfActionLocked()) return;
     const keyName = `Digit${hotbar_index + 1}`;
     if (isKeyOnCooldown(keyName)) return;
     if (Date.now() < cache.spellLockoutUntil) return;
+    // A spell that needs you to stand still does nothing while moving: no
+    // cast bar, no "interrupted", nothing sent (the server ignores it too).
+    const pressedSpell = cache.spells[hotbarSlots[hotbar_index]?.dataset?.spellName || ""];
+    if (pressedSpell && !pressedSpell.can_move && !pressedSpell.ground_aoe && isLocallyMoving()) return;
     selectHotbarSlot(hotbar_index);
     putKeyOnCooldown(keyName);
 
@@ -201,14 +211,14 @@ function cast(hotbar_index: number) {
     const targetPlayer = Array.from(cache?.players).find(p => p?.targeted) || null;
 
     let target = null;
-    let isEntity = false;
+    let isCreature = false;
+    const creatureTargetId = parseCreatureTarget(cache.targetId);
 
     if (targetPlayer) {
       target = targetPlayer;
-    } else if (cache.targetId) {
-      // Entity target
-      target = { id: cache.targetId };
-      isEntity = true;
+    } else if (creatureTargetId !== null) {
+      target = { id: creatureTargetId };
+      isCreature = true;
     }
 
     const slot = hotbarSlots[hotbar_index];
@@ -242,7 +252,7 @@ function cast(hotbar_index: number) {
       data: {
         spell: spellName,
         target,
-        entity: isEntity
+        creature: isCreature
       }
     });
 }

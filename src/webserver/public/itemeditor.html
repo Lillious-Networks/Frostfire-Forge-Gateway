@@ -1,0 +1,44 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Item Editor</title>
+    <link rel="stylesheet" href="./css/game.css" />
+    <link rel="stylesheet" href="./css/editor.css" />
+    <script defer src="./js/core/preventzoomcontrols.js" type="text/javascript"></script>
+    <script defer src="./js/core/itemeditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body oncontextmenu="return false;">
+    <div id="editor-layout">
+      <div id="editor-toolbar">
+        <span id="editor-toolbar-title">Item Editor</span>
+        <span class="tool-divider"></span>
+        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button type="button" id="btn-new" title="New item">New</button>
+        <button type="button" id="btn-duplicate" title="Copy the selected item">Duplicate</button>
+        <button type="button" id="btn-delete" title="Delete item">Delete</button>
+        <span id="ie-status" class="editor-status"></span>
+      </div>
+      <div id="editor-main">
+        <div id="editor-sidebar">
+          <div class="sidebar-section-header">Items</div>
+          <input type="text" id="ie-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false">
+          <div id="ie-list" class="editor-list"></div>
+        </div>
+        <div id="editor-content" class="editor-content-area">
+          <div id="editor-tab-bar">
+            <button class="editor-tab-btn active" data-tab="general">General</button>
+            <button class="editor-tab-btn" data-tab="equipment">Equipment</button>
+            <button class="editor-tab-btn" data-tab="stats">Stats</button>
+          </div>
+          <div id="editor-form">
+            <div id="ie-errors" class="editor-errors" hidden></div>
+            <div id="ie-form-fields" class="editor-form-section"></div>
+            <div id="ie-extra" class="editor-form-section"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

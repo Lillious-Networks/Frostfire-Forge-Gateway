@@ -1,0 +1,54 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Creature Editor</title>
+    <link rel="stylesheet" href="./css/game.css" />
+    <link rel="stylesheet" href="./css/editor.css" />
+    <script defer src="./js/core/preventzoomcontrols.js" type="text/javascript"></script>
+    <script defer src="./js/core/creatureeditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body oncontextmenu="return false;">
+    <div id="editor-layout">
+      <div id="editor-toolbar">
+        <span id="editor-toolbar-title">Creature Editor</span>
+        <span class="tool-divider"></span>
+        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button type="button" id="btn-new" title="New entry">New</button>
+        <button type="button" id="btn-delete" title="Delete entry">Delete</button>
+        <span class="tool-divider"></span>
+        <button type="button" id="btn-place" title="Place a spawn point in the world">Place Spawn</button>
+        <button type="button" id="btn-draw-path" title="Draw the selected patrol path in the world">Draw Path</button>
+        <button type="button" id="btn-goto" title="Teleport to the selected spawn">Go To</button>
+        <span class="tool-divider"></span>
+        <label class="editor-inline-label"><input type="checkbox" id="chk-debug"> Debug overlay</label>
+        <span id="ce-status" class="editor-status"></span>
+      </div>
+      <div id="editor-main">
+        <div id="editor-sidebar">
+          <div class="sidebar-section-header" id="ce-list-title">Templates</div>
+          <input type="text" id="ce-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false">
+          <div id="ce-list" class="editor-list"></div>
+        </div>
+        <div id="editor-content" class="editor-content-area">
+          <div id="editor-tab-bar">
+            <button class="editor-tab-btn active" data-tab="templates">Templates</button>
+            <button class="editor-tab-btn" data-tab="appearance">Appearance</button>
+            <button class="editor-tab-btn" data-tab="rewards">Rewards</button>
+            <button class="editor-tab-btn" data-tab="abilities">Abilities</button>
+            <button class="editor-tab-btn" data-tab="spawns">Spawns</button>
+            <button class="editor-tab-btn" data-tab="paths">Patrol Paths</button>
+            <button class="editor-tab-btn" data-tab="linkGroups">Link Groups</button>
+            <button class="editor-tab-btn" data-tab="pools">Spawn Pools</button>
+          </div>
+          <div id="editor-form">
+            <div id="ce-errors" class="editor-errors" hidden></div>
+            <div id="ce-form-fields" class="editor-form-section"></div>
+            <div id="ce-extra" class="editor-form-section"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

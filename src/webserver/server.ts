@@ -23,6 +23,8 @@ import game_html from "./public/game.html";
 import map_editor_html from "./public/map-editor.html";
 import particleeditor_html from "./public/particleeditor.html";
 import npceditor_html from "./public/npceditor.html";
+import creatureeditor_html from "./public/creatureeditor.html";
+import itemeditor_html from "./public/itemeditor.html";
 import looteditor_html from "./public/looteditor.html";
 import forgotpassword_html from "./public/forgot-password.html";
 import realmselection_html from "./public/realm-selection.html";
@@ -100,6 +102,8 @@ const routes = {
   "/map-editor": map_editor_html,
   "/particle-editor": particleeditor_html,
   "/npc-editor": npceditor_html,
+  "/creature-editor": creatureeditor_html,
+  "/item-editor": itemeditor_html,
   "/loot-editor": looteditor_html,
   "/animator": animator_html,
   "/login": (req: Request, server: any) => login(req, server),
@@ -304,6 +308,8 @@ Bun.serve({
       "/map-editor": routes["/map-editor"],
       "/particle-editor": routes["/particle-editor"],
       "/npc-editor": routes["/npc-editor"],
+      "/creature-editor": routes["/creature-editor"],
+      "/item-editor": routes["/item-editor"],
       "/loot-editor": routes["/loot-editor"],
       "/animator": routes["/animator"],
       "/login": routes["/login"],

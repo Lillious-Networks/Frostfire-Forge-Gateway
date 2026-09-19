@@ -65,7 +65,10 @@ async function resolveSpriteUrl(spriteUrl: any): Promise<any> {
 
   // If it has templateUrl, fetch the template
   if (spriteUrl.templateUrl) {
-    const template = await fetchSpriteSheetTemplate(spriteUrl.templateUrl);
+    // Copy it: the fetch cache hands out one shared object per URL, and every
+    // sheet sharing that template (all NPCs/creatures share npc_body_base) sets
+    // its own imageSource below - mutating the shared one swaps their images.
+    const template = { ...(await fetchSpriteSheetTemplate(spriteUrl.templateUrl)) };
 
     // Extract base URL from templateUrl
     const baseUrl = spriteUrl.templateUrl.substring(0, spriteUrl.templateUrl.indexOf('?'));
@@ -340,7 +343,10 @@ async function createAnimationLayer(
     }
   }
 
-  const frameCacheKey = `${type}:${normalizedName}`;
+  // Keyed by the image too: NPC/armor templates carry the same internal name as
+  // the player ones ("player_body_base"), so a name-only key made a creature's
+  // frames leak into the player's body layer and vice versa.
+  const frameCacheKey = `${type}:${cacheKey}`;
   const frames = await getOrBuildAnimationFrames(
     frameCacheKey,
     actualAnimationName,
@@ -500,10 +506,10 @@ export async function changeLayeredAnimation(
 
       if (!animationExists) continue;
 
-      // Update this layer's frames
-      const spriteName = (layer.spriteSheet as any).name || layer.type;
-      const normalizedSpriteName = spriteName.toLowerCase();
-      const frameCacheKey = `${layer.type}:${normalizedSpriteName}`;
+      // Update this layer's frames. The key includes the sheet's image (cacheKey
+      // is "name:imageSource") because NPC/armor templates share the player
+      // templates' internal names - a name-only key mixed their frames up.
+      const frameCacheKey = `${layer.type}:${cacheKey}`;
       const frames = await getOrBuildAnimationFrames(
         frameCacheKey,
         actualAnimationName,
@@ -527,6 +533,35 @@ export async function changeLayeredAnimation(
   // Don't block rendering - update animations asynchronously
   // This allows the animation change to be visible immediately, with layers updating in the background
   Promise.all(templateUpdates).catch(err => console.error('Error updating animation layers:', err));
+}
+
+/**
+ * A single still frame from a layer's sprite sheet, independent of whatever the
+ * layer is currently animating - e.g. the first "idle_down" frame for a
+ * portrait. Returns null until the sheet has loaded or if the pose is missing.
+ */
+export function getLayerStillFrame(
+  layer: AnimationLayer | null | undefined,
+  animationName: string = "idle_down"
+): { image: HTMLImageElement; width: number; height: number } | null {
+  if (!layer) return null;
+  const cached = spriteSheetCache[(layer as any)._cacheKey];
+  if (!cached) return null;
+  const template: any = cached.template;
+  const split = animationName.lastIndexOf("_");
+  const base = split > 0 ? animationName.substring(0, split) : animationName;
+  const direction = split > 0 ? animationName.substring(split + 1) : "down";
+  const animation = template?.animations?.[base];
+  const pose = animation?.directions?.[direction] ?? animation?.directions?.down ?? animation;
+  const frameIndex = Array.isArray(pose?.frames) ? pose.frames[0] : undefined;
+  if (frameIndex === undefined) return null;
+  const image = cached.extractedFramesMap.get(Number(frameIndex));
+  if (!image?.complete || !image.naturalWidth) return null;
+  return {
+    image,
+    width: Number(template.frameWidth) || image.naturalWidth,
+    height: Number(template.frameHeight) || image.naturalHeight,
+  };
 }
 
 export function getVisibleLayersSorted(layeredAnim: LayeredAnimation): AnimationLayer[] {

@@ -6,7 +6,6 @@ class Cache {
   pendingPlayers: Map<string, any> = new Map();
   pendingEffects: Map<string, any[]> = new Map();
   npcs: any[] = [];
-  entities: any[] = [];
   audio: any[] = [];
   animations: Map<string, any> = new Map();
   mount: string | null = null;
@@ -16,14 +15,12 @@ class Cache {
     startX: number;
     startY: number;
     targetPlayerId: string;
-    targetEntityId?: string;
     targetPos?: { x: number; y: number };
     currentX: number;
     currentY: number;
     startTime: number;
     duration: number;
     spell: string;
-    isEntityTarget?: boolean;
     isThrown?: boolean;
     particles?: any[];
     particleArrays?: Record<string, any[]>;

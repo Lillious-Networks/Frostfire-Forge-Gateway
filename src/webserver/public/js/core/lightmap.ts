@@ -80,11 +80,9 @@ export function renderLightMap(camX: number, camY: number) {
   const halfH = window.innerHeight / 2;
 
   const sources: Array<{ src: any; offX: number; offY: number }> = [];
-  // NPC particles render centered at position + (16, 24) (see npc.ts); entity
-  // particles render at the raw position (see entity.ts). Match those offsets so
-  // the glow lines up with the particles.
+  // NPC particles render centered at position + (16, 24) (see npc.ts). Match
+  // that offset so the glow lines up with the particles.
   for (const npc of cache.npcs) sources.push({ src: npc, offX: 16, offY: 24 });
-  for (const entity of cache.entities) sources.push({ src: entity, offX: 0, offY: 0 });
 
   for (const { src, offX, offY } of sources) {
     if (!src.particles || !src.position) continue;

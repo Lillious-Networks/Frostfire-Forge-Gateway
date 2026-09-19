@@ -2,10 +2,15 @@ import { getIsLoaded, getMovementAllowed, cachedPlayerId, sendRequest } from "./
 import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
 import { getParticleSprite, particlePool } from "./npc.js";
+import { renderCreatures, creaturePositionFor } from "./creature.js";
+import { updateUnitFrames } from "./targetframe.js";
+import { dropDistantTarget } from "./creatureinput.js";
+import { updateSourceParticle } from "./sourceparticles.js";
+import { renderCreatureEditorOverlays, renderThreatPanel } from "./creaturedebug.js";
 let weatherType = null as string | null;
 let currentWeatherData = null as any; // Store full weather object for wind speed
 const cache = Cache.getInstance();
-import { updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateSelfStatus } from "./ui.js";
+import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { renderShadows } from './shadows.js';
 import { renderLoot, renderLootInteractionHint } from './loot.js';
@@ -16,10 +21,11 @@ import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
 import { updateLayeredAnimation } from "./layeredAnimation.js";
+import { renderTime, pushSample, positionAt, type MoveSample } from "./movementsmoothing.js";
 const times = [] as number[];
 let lastFpsUpdate = 0;
 let lastDirection = "";
-let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0, nextFrameTime: number = 0;
+let cameraX: number = 0, cameraY: number = 0, lastFrameTime: number = 0;
 let smoothMapX: number = 0, smoothMapY: number = 0;
 let cameraInitialized: boolean = false;
 // Free-pan editor camera state (used only while the tile editor is active).
@@ -35,64 +41,10 @@ let tilesetLookupCache: Map<number, {tileset: any, index: number}> = new Map();
 
 import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
 
-const SERVER_TICK_RATE = 30;
-const SERVER_FRAME_TIME = 1000 / SERVER_TICK_RATE;
-const SERVER_SPEED = 6;
-
-let lastMovementTime = 0;
-
-// Player render position smoothing configuration
-const PLAYER_SMOOTHING_FACTOR = 0.2; // Higher = faster movement
-
-function updateLocalPlayerPrediction(currentPlayer: any, now: number) {
-  if (!currentPlayer) return;
-  // Movement stays locked until the loading screen begins to fade.
-  if (!getMovementAllowed()) return;
-  // Corpses awaiting release cannot move. Ghosts walk normally.
-  if (isSelfDead()) return;
-  
-  const isMoving = getIsMoving() && getIsKeyPressed();
-  
-  if (!isMoving) {
-    return;
-  }
-  
-  const timeSinceLastMove = now - lastMovementTime;
-  if (timeSinceLastMove < SERVER_FRAME_TIME) {
-    return;
-  }
-  lastMovementTime = now - (timeSinceLastMove % SERVER_FRAME_TIME);
-  
-  const keys = pressedKeys;
-  let direction = "";
-  if (keys.has("KeyW") && keys.has("KeyA")) direction = "UPLEFT";
-  else if (keys.has("KeyW") && keys.has("KeyD")) direction = "UPRIGHT";
-  else if (keys.has("KeyS") && keys.has("KeyA")) direction = "DOWNLEFT";
-  else if (keys.has("KeyS") && keys.has("KeyD")) direction = "DOWNRIGHT";
-  else if (keys.has("KeyW")) direction = "UP";
-  else if (keys.has("KeyS")) direction = "DOWN";
-  else if (keys.has("KeyA")) direction = "LEFT";
-  else if (keys.has("KeyD")) direction = "RIGHT";
-  
-  if (!direction) return;
-  
-  const directionOffsets: Record<string, { dx: number; dy: number }> = {
-    up: { dx: 0, dy: -SERVER_SPEED },
-    down: { dx: 0, dy: SERVER_SPEED },
-    left: { dx: -SERVER_SPEED, dy: 0 },
-    right: { dx: SERVER_SPEED, dy: 0 },
-    upleft: { dx: -SERVER_SPEED, dy: -SERVER_SPEED },
-    upright: { dx: SERVER_SPEED, dy: -SERVER_SPEED },
-    downleft: { dx: -SERVER_SPEED, dy: SERVER_SPEED },
-    downright: { dx: SERVER_SPEED, dy: SERVER_SPEED },
-  };
-  
-  const offset = directionOffsets[direction];
-  if (offset) {
-    currentPlayer.position.x += offset.dx;
-    currentPlayer.position.y += offset.dy;
-  }
-}
+// Frame pacing: the measured display refresh interval (ms), from rAF deltas.
+let rafInterval = 1000 / 60;
+let lastRafTime = 0;
+let rafsSinceRender = 0;
 
 function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
   if (!player || !player.lastServerUpdate) return;
@@ -111,64 +63,29 @@ function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
 }
 
 /**
- * Smoothly interpolate entity movement toward server position
+ * Where to draw each player this frame. Positions are the server's; the
+ * renderer draws them a little in the past, interpolated between timed server
+ * steps (see movementsmoothing.ts), so uneven packet arrival never shows as
+ * uneven speed. The camera follows the local player's render position.
  */
-function updateEntityInterpolation(entity: any, deltaSeconds: number) {
-  if (!entity || !entity.serverPosition) return;
-
-  const dx = entity.serverPosition.x - entity.position.x;
-  const dy = entity.serverPosition.y - entity.position.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-
-  const threshold = 2; // Stop interpolating when close enough
-  const lerpFactor = 0.15 * deltaSeconds * 60; // Smooth interpolation factor
-
-  if (distance > threshold) {
-    entity.position.x = Math.round(entity.position.x + dx * lerpFactor);
-    entity.position.y = Math.round(entity.position.y + dy * lerpFactor);
-  } else if (distance > 0) {
-    // Snap to server position when very close
-    entity.position.x = entity.serverPosition.x;
-    entity.position.y = entity.serverPosition.y;
-  }
-}
-
-/**
- * Smoothly interpolates render positions toward actual positions
- * This creates smooth camera movement while reducing vibration from client prediction jitter
- * Frame-rate independent smoothing tuned for 144fps
- */
-function smoothPlayerRenderPositions(players: any[], currentPlayer: any, deltaTime: number) {
-  const TELEPORT_THRESHOLD = 500; // Distance threshold to detect teleports/warps
-  const TARGET_FPS = 144; // Target framerate for smoothing calibration
-
-  // Calculate frame-rate independent smoothing factor
-  // At 144fps (deltaTime ≈ 0.00694s), use PLAYER_SMOOTHING_FACTOR
-  // At lower framerates, scale proportionally to maintain same speed
-  const smoothFactor = 1 - Math.pow(1 - PLAYER_SMOOTHING_FACTOR, deltaTime * TARGET_FPS);
-
+function smoothPlayerRenderPositions(players: any[], now: number) {
+  const at = renderTime(now);
   for (const player of players) {
-    if (!player) continue;
-
-    // Initialize renderPosition if it doesn't exist
-    if (!player.renderPosition) {
-      player.renderPosition = { x: player.position.x, y: player.position.y };
-      continue;
+    if (!player?.position) continue;
+    const samples: MoveSample[] = player.moveSamples ??= [];
+    const last = samples[samples.length - 1];
+    // Position set outside a move packet (spawn, snapshot, warp): take it as
+    // the next step. It lands right after the newest one so later packets are
+    // still accepted, and a large jump snaps.
+    if (!last || last.x !== player.position.x || last.y !== player.position.y) {
+      pushSample(samples, player.position.x, player.position.y, last ? last.t + 0.01 : now);
     }
-
-    // For all players, apply smoothing or snap based on distance
-    const dx = player.position.x - player.renderPosition.x;
-    const dy = player.position.y - player.renderPosition.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    // If distance is very large (teleport/warp), snap immediately instead of smoothing
-    if (distance > TELEPORT_THRESHOLD) {
-      player.renderPosition.x = player.position.x;
-      player.renderPosition.y = player.position.y;
+    const p = positionAt(samples, at)!;
+    if (!player.renderPosition) {
+      player.renderPosition = { x: p.x, y: p.y };
     } else {
-      // Otherwise smoothly lerp toward position with frame-rate independent factor
-      player.renderPosition.x = player.renderPosition.x + dx * smoothFactor;
-      player.renderPosition.y = player.renderPosition.y + dy * smoothFactor;
+      player.renderPosition.x = p.x;
+      player.renderPosition.y = p.y;
     }
   }
 }
@@ -1205,21 +1122,23 @@ function animationLoop() {
     deltaTime = maxDeltaTime;
   }
 
+  // Learn the display's refresh interval from rAF itself.
+  const rafDelta = now - lastRafTime;
+  lastRafTime = now;
+  if (rafDelta > 2 && rafDelta < 100) rafInterval += (rafDelta - rafInterval) * 0.05;
+
   if (!uncapped) {
-    if (now - nextFrameTime < frameDuration) {
+    // Render every Nth display refresh, never on a timer. A cap that does not
+    // divide the refresh rate (the default 50 on a 60Hz phone) otherwise drops
+    // frames at irregular points: an uneven hitch several times a second on
+    // anything moving. 50 on 60Hz renders at 60; on 144Hz, every 3rd refresh (48).
+    const stride = Math.max(1, Math.round(frameDuration / rafInterval));
+    if (++rafsSinceRender < stride) {
       requestAnimationFrame(animationLoop);
       return;
     }
-
-    // Step nextFrameTime forward by frameDuration; snap if we fell far behind
-    if (now - nextFrameTime > frameDuration * 3) {
-      nextFrameTime = now;
-    }
-    nextFrameTime += frameDuration;
-  } else {
-    // Uncapped: render every tick; keep the pacing clock in sync for when a cap returns.
-    nextFrameTime = now;
   }
+  rafsSinceRender = 0;
 
   lastFrameTime = now;
 
@@ -1240,14 +1159,6 @@ function animationLoop() {
     if ((npc as any).layeredAnimation) {
       updateLayeredAnimation((npc as any).layeredAnimation, deltaTime);
     }
-  }
-
-  for (const entity of cache.entities) {
-    if ((entity as any).layeredAnimation) {
-      updateLayeredAnimation((entity as any).layeredAnimation, deltaTime);
-    }
-    // Smooth entity movement interpolation
-    updateEntityInterpolation(entity, deltaTime);
   }
 
   if (cache.players instanceof Map) {
@@ -1277,10 +1188,7 @@ function animationLoop() {
     cameraInitialized = true;
   }
 
-  updateLocalPlayerPrediction(currentPlayer, now);
-
-  // Apply smoothing to all player render positions after position updates
-  smoothPlayerRenderPositions(playersArray, currentPlayer, deltaTime);
+  smoothPlayerRenderPositions(playersArray, now);
 
   updateCamera(currentPlayer, deltaTime * 60);
 
@@ -1364,23 +1272,22 @@ function animationLoop() {
     updateHealthBar(healthBar, healthPercent);
     updateStaminaBar(staminaBar, staminaPercent);
     updateAbsorptionBar(absorbtion || 0, total_max_health);
-    // Mobile self card (top-left): same source as the desktop bars.
-    updateSelfStatus(currentPlayer.username, health, total_max_health, stamina, total_max_stamina, absorbtion || 0);
+    // A target that has wandered (or been left) too far away is dropped.
+    dropDistantTarget(currentPlayer);
+    // Unit frames: the target, plus your own frame on touch devices. Each only
+    // touches the DOM when something visible changes.
+    updateUnitFrames(currentPlayer);
   }
 
   const visibleNpcs = cache.npcs.filter(npc =>
     isInView(npc.position.x, npc.position.y)
   );
 
-  const visibleEntities = cache.entities.filter(entity =>
-    isInView(entity.position.x, entity.position.y)
-  );
-
   // Collect particles by zIndex before rendering
   const particlesByLayer = new Map<number, Array<{
     particle: any;
     source: any;
-    sourceType: 'npc' | 'entity';
+    sourceType: 'npc' | 'effect';
   }>>();
 
   for (const npc of visibleNpcs) {
@@ -1401,26 +1308,8 @@ function animationLoop() {
     }
   }
 
-  for (const entity of visibleEntities) {
-    if (entity.particles) {
-      for (const particle of entity.particles) {
-        if (particle.visible !== false) {
-          const zIndex = particle.zIndex || 0;
-          if (!particlesByLayer.has(zIndex)) {
-            particlesByLayer.set(zIndex, []);
-          }
-          particlesByLayer.get(zIndex)!.push({
-            particle,
-            source: entity,
-            sourceType: 'entity'
-          });
-        }
-      }
-    }
-  }
-
   // Collect player effect particles into the same layer system that
-  // entity/NPC particles use. zIndex defaults to 3 (upper layer, above sprites).
+  // NPC particles use. zIndex defaults to 3 (upper layer, above sprites).
   for (const p of visiblePlayers) {
     const effects = p.activeEffects?.filter((e: any) => e.endTime > Date.now()) || [];
     const allParticles: any[] = [];
@@ -1437,18 +1326,13 @@ function animationLoop() {
         particleArrays: {} as Record<string, any[]>,
         lastEmitTime: {} as Record<string, number>,
         particles: [] as any[],
-        updateParticle: null as any,
+        updateParticle: updateSourceParticle,
       };
     }
     const wrap = (p as any)._fxWrapper;
     wrap.position.x = p.renderPosition.x;
     wrap.position.y = p.renderPosition.y;
     wrap.particles = allParticles;
-
-    if (!wrap.updateParticle && cache.entities.length > 0) {
-      wrap.updateParticle = ((cache.entities[0] as any).updateParticle as any);
-    }
-    if (!wrap.updateParticle) continue;
 
     for (const particleDef of allParticles) {
       const zIndex = particleDef.zIndex || 3;
@@ -1458,7 +1342,7 @@ function animationLoop() {
       particlesByLayer.get(zIndex)!.push({
         particle: particleDef,
         source: wrap,
-        sourceType: 'entity',
+        sourceType: 'effect',
       });
     }
   }
@@ -1582,10 +1466,12 @@ function animationLoop() {
       npc.dialogue(ctx);
     }
 
-    // Render entities (same pattern as NPCs but with combat features)
-    for (const entity of visibleEntities) {
-      entity.show(ctx);
-    }
+    renderCreatures(ctx, isInView, currentPlayer?.stats?.level ?? 1, cache.targetId, (playerId) => {
+      const p = playersArray.find((pl: any) => pl.id === playerId);
+      return p ? { x: p.renderPosition?.x ?? p.position.x, y: (p.renderPosition?.y ?? p.position.y) - 10 } : null;
+    });
+
+    renderCreatureEditorOverlays(ctx, String(window.mapData?.name ?? "").replace(".json", ""));
 
     renderLoot(ctx, cameraX, cameraY, canvas.width, canvas.height, cachedPlayerId);
 
@@ -1603,24 +1489,17 @@ function animationLoop() {
       if ((projectile as any).isThrown) {
         endX = projectile.targetPos ? projectile.targetPos.x : projectile.currentX;
         endY = projectile.targetPos ? projectile.targetPos.y : projectile.currentY;
-      } else if ((projectile as any).isEntityTarget) {
-        // Target is an entity
-        const targetEntity = cache.entities.find((e: any) => e.id === (projectile as any).targetEntityId);
-        if (!targetEntity) {
-          cache.projectiles.splice(i, 1);
-          continue;
-        }
-        endX = targetEntity.position.x;
-        endY = targetEntity.position.y;
       } else {
-        // Target is a player
-        const targetPlayer = playersArray.find(p => p.id === projectile.targetPlayerId);
-        if (!targetPlayer) {
+        // Target is a player or a creature; follow whichever is still there.
+        const creaturePos = creaturePositionFor(projectile.targetPlayerId);
+        const targetPlayer = creaturePos ? null : playersArray.find(p => p.id === projectile.targetPlayerId);
+        const end = creaturePos ?? targetPlayer?.position;
+        if (!end) {
           cache.projectiles.splice(i, 1);
           continue;
         }
-        endX = targetPlayer.position.x;
-        endY = targetPlayer.position.y;
+        endX = end.x;
+        endY = end.y;
       }
 
       projectile.currentX = projectile.startX + (endX - projectile.startX) * progress;
@@ -2447,6 +2326,9 @@ function animationLoop() {
   renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
 
   (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
+
+  // Screen-space editor panel (resets the transform itself).
+  renderThreatPanel(ctx);
 
   requestAnimationFrame(animationLoop);
 }

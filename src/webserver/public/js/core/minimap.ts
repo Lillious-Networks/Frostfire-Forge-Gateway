@@ -278,7 +278,7 @@ function renderMinimap() {
     ctx.fillText(timeText, halfSize, timeY);
   }
 
-  // Draw entity dots
+  // Draw player dots
   for (const player of playersArray) {
     if (!player || player.id === cachedPlayerId) continue;
     if (player.isStealth && !currentPlayer.isAdmin) continue;
@@ -302,18 +302,6 @@ function renderMinimap() {
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(px, py, size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  for (const entity of cache.entities) {
-    if (!entity || !entity.position) continue;
-    const px = halfSize + (entity.position.x - playerX) / minimapZoom;
-    const py = halfSize + (entity.position.y - playerY) / minimapZoom;
-    if (Math.hypot(px - halfSize, py - halfSize) <= radius - 2) {
-      ctx.fillStyle = "#FF8800";
-      ctx.beginPath();
-      ctx.arc(px, py, 1.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }

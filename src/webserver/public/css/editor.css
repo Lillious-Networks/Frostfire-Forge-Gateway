@@ -180,17 +180,14 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
 .editor-tab-panel { display: none; }
 .editor-tab-panel.active { display: block; }
 
+/* The tab bar stays put; only the form below it scrolls (#editor-form). */
 .editor-content-area {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow-y: auto;
-}
-.editor-content-area::-webkit-scrollbar { width: 5px; }
-.editor-content-area::-webkit-scrollbar-thumb {
-  background: rgba(46, 204, 113, 0.3);
-  border-radius: 3px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .editor-form-input {
@@ -444,7 +441,17 @@ input[type="range"].editor-range::-moz-range-thumb {
 #particle-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
 #particle-preview-canvas { width: 200px; height: 200px; display: block; background: #222; image-rendering: pixelated; border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 6px; margin-bottom: 15px; transition: border-color 0.2s; }
 #particle-preview-canvas:hover { border-color: rgba(46, 204, 113, 0.5); }
-#editor-form { padding: 6px 8px; }
+#editor-form {
+  padding: 6px 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+#editor-form::-webkit-scrollbar { width: 5px; }
+#editor-form::-webkit-scrollbar-thumb {
+  background: rgba(46, 204, 113, 0.3);
+  border-radius: 3px;
+}
 
 #ne-particle-options { overflow-y: auto; max-height: 180px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 3px; }
 #ne-particle-options label { display: flex; align-items: center; padding: 4px 6px; margin: 1px 0; cursor: pointer; color: rgba(255, 255, 255, 0.7); font-family: 'Comic Relief', Arial, sans-serif; font-size: 11px; }
@@ -461,3 +468,258 @@ input[type="range"].editor-range::-moz-range-thumb {
 #ne-particle-search { margin-bottom: 8px; }
 
 #le-item-results { display: none; }
+
+/* Creature editor */
+#ce-form-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+}
+#ce-form-fields > * + * { margin-top: 0; }
+#ce-form-fields:empty, #ce-extra:empty { display: none; }
+.ce-field { min-width: 0; }
+.ce-field-wide { grid-column: 1 / -1; }
+.ce-field-row-start { grid-column-start: 1; }
+/* Three spaced coin boxes need two columns' width to show a real amount.
+   Only the end is set, so a field that starts a new row still starts it. */
+.ce-field-money { grid-column-end: span 2; }
+.ce-field-check { display: flex; align-items: center; min-height: 29px; }
+.ce-field .editor-form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+/* Money fields: gold / silver / copper side by side, stored as one copper total. */
+.ce-money { display: flex; gap: 14px; }
+.ce-money-part { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 5px; }
+.ce-money-part .editor-form-input { flex: 1 1 auto; min-width: 0; }
+/* Coin icons come from game.css (.currency-icon-*); keep them from shrinking. */
+.ce-money-icon { flex: 0 0 16px; }
+select.editor-form-input { color-scheme: dark; cursor: pointer; height: 29px; }
+select.editor-form-input option { background: #1e293b; color: #fff; }
+input[type="number"].editor-form-input { color-scheme: dark; }
+.editor-errors {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 100, 100, 0.35);
+  border-radius: 4px;
+  background: rgba(255, 80, 80, 0.12);
+  color: rgba(255, 170, 170, 0.95);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+}
+.editor-errors[hidden] { display: none; }
+.editor-error-line { margin: 2px 0; }
+.editor-status {
+  margin-left: auto;
+  color: rgba(226, 232, 240, 0.6);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.editor-inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.editor-inline-label input[type="checkbox"] { accent-color: rgba(46, 204, 113, 0.8); cursor: pointer; margin: 0; }
+.editor-flags {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 12px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+.editor-empty {
+  grid-column: 1 / -1;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 12px;
+  padding: 16px 4px;
+}
+.editor-summary {
+  color: rgba(226, 232, 240, 0.75);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 8px 10px;
+  background: rgba(46, 204, 113, 0.06);
+  border: 1px solid rgba(46, 204, 113, 0.2);
+  border-radius: 4px;
+}
+#ce-extra .sidebar-section-header { border-radius: 3px; }
+
+/* Abilities tab: one card per ability of the selected creature. */
+.ce-ability {
+  margin-bottom: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+.ce-ability-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ce-ability-title {
+  color: #fff;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ce-ability-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+}
+/* Same look as the toolbar buttons. */
+.ce-card-btn {
+  height: 29px;
+  padding: 4px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+  font-family: 'Comic Relief', Arial, sans-serif;
+}
+.ce-card-btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(46, 204, 113, 0.5); }
+.ce-card-btn-danger:hover { border-color: rgba(255, 100, 100, 0.6); background: rgba(255, 80, 80, 0.12); }
+.ce-ability-add { margin-top: 2px; }
+.ce-point-row {
+  display: grid;
+  grid-template-columns: 1fr 110px auto;
+  gap: 8px;
+  align-items: center;
+}
+.ce-point-label {
+  color: #e0e7ff;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Asset picker: field button + searchable popup */
+.ce-asset-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 29px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #fff;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ce-asset-button:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(46, 204, 113, 0.5); }
+.ce-asset-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ce-asset-thumb {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.ce-asset-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.ce-asset-picker { width: 420px; max-width: 90vw; }
+.ce-asset-picker h3 { text-transform: capitalize; }
+.ce-asset-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 4px;
+}
+.ce-asset-list::-webkit-scrollbar { width: 5px; }
+.ce-asset-list::-webkit-scrollbar-thumb { background: rgba(46, 204, 113, 0.3); border-radius: 3px; }
+.ce-asset-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  margin: 2px 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #fff;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ce-asset-row:hover { background: rgba(46, 204, 113, 0.15); border-color: rgba(46, 204, 113, 0.4); }
+.ce-asset-row .ce-asset-thumb { width: 32px; height: 32px; }
+
+/* Item editor: bigger icons than the compact asset rows, with room to breathe */
+#ie-list .editor-item {
+  gap: 10px;
+  padding: 6px 10px;
+}
+#ie-list .ce-asset-thumb {
+  width: 36px;
+  height: 36px;
+}
+#ie-list .editor-item-label {
+  padding-left: 2px;
+  font-size: 12px;
+}
+.ce-asset-button .ce-asset-thumb {
+  width: 36px;
+  height: 36px;
+}
+.ce-asset-button {
+  gap: 10px;
+  min-height: 44px;
+}
+.ce-asset-row .ce-asset-thumb {
+  width: 40px;
+  height: 40px;
+}
+.ce-asset-row {
+  gap: 10px;
+  padding: 6px 8px;
+}
+.ce-asset-row .ce-asset-name,
+.ce-asset-button .ce-asset-name {
+  padding-left: 2px;
+  font-size: 12px;
+}

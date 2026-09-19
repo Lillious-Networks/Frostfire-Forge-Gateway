@@ -348,7 +348,8 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
   }
 
   if (!spellData.activeEffect) {
-    if (spellData.mana) lines.push({ text: `${spellData.mana} Mana`, color: "#469cd9" });
+    // Mana is a percentage of base (level) stamina, as WoW words it.
+    if (spellData.mana) lines.push({ text: `${spellData.mana}% of base mana`, color: "#469cd9" });
     if (spellData.cast_time) lines.push({ text: `${spellData.cast_time}s Cast Time`, color: "#bdbdbd" });
     if (spellData.cooldown) lines.push({ text: `${spellData.cooldown}s Cooldown`, color: "#bdbdbd" });
   }

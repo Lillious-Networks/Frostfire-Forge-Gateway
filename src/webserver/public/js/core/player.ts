@@ -12,6 +12,7 @@ import { particlePool, getParticleSprite } from "./npc.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
 import { formatDuration } from "./tooltip.js";
+import { NUMBER_FONT, TEXT_FONT } from "./fonts.js";
 
 async function createPlayer(data: any) {
 
@@ -309,7 +310,7 @@ async function createPlayer(data: any) {
 
           const stacks = Number(effect.stacks) || 1;
           if (stacks > 1) {
-            context.font = "bold 10px 'Comic Relief'";
+            context.font = `bold 10px ${NUMBER_FONT}`;
             context.textAlign = "right";
             context.fillStyle = "#ffd75e";
             context.strokeStyle = "black";
@@ -321,7 +322,7 @@ async function createPlayer(data: any) {
           const remaining = Math.ceil((effect.endTime - now) / 1000);
           if (remaining > 0) {
             const label = formatDuration(remaining);
-            context.font = "bold 10px 'Comic Relief'";
+            context.font = `bold 10px ${NUMBER_FONT}`;
             context.textAlign = "center";
             context.fillStyle = "white";
             context.strokeStyle = "black";
@@ -395,10 +396,12 @@ async function createPlayer(data: any) {
 
         const opacity = 1 - progress;
 
+        // Numbers use the hotbar's font; "Miss" stays in the text font.
+        const numberFont = dmg.isMiss ? TEXT_FONT : NUMBER_FONT;
         if (dmg.isCrit && !dmg.isHealing) {
-          context.font = "bold 28px 'Comic Relief'";
+          context.font = `bold 28px ${numberFont}`;
         } else {
-          context.font = "bold 20px 'Comic Relief'";
+          context.font = `bold 20px ${numberFont}`;
         }
         context.textAlign = "center";
 

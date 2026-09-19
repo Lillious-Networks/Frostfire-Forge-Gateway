@@ -1623,66 +1623,6 @@ function updatePartyMemberStats(username: string, health: number, maxHealth: num
   }
 }
 
-// Mobile-only self status card (top-left): same bars as a party member card.
-// Driven every frame from the render loop (like the desktop bars); DOM writes
-// are skipped unless something actually changed.
-let lastSelfStatus = "";
-function updateSelfStatus(username: string, health: number, maxHealth: number, stamina: number, maxStamina: number, absorbtion: number = 0) {
-  const key = `${username}|${health}|${maxHealth}|${stamina}|${maxStamina}|${absorbtion}`;
-  if (key === lastSelfStatus) return;
-  lastSelfStatus = key;
-
-  const card = document.getElementById("self-status");
-  if (!card) return;
-
-  const nameElement = document.getElementById("self-status-username");
-  if (nameElement) {
-    nameElement.innerText = username.charAt(0).toUpperCase() + username.slice(1);
-  }
-
-  const healthProgress = document.getElementById("self-status-health-progress");
-  const staminaProgress = document.getElementById("self-status-stamina-progress");
-
-  if (healthProgress && maxHealth > 0) {
-    const healthPercent = (health / maxHealth) * 100;
-    const healthScale = Math.max(0, Math.min(1, health / maxHealth));
-    (healthProgress as HTMLElement).style.setProperty("--health-scale", healthScale.toString());
-
-    let colorClass = "green";
-    if (healthPercent < 30) {
-      colorClass = "red";
-    } else if (healthPercent < 50) {
-      colorClass = "orange";
-    } else if (healthPercent < 80) {
-      colorClass = "yellow";
-    }
-
-    const current = Array.from(healthProgress.classList).find(c =>
-      ["green", "yellow", "orange", "red"].includes(c)
-    );
-
-    if (current !== colorClass) {
-      healthProgress.classList.remove("green", "yellow", "orange", "red");
-      healthProgress.classList.add(colorClass);
-    }
-  }
-
-  if (staminaProgress && maxStamina > 0) {
-    const staminaScale = Math.max(0, Math.min(1, stamina / maxStamina));
-    (staminaProgress as HTMLElement).style.setProperty("--stamina-scale", staminaScale.toString());
-  }
-
-  const absorbOverlay = document.getElementById("self-status-absorb");
-  if (absorbOverlay) {
-    if (absorbtion > 0 && maxHealth > 0) {
-      const absorbScale = Math.max(0, Math.min(1, absorbtion / maxHealth));
-      (absorbOverlay as HTMLElement).style.setProperty("--absorb-scale", absorbScale.toString());
-      (absorbOverlay as HTMLElement).style.display = "block";
-    } else {
-      (absorbOverlay as HTMLElement).style.display = "none";
-    }
-  }
-}
 
 function updateHealthBar(bar: HTMLDivElement, healthPercent: number) {
   const xscale = Math.max(0, Math.min(1, healthPercent / 100)) || 0;
@@ -2366,7 +2306,7 @@ if (guildCreateButton) {
 }
 
 export {
-    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateSelfStatus, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
+    toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
     friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,

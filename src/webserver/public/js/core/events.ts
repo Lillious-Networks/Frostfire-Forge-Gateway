@@ -21,6 +21,11 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
 import { friendsListSearch } from "./friends.js";
 import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu } from "./actions.js";
 import { closeRadialMenu } from "./mobileui.js";
+import "./creatureinput.js";
+import { getScreenView, screenToWorldCss } from "./skeletons.js";
+
+/** Extra world pixels around an NPC that still count as a tap on it (touch only). */
+const TOUCH_TARGET_SLOP = 24;
 let typingTimer: number | null = null;
 
 // Loot pickup state
@@ -852,8 +857,6 @@ document.addEventListener("click", (event) => {
   if ((window as any).tileEditor?.isActive) return;
   if ((event.target as HTMLElement)?.closest(".ui")) return;
 
-  const entityEditorContainer = document.getElementById("entity-editor-container");
-  if (entityEditorContainer && entityEditorContainer.contains(event.target as Node)) return;
 
   const contextMenu = document.getElementById("context-menu");
   if (contextMenu && !contextMenu.contains(event.target as Node)) {
@@ -864,17 +867,28 @@ document.addEventListener("click", (event) => {
   const screenX = event.clientX - rect.left;
   const screenY = event.clientY - rect.top;
 
-  let mapCenterOffsetX = 0;
-  const mapCenterOffsetY = 0;
-  if (window.mapData) {
-    const mapWidth = window.mapData.width * window.mapData.tilewidth;
-    if (mapWidth < window.innerWidth) {
-      mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+  // Shared projection: touch devices render at 0.85 zoom, which the plain
+  // formula below ignores (taps landed off target, worse further from centre).
+  const view = getScreenView();
+  let worldX: number;
+  let worldY: number;
+  if (view) {
+    ({ x: worldX, y: worldY } = screenToWorldCss(screenX, screenY, view));
+  } else {
+    let mapCenterOffsetX = 0;
+    if (window.mapData) {
+      const mapWidth = window.mapData.width * window.mapData.tilewidth;
+      if (mapWidth < window.innerWidth) {
+        mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+      }
     }
+    worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
+    worldY = screenY - window.innerHeight / 2 + getCameraY();
   }
 
-  const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
-  const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
+  // A fingertip is far less precise than a cursor: widen the hit area on touch.
+  const isTouch = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+  const slop = isTouch ? TOUCH_TARGET_SLOP : 0;
 
   if (cache.groundTargetingSpell) {
     // Corpses and ghosts cannot cast.
@@ -919,18 +933,14 @@ document.addEventListener("click", (event) => {
   if (prevNpc) {
     cache.targetId = null;
   }
-  const prevEntity = cache.entities.find((entity: any) => entity.id === cache.targetId);
-  if (prevEntity) {
-    cache.targetId = null;
-  }
 
   // Check if clicked on NPC
   const clickedNpc = cache.npcs.find((npc: any) => {
     const npcX = npc.position.x;
     const npcY = npc.position.y;
     return (
-      worldX >= npcX - 16 && worldX <= npcX + 32 &&
-      worldY >= npcY - 24 && worldY <= npcY + 48
+      worldX >= npcX - 16 - slop && worldX <= npcX + 32 + slop &&
+      worldY >= npcY - 24 - slop && worldY <= npcY + 48 + slop
     );
   });
 
@@ -939,31 +949,10 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  // Check if clicked on entity
-  const clickedEntity = cache.entities.find((entity: any) => {
-    // Skip dead entities - check both health and combatState
-    if (entity.health <= 0 || entity.combatState === 'dead') return false;
-
-    const entityX = entity.position.x;
-    const entityY = entity.position.y;
-    return (
-      worldX >= entityX - 16 && worldX <= entityX + 32 &&
-      worldY >= entityY - 24 && worldY <= entityY + 48
-    );
-  });
-
-  if (clickedEntity) {
-    cache.targetId = clickedEntity.id;
-    // Also select in entity editor if it's open
-    if ((window as any).entityEditor) {
-      (window as any).entityEditor.selectEntity(clickedEntity);
-    }
-    return;
-  }
-
+  // Players are picked server-side; `touch` asks for the wider touch area.
   sendRequest({
     type: "SELECTPLAYER",
-    data: { x: Math.floor(worldX), y: Math.floor(worldY) },
+    data: { x: Math.floor(worldX), y: Math.floor(worldY), touch: isTouch },
   });
 });
 
