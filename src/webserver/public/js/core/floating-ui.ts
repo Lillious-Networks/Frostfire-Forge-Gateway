@@ -12,6 +12,7 @@ class FloatingUIManager {
     { id: 'chat-container', title: 'Chat', closeable: false },
     { id: 'stats-container', title: 'Player Stats', closeable: false },
     { id: 'spell-book-container', title: 'Spell Book', closeable: true },
+    { id: 'quest-log-container', title: 'Quest Log', closeable: true },
     { id: 'friends-list-container', title: 'Friends', closeable: true },
     { id: 'guild-container', title: 'Guild', closeable: true },
   ];

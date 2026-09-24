@@ -3,6 +3,8 @@ import { npcImage, createCachedImage } from "./images.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { getIsLoaded } from "./socket.js";
+import { getMarker as getQuestMarker, hasQuestBusiness, formatNpcText } from "./quest.js";
+import { getCachedImage } from "./images.js";
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
 import { getEffectiveTime } from "./ambience.js";
 import {
@@ -204,11 +206,140 @@ async function reinitNpcSprite(npc: any) {
   }
 }
 
+const questAvailableImg = getCachedImage("/img/ui/ui-quest-available.png");
+const questCompleteImg = getCachedImage("/img/ui/ui-quest-complete.png");
+const questArtFailed = new Set<string>();
+for (const img of [questAvailableImg, questCompleteImg]) {
+  img.addEventListener("error", () => questArtFailed.add(img.src));
+}
+
+// Greyscale variants, rendered once the source art loads and then cached.
+const greyMarkerCache = new Map<string, HTMLCanvasElement>();
+
+function greyCopy(img: HTMLImageElement): HTMLCanvasElement | null {
+  if (!img.complete || !img.naturalWidth) return null;
+  const key = img.src;
+  const cached = greyMarkerCache.get(key);
+  if (cached) return cached;
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.filter = "grayscale(1)";
+  ctx.drawImage(img, 0, 0);
+  greyMarkerCache.set(key, canvas);
+  return canvas;
+}
+
+function markerLoaded(img: HTMLImageElement): boolean {
+  return img.complete && img.naturalWidth > 0 && !questArtFailed.has(img.src);
+}
+
+function markerSpriteFor(marker: string | null): HTMLImageElement | HTMLCanvasElement | null {
+  if (marker === "available") {
+    return markerLoaded(questAvailableImg) ? questAvailableImg : null;
+  }
+  if (marker === "ready") {
+    return markerLoaded(questCompleteImg) ? questCompleteImg : null;
+  }
+  if (marker === "in_progress") {
+    return greyCopy(questCompleteImg);
+  }
+  if (marker === "available_future") {
+    return greyCopy(questAvailableImg);
+  }
+  return null;
+}
+
+// Text glyphs (! / ?) as a last resort: markers must never silently vanish
+// just because art failed to load.
+function markerGlyphFor(marker: string | null): { text: string; color: string } | null {
+  if (marker === "available" || marker === "available_future") {
+    return { text: "!", color: marker === "available" ? "#ffd100" : "#9d9d9d" };
+  }
+  if (marker === "in_progress" || marker === "ready") {
+    return { text: "?", color: marker === "ready" ? "#ffd100" : "#9d9d9d" };
+  }
+  return null;
+}
+
+// Gossip chain: one line per conversation step. Each line shows for as long
+// as a player chat message of the same length (7000ms + 35ms per character,
+// mirroring handleChatMessage), then dialog advances to the next step.
+export function gossipLinesOf(npc: any): string[] {
+  const raw = typeof npc?.gossip === "string" ? npc.gossip : "";
+  return raw.split("\n").map((s: string) => s.trim()).filter(Boolean);
+}
+
+function gossipDurationMs(line: string): number {
+  // Snappier than player chat: short lines clear fast, long ones get room.
+  return 2500 + line.length * 45;
+}
+
+export function hasNpcGossip(npcId: number): boolean {
+  const npc = (cache.npcs || []).find((n: any) => Number(n.id) === Number(npcId));
+  return gossipLinesOf(npc).length > 0;
+}
+
+/**
+ * Advance dialog through the chain on chat-like timing. Chains only run once
+ * spoken to — interacting starts them via advanceNpcGossip — and the bubble
+ * clears when the last line expires instead of looping. Call once per frame.
+ */
+export function tickNpcGossip(npc: any, now: number = performance.now()): void {
+  const lines = gossipLinesOf(npc);
+  if (!npc || lines.length === 0) return;
+  if ((npc as any).gossipActive !== true) return;
+  if ((npc as any).gossipUntil !== undefined && now < (npc as any).gossipUntil) return;
+  const next = ((npc as any).gossipIndex ?? -1) + 1;
+  if (next >= lines.length) {
+    // End of the chain: the bubble clears back to whatever was showing
+    // before the conversation started (usually nothing), like player chat
+    // clearing after its timer.
+    (npc as any).gossipActive = false;
+    (npc as any).gossipUntil = undefined;
+    (npc as any).gossipIndex = undefined;
+    npc.dialog = (npc as any).gossipReturnTo ?? "";
+    (npc as any).gossipReturnTo = undefined;
+    return;
+  }
+  (npc as any).gossipIndex = next;
+  npc.dialog = lines[next];
+  (npc as any).gossipUntil = now + gossipDurationMs(lines[next]);
+}
+
+/**
+ * Start the chain from its first line on interact (or jump to the next line
+ * when already mid-conversation). Talking again after it finished replays it.
+ */
+export function advanceNpcGossip(npcId: number): boolean {
+  const npc = (cache.npcs || []).find((n: any) => Number(n.id) === Number(npcId));
+  const lines = gossipLinesOf(npc);
+  if (!npc || lines.length === 0) return false;
+  let next: number;
+  if ((npc as any).gossipActive !== true) {
+    // Remember what to restore when the chain ends.
+    (npc as any).gossipReturnTo = npc.dialog;
+    next = 0;
+  } else {
+    const current = lines.indexOf(npc.dialog);
+    next = current >= 0 ? current + 1 : 0;
+    if (next >= lines.length) next = 0;
+  }
+  (npc as any).gossipActive = true;
+  (npc as any).gossipIndex = next;
+  npc.dialog = lines[next];
+  (npc as any).gossipUntil = performance.now() + gossipDurationMs(lines[next]);
+  return true;
+}
+
 function createNPC(data: any) {
   const npc: NPC = {
     id: data.id,
     name: data.name || "",
     dialog: data.dialog || "",
+    gossip: data.gossip ?? null,
     hidden: data?.hidden ?? false,
     direction: data.location?.direction || "down",
     sprite_type: data.sprite_type || 'none',
@@ -220,16 +351,16 @@ function createNPC(data: any) {
       y: data.location.y,
     },
     particles: data.particles || [],
-    quest: data.quest || null,
     dialogue: function (this: typeof npc, context: CanvasRenderingContext2D) {
-      if (this.dialog) {
-        if (this.dialog.trim() !== "") {
+      const text = formatNpcText(this.dialog);
+      if (text) {
+        if (text.trim() !== "") {
           context.fillStyle = "black";
           context.fillStyle = "white";
           context.font = "14px 'Comic Relief'";
           context.textAlign = "center";
 
-          const lines = getLines(context, this.dialog, 500).reverse();
+          const lines = getLines(context, text, 500).reverse();
           let startingPosition = this.position.y - 12;
 
           for (let i = 0; i < lines.length; i++) {
@@ -290,6 +421,41 @@ function createNPC(data: any) {
         context.strokeText((this as any).name, nameX, nameY);
         context.fillText((this as any).name, nameX, nameY);
         context.restore();
+      }
+
+      // Quest head markers next to the nameplate. Incomplete quests reuse the
+      // complete sprite rendered in greyscale; text glyphs cover art that
+      // failed to load so a marker never silently vanishes.
+      const marker = getQuestMarker((this as any).id);
+      const markerOffsetX = (this as any).layeredAnimation ? 0 : 16;
+      const markerX = this.position.x + markerOffsetX;
+      // Gentle bob so quest markers catch the eye.
+      const markerY = this.position.y - 46 + Math.round(Math.sin(performance.now() * 0.0025) * 3);
+      const markerSprite = markerSpriteFor(marker);
+      if (markerSprite) {
+        const size = 30;
+        context.drawImage(
+          markerSprite,
+          Math.round(markerX - size / 2),
+          Math.round(markerY - size / 2),
+          size,
+          size
+        );
+      } else {
+        const glyph = markerGlyphFor(marker);
+        if (glyph) {
+          context.save();
+          context.font = "bold 20px 'Comic Relief'";
+          context.textAlign = "center";
+          context.shadowColor = "black";
+          context.shadowBlur = 3;
+          context.shadowOffsetX = 0;
+          context.strokeStyle = "black";
+          context.fillStyle = glyph.color;
+          context.strokeText(glyph.text, markerX, markerY);
+          context.fillText(glyph.text, markerX, markerY);
+          context.restore();
+        }
       }
     },
     updateParticle: async (particle: Particle, npc: any, context: CanvasRenderingContext2D, deltaTime: number) => {
@@ -537,6 +703,55 @@ function deleteNPC(npc: any) {
   if (idx >= 0) {
     cache.npcs.splice(idx, 1);
   }
+}
+
+// Talk-key badge over the nearest interactable NPC, mirroring the loot "E"
+// and chest "F" hints. Desktop only: touch devices tap the NPC instead.
+export function renderNpcInteractBadge(
+  ctx: CanvasRenderingContext2D,
+  cameraX: number,
+  cameraY: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  npcId: number | null,
+): void {
+  if (npcId === null || npcId === undefined) return;
+  if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+  // Interactable only with gossip to share or quest business.
+  if (!hasQuestBusiness(npcId) && !hasNpcGossip(npcId)) return;
+  const npc = (cache.npcs || []).find((n: any) => Number(n.id) === Number(npcId));
+  if (!npc || npc.hidden) return;
+  const nx = Number(npc.position?.x);
+  const ny = Number(npc.position?.y);
+  if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  // Small badge on the NPC's lower body: sprite shows through the fill while
+  // a bright ring and letter keep it noticeable.
+  const x = (nx - cameraX + canvasWidth / (dpr * 2)) * dpr;
+  const y = (ny + 12 - cameraY + canvasHeight / (dpr * 2)) * dpr;
+  const radius = 10 * dpr;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fill();
+  ctx.strokeStyle = "#FFFFFF";
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.stroke();
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${11 * dpr}px 'Comic Relief', sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(0, 0, 0, 1)";
+  ctx.shadowBlur = 3 * dpr;
+  ctx.fillText("E", x, y + 0.5 * dpr);
+
+  ctx.restore();
 }
 
 export { createNPC, reinitNpcSprite, particlePool, getParticleSprite, deleteNPC };

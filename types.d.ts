@@ -43,9 +43,10 @@ declare interface NPC {
   name?: string;
   position: { x: number; y: number };
   dialog: string;
+  gossip?: string | null;
   particles?: Particle[];
   hidden?: boolean;
-  quest: Nullable<number>;
+  quest_giver?: boolean;
   direction?: string;
   sprite_type?: 'none' | 'static' | 'animated';
   spriteLayers?: {

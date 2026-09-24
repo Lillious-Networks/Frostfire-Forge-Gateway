@@ -465,6 +465,25 @@ input[type="range"].editor-range::-moz-range-thumb {
 #ne-particle-options label { display: flex; align-items: center; padding: 4px 6px; margin: 1px 0; cursor: pointer; color: rgba(255, 255, 255, 0.7); font-family: 'Comic Relief', Arial, sans-serif; font-size: 11px; }
 #ne-particle-options label input[type="checkbox"] { width: auto; accent-color: rgba(46, 204, 113, 0.8); cursor: pointer; flex-shrink: 0; margin-right: 6px; }
 
+/* NPC appearance uses the same dynamic fields as the creature editor. */
+#ne-appearance-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+}
+
+/* Shared multi-pick checkbox list (quest prerequisites, NPC quest links).
+   Native multi-selects cannot be used: select.editor-form-input is pinned to
+   29px height, which collapses them into a broken single row. */
+.editor-checklist { overflow-y: auto; max-height: 150px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 3px; padding: 2px; scrollbar-width: thin; scrollbar-color: rgba(100, 180, 255, 0.35) transparent; }
+.editor-checklist::-webkit-scrollbar { width: 4px; }
+.editor-checklist::-webkit-scrollbar-track { background: transparent; }
+.editor-checklist::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.35); border-radius: 2px; }
+.editor-checklist::-webkit-scrollbar-thumb:hover { background: rgba(100, 180, 255, 0.55); }
+.editor-checklist label { display: flex; align-items: center; padding: 4px 6px; margin: 1px 0; cursor: pointer; color: rgba(255, 255, 255, 0.7); font-family: 'Comic Relief', Arial, sans-serif; font-size: 11px; }
+.editor-checklist label input[type="checkbox"] { width: auto; accent-color: rgba(46, 204, 113, 0.8); cursor: pointer; flex-shrink: 0; margin-right: 6px; }
+
 #sprite-fields,
 #sprite-animated-fields { display: none; }
 
@@ -613,6 +632,24 @@ input[type="number"].editor-form-input { color-scheme: dark; }
 }
 .ce-card-btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(46, 204, 113, 0.5); }
 .ce-card-btn-danger:hover { border-color: rgba(255, 100, 100, 0.6); background: rgba(255, 80, 80, 0.12); }
+/* Compact red × remove button pinned to the top right of a card header. */
+.ce-card-btn-x {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  flex-shrink: 0;
+  line-height: 1;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 120, 120, 0.9);
+  background: rgba(255, 80, 80, 0.12);
+  border: 1px solid rgba(255, 100, 100, 0.4);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  transition: all 0.15s;
+}
+.ce-card-btn-x:hover { background: rgba(255, 80, 80, 0.3); color: #fff; }
 .ce-ability-add { margin-top: 2px; }
 .ce-point-row {
   display: grid;
@@ -704,6 +741,45 @@ input[type="number"].editor-form-input { color-scheme: dark; }
 }
 .ce-asset-row:hover { background: rgba(46, 204, 113, 0.15); border-color: rgba(46, 204, 113, 0.4); }
 .ce-asset-row .ce-asset-thumb { width: 32px; height: 32px; }
+/* Toggle rows in multi-pick popups: undo the full-width modal input styling. */
+.ce-asset-row input[type="checkbox"] { width: auto; flex-shrink: 0; margin: 0; padding: 0; cursor: pointer; accent-color: rgba(46, 204, 113, 0.8); }
+/* Gossip ${...} autocomplete popup (NPC editor). */
+.qe-ac-popup {
+  position: fixed;
+  display: none;
+  z-index: 1000;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 190px;
+  overflow-y: auto;
+  background: rgba(30, 41, 59, 0.97);
+  border: 1px solid rgba(46, 204, 113, 0.3);
+  border-radius: 6px;
+  padding: 4px;
+  color-scheme: dark;
+}
+.qe-ac-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #fff;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+}
+.qe-ac-row:hover, .qe-ac-row.active { background: rgba(46, 204, 113, 0.15); border-color: rgba(46, 204, 113, 0.4); }
+.qe-ac-name { color: #fff; }
+.qe-ac-hint { margin-left: auto; color: rgba(255, 255, 255, 0.5); font-size: 10px; }
+/* Multi-pick popups: explicit light text on every node; nothing inherits
+   (inherited body text renders black on some setups). */
+.ce-asset-picker { color-scheme: dark; }
+.ce-asset-picker .ce-asset-name,
+button.ce-asset-button .ce-asset-name { color: #fff; }
+.ce-asset-picker .editor-modal-actions span { color: rgba(255, 255, 255, 0.7); font-size: 11px; font-family: 'Comic Relief', Arial, sans-serif; }
+.ce-asset-picker .editor-empty { color: rgba(255, 255, 255, 0.5); }
 
 /* Item editor: bigger icons than the compact asset rows, with room to breathe */
 #ie-list .editor-item {

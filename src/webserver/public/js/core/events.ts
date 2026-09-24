@@ -367,7 +367,11 @@ window.addEventListener("keyup", (e) => {  const activeElement = document.active
       lootHolding = false;
       lootPickupProgress = 0;
       (window as any)._lootPickupProgress = 0;
+      return;
     }
+    // No loot pickup armed: E talks to the nearest NPC instead.
+    if (isSelfActionLocked()) return;
+    import("./quest.js").then((m) => m.tryInteractNpc());
     return;
   }
 
@@ -760,6 +764,57 @@ canvas.addEventListener("touchmove", (e) => {
   }
 });
 
+// Single tap on a quest NPC (touch only) talks to them. The E badge is
+// desktop-only, so touch gets tap-to-talk instead. Short and still only:
+// drags, long-presses and UI taps fall through to their normal handlers.
+let npcTapStartX = 0;
+let npcTapStartY = 0;
+let npcTapStartAt = 0;
+let npcTapOnUi = false;
+const NPC_TAP_MAX_MS = 300;
+const NPC_TAP_MAX_MOVE_PX = 12;
+
+canvas.addEventListener("touchstart", (e) => {
+  if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+  const touch = e.touches[0];
+  if (!touch || e.touches.length !== 1) { npcTapOnUi = true; return; }
+  npcTapStartX = touch.clientX;
+  npcTapStartY = touch.clientY;
+  npcTapStartAt = Date.now();
+  npcTapOnUi = !!(e.target as HTMLElement)?.closest?.(".ui");
+}, { passive: true });
+
+canvas.addEventListener("touchend", (e) => {
+  if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+  if (npcTapOnUi) return;
+  if (!getIsLoaded() || (window as any).tileEditor?.isActive) return;
+  if (isSelfActionLocked()) return;
+  const touch = (e as any).changedTouches?.[0];
+  if (!touch || (e as any).changedTouches?.length !== 1) return;
+  if (Date.now() - npcTapStartAt > NPC_TAP_MAX_MS) return;
+  if (Math.abs(touch.clientX - npcTapStartX) > NPC_TAP_MAX_MOVE_PX) return;
+  if (Math.abs(touch.clientY - npcTapStartY) > NPC_TAP_MAX_MOVE_PX) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const screenX = touch.clientX - rect.left;
+  const screenY = touch.clientY - rect.top;
+  const view = getScreenView();
+  let worldX: number;
+  let worldY: number;
+  if (view) {
+    ({ x: worldX, y: worldY } = screenToWorldCss(screenX, screenY, view));
+  } else {
+    let mapCenterOffsetX = 0;
+    if (window.mapData) {
+      const mapWidth = window.mapData.width * window.mapData.tilewidth;
+      if (mapWidth < window.innerWidth) mapCenterOffsetX = (window.innerWidth - mapWidth) / 2;
+    }
+    worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
+    worldY = screenY - window.innerHeight / 2 + getCameraY();
+  }
+  import("./quest.js").then((m) => m.tryTapInteractNpcAt(worldX, worldY));
+});
+
 // Double-tap on mobile for admin warp
 let lastTapTime = 0;
 let lastTapX = 0;
@@ -1057,7 +1112,7 @@ document.addEventListener("click", (e) => {
   // Don't close if clicking radial menu items - they toggle panels themselves
   if (target.closest(".radial-item") || target.closest(".radial-menu-btn") || target.closest("#radial-menu")) return;
 
-  const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #friends-list-container.open, #guild-container.open, #admin-panel-container.open");
+  const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #quest-frame-container.open, #quest-log-container.open, #friends-list-container.open, #guild-container.open, #admin-panel-container.open");
   if (openPanels.length === 0) return;
 
   const clickedInside = Array.from(openPanels).some(panel => panel.contains(target));

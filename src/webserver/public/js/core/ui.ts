@@ -12,6 +12,9 @@ const friendsListUI = document.getElementById("friends-list-container") as HTMLD
 const inventoryUI = document.getElementById("inventory") as HTMLDivElement;
 const spellBookUI = document.getElementById("spell-book-container") as HTMLDivElement;
 const collectablesUI = document.getElementById("collectables-container") as HTMLDivElement;
+const questFrameUI = document.getElementById("quest-frame-container") as HTMLDivElement;
+const questLogUI = document.getElementById("quest-log-container") as HTMLDivElement;
+const questTrackerUI = document.getElementById("quest-tracker") as HTMLDivElement;
 const pauseMenu = document.getElementById("pause-menu-container") as HTMLDivElement;
 const menuElements = ["options-menu-container"];
 const chatInput = document.getElementById("chat-input") as HTMLInputElement;
@@ -947,6 +950,7 @@ function createTouchGhost(x: number, y: number) {
 
 function startTouchDrag(source: "spellbook" | "hotbar" | "inventory", slot: HTMLDivElement, index: number) {
   touchDragActive = true;
+  (window as any).__touchDragActive = true;
   touchDragSource = source;
   touchDragSourceIndex = index;
   touchDragSpellName = slot.dataset.spellName || slot.dataset.itemName || null;
@@ -974,6 +978,7 @@ function clearTouchDrag() {
     if (sourceSlot) sourceSlot.style.opacity = "1";
   }
   touchDragActive = false;
+  (window as any).__touchDragActive = false;
   touchDragSpellName = null;
   touchDragImageSrc = null;
   touchDragSourceIndex = -1;
@@ -2307,7 +2312,7 @@ if (guildCreateButton) {
 
 export {
     toggleUI, toggleDebugContainer, handleStatsUI, createPartyUI, createGuildUI, updateGuildMemberOnlineStatus, updatePartyMemberOnlineStatus, updatePartyMemberStats, updateHealthBar, updateStaminaBar, updateAbsorptionBar, updateBuffBar, startSpellCooldown, startPersistentSpellCooldown, startSpellLockout, castSpell, positionText,
-    friendsListUI, inventoryUI, spellBookUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
+    friendsListUI, inventoryUI, spellBookUI, questFrameUI, questLogUI, questTrackerUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,

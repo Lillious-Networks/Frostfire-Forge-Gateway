@@ -1422,13 +1422,20 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "NPC_LIST": {
+      // Sibling keys (quests, spriteSheets, icons) ride on the envelope, not
+      // on data - same convention as SPELLS/slots. Fall back to data in case
+      // a path ever delivers the whole payload as data.
+      const npcRows = data?.data ?? data;
+      const questList = envelope?.quests ?? (data as any)?.quests;
+      const spriteSheets = envelope?.spriteSheets ?? (data as any)?.spriteSheets;
+      const icons = envelope?.icons ?? (data as any)?.icons;
 
       if ((window as any).npcEditor && (window as any).npcEditor.setNpcs) {
-        (window as any).npcEditor.setNpcs(data.data ?? data);
+        (window as any).npcEditor.setNpcs(npcRows, questList, { spriteSheets, icons });
       } else {
         import('./npceditor.js').then((module) => {
           if (module.default && module.default.setNpcs) {
-            module.default.setNpcs(data.data ?? data);
+            module.default.setNpcs(npcRows, questList, { spriteSheets, icons });
           }
         });
       }
@@ -1460,6 +1467,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         }
         if (updatedNpc.name !== undefined) liveNpc.name = updatedNpc.name || "";
         if (updatedNpc.dialog !== undefined) liveNpc.dialog = updatedNpc.dialog || "";
+        if (updatedNpc.gossip !== undefined) {
+          liveNpc.gossip = updatedNpc.gossip || "";
+          // Fresh gossip data stops the chain until spoken to again.
+          liveNpc.gossipActive = false;
+          liveNpc.gossipIndex = undefined;
+          liveNpc.gossipUntil = 0;
+          liveNpc.gossipReturnTo = undefined;
+        }
         if (updatedNpc.hidden !== undefined) liveNpc.hidden = updatedNpc.hidden;
         if (updatedNpc.particles !== undefined) liveNpc.particles = resolveParticles(updatedNpc.particles || []);
         if (updatedNpc.quest !== undefined) liveNpc.quest = updatedNpc.quest || null;
@@ -1493,6 +1508,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           name: updatedNpc.name || "",
           location: { x: updatedNpc.position?.x ?? 0, y: updatedNpc.position?.y ?? 0, direction: updatedNpc.position?.direction || "down" },
           dialog: updatedNpc.dialog || "",
+          gossip: updatedNpc.gossip || "",
           hidden: updatedNpc.hidden ?? false,
           particles: resolveParticles(updatedNpc.particles || []),
           quest: updatedNpc.quest || null,
@@ -3775,12 +3791,64 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables); });
       break;
     }
-    case "QUESTLOG": {
-
+    case "QUEST_LOG": {
+      import("./quest.js").then((m) => m.handleQuestLog(data));
       break;
     }
-    case "QUESTDETAILS": {
-
+    case "QUEST_LOG_ENTRY": {
+      import("./quest.js").then((m) => m.handleQuestLogEntry(data));
+      break;
+    }
+    case "QUEST_PROGRESS": {
+      import("./quest.js").then((m) => m.handleQuestProgress(data));
+      break;
+    }
+    case "QUEST_OFFER": {
+      import("./questframe.js").then((m) => m.onOffer(data));
+      break;
+    }
+    case "QUEST_INCOMPLETE": {
+      import("./questframe.js").then((m) => m.onIncomplete(data));
+      break;
+    }
+    case "QUEST_TURN_IN_OFFER": {
+      import("./questframe.js").then((m) => m.onTurnInOffer(data));
+      break;
+    }
+    case "QUEST_COMPLETED": {
+      import("./questframe.js").then((m) => m.onCompleted(data));
+      break;
+    }
+    case "QUEST_ERROR": {
+      import("./questframe.js").then((m) => m.onError(data));
+      break;
+    }
+    case "QUEST_MARKERS": {
+      import("./quest.js").then((m) => m.handleQuestMarkers(data));
+      break;
+    }
+    case "NPC_GOSSIP": {
+      import("./questframe.js").then((m) => m.onGossip(data));
+      break;
+    }
+    case "TOGGLE_QUEST_EDITOR": {
+      import("./questeditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "QUEST_EDITOR_DATA": {
+      import("./questeditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "QUEST_EDITOR_RESULTS": {
+      import("./questeditor.js").then((m) => m.default.onResults(data));
+      break;
+    }
+    case "QUEST_EDITOR_RESULT": {
+      import("./questeditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "QUEST_EDITOR_UPDATED": {
+      import("./questeditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
     case "CHAT": {
@@ -4062,9 +4130,18 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
         {
           // Merge stats object (preserve existing fields)
+          const oldLevel = Number(t.stats?.level) || 0;
           t.stats = { ...t.stats, ...stats };
           t.max_health = stats.total_max_health;
           t.max_stamina = stats.total_max_stamina;
+          if (target === cachedPlayerId && Number.isFinite(Number(stats.xp)) && Number.isFinite(Number(stats.level)) && Number.isFinite(Number(stats.max_xp))) {
+            updateXp(stats.xp, stats.level, stats.max_xp);
+          }
+          // Quest availability is level-gated: refresh quest views live when
+          // our own level changes (markers arrive via QUEST_MARKERS).
+          if (target === cachedPlayerId && Number.isFinite(Number(stats.level)) && Number(stats.level) !== oldLevel) {
+            import("./quest.js").then((m) => m.refreshQuestViews());
+          }
           // 0 HP means dead-awaiting-release (the server only ever sends it
           // on death): despawn the body for observers, clear targeting.
           if (stats.health <= 0) {

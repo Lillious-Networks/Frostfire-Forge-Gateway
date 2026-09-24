@@ -257,7 +257,7 @@
         </div>
       </div>
       <div id="buff-bar" class="ui"></div>
-      <div id="spell-book-container" class="ui">
+      <div id="spell-book-container" class="ui book-panel">
         <div id="grid" class="ui">
           <div class="slot empty ui"></div>
           <div class="slot empty ui"></div>
@@ -281,7 +281,7 @@
           <div class="slot empty ui"></div>
         </div>
       </div>
-      <div id="collectables-container" class="ui">
+      <div id="collectables-container" class="ui book-panel">
         <div id="grid" class="ui">
           <div class="slot empty ui"></div>
           <div class="slot empty ui"></div>
@@ -307,10 +307,24 @@
       </div>
       <div id="friends-list-container" class="ui">
         <input type="text" id="friends-list-search" placeholder="Search friends..." class="ui" autocomplete="off" spellcheck="false">
-        <div id="friends-list" class="ui"> 
+        <div id="friends-list" class="ui">
           <div id="friends-list-content" class="ui"></div>
         </div>
       </div>
+      <div id="quest-frame-container" class="ui book-panel">
+        <div id="quest-frame-title" class="ui"></div>
+        <div id="quest-frame-pages" class="ui">
+          <div id="quest-frame-left" class="ui"></div>
+          <div id="quest-frame-right" class="ui"></div>
+        </div>
+      </div>
+      <div id="quest-log-container" class="ui book-panel">
+        <div id="quest-log-pages" class="ui">
+          <div id="quest-log-left" class="ui"></div>
+          <div id="quest-log-right" class="ui"></div>
+        </div>
+      </div>
+      <div id="quest-tracker" class="ui"></div>
       <div id="guild-container" class="ui">
         <div id="guild-info" class="ui">
           <div id="guild-member-count" class="ui"></div>
@@ -447,11 +461,11 @@
       <div class="radial-items-container">
         <button class="radial-item" data-action="inventory" data-hotkey="KeyB" title="Inventory (B)">🎒</button>
         <button class="radial-item" data-action="spellbook" data-hotkey="KeyP" title="Spellbook (P)">📖</button>
+        <button class="radial-item" data-action="questlog" data-hotkey="KeyL" title="Quest Log (L)">❗</button>
         <button class="radial-item" data-action="character" data-hotkey="KeyC" title="Character (C)">👤</button>
         <button class="radial-item" data-action="friends" data-hotkey="KeyO" title="Friends (O)">👥</button>
         <button class="radial-item" data-action="guild" data-hotkey="KeyG" title="Guild (G)">🛡️</button>
         <button class="radial-item" data-action="collectables" data-hotkey="KeyK" title="Collectables (K)">💎</button>
-        <button class="radial-item" data-action="mount" data-hotkey="KeyQ" title="Mount (Q)">🐴</button>
         <button class="radial-item admin-only" data-action="admin" data-hotkey="Insert" title="Admin Panel">🛠️</button>
         <button class="radial-item" data-action="settings" data-hotkey="Escape" title="Settings">⚙️</button>
       </div>

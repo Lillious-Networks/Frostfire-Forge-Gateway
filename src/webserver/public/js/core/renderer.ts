@@ -1,7 +1,8 @@
 import { getIsLoaded, getMovementAllowed, cachedPlayerId, sendRequest } from "./socket.js";
 import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
-import { getParticleSprite, particlePool } from "./npc.js";
+import { getParticleSprite, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
+import { getNearestNpcId } from "./quest.js";
 import { renderCreatures, creaturePositionFor } from "./creature.js";
 import { updateUnitFrames } from "./targetframe.js";
 import { dropDistantTarget } from "./creatureinput.js";
@@ -1154,11 +1155,15 @@ function animationLoop() {
   const playerMap = currentPlayer.map || currentPlayer.location?.map || "";
   (window as any).updateLootPickup?.(px, py, playerMap);
   (window as any).updateChestInteraction?.(px, py, playerMap);
+  (window as any).updateNpcInteraction?.(px, py, playerMap);
+  (window as any).updateQuestFrameProximity?.(px, py);
 
   for (const npc of cache.npcs) {
     if ((npc as any).layeredAnimation) {
       updateLayeredAnimation((npc as any).layeredAnimation, deltaTime);
     }
+    // Gossip chains rotate dialog on player-chat timing.
+    tickNpcGossip(npc);
   }
 
   if (cache.players instanceof Map) {
@@ -1456,14 +1461,15 @@ function animationLoop() {
       ghostCtx.imageSmoothingEnabled = false;
     }
 
-    for (const p of visiblePlayers) {
-      if (p.isGhost && ghostCtx) p.show(ghostCtx, currentPlayer);
-      else p.show(ctx, currentPlayer);
-    }
-
+    // NPCs render below players so quest givers never cover the player sprite.
     for (const npc of visibleNpcs) {
       npc.show(ctx);
       npc.dialogue(ctx);
+    }
+
+    for (const p of visiblePlayers) {
+      if (p.isGhost && ghostCtx) p.show(ghostCtx, currentPlayer);
+      else p.show(ctx, currentPlayer);
     }
 
     renderCreatures(ctx, isInView, currentPlayer?.stats?.level ?? 1, cache.targetId, (playerId) => {
@@ -2326,6 +2332,8 @@ function animationLoop() {
   renderLootInteractionHint(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any)._lootPickupProgress || 0, cachedPlayerId);
 
   (window as any).renderChestInteractionHint?.(ctx, cameraX, cameraY, canvas.width, canvas.height, (window as any).chestInteractionProgress || 0, cachedPlayerId);
+
+  renderNpcInteractBadge(ctx, cameraX, cameraY, canvas.width, canvas.height, getNearestNpcId());
 
   // Screen-space editor panel (resets the transform itself).
   renderThreatPanel(ctx);

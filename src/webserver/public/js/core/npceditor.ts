@@ -1,17 +1,26 @@
 import { getCameraX, getCameraY } from "./renderer.js";
 import Cache from "./cache.js";
 import { createNPC, deleteNPC } from "./npc.js";
+import { config } from "../web/global.js";
 
 const cache = Cache.getInstance();
 
 const NPC_HIT_W = 32;
 const NPC_HIT_H = 48;
 
+/** Appearance columns, kept together so an in-flight edit can be preserved across a refresh. */
+const SPRITE_KEYS = [
+  "sprite_type", "sprite_body", "sprite_head", "sprite_helmet", "sprite_shoulderguards",
+  "sprite_neck", "sprite_hands", "sprite_chest", "sprite_feet", "sprite_legs", "sprite_weapon",
+];
+
 class NpcEditor {
   public isActive: boolean = false;
   private selectedNpc: any = null;
   private npcs: any[] = [];
   private availableParticles: string[] = [];
+  private availableQuests: Array<{ id: number; name: string }> = [];
+  private availableSprites: { spriteSheets: Record<string, any>; icons: any[] } = { spriteSheets: {}, icons: [] };
   private selectedParticles: string[] = [];
   private isDirty: boolean = false;
   private hasPendingNew: boolean = false;
@@ -157,11 +166,31 @@ class NpcEditor {
     }
   }
 
+  /**
+   * The game server sends asset paths, not URLs: prefix them with the asset
+   * server this client was configured with (same as the creature editor).
+   */
+  private withAssetUrls<T>(value: T): T {
+    if (typeof value === "string") {
+      return (value.startsWith("/") ? `${config.ASSET_SERVER_URL}${value}` : value) as unknown as T;
+    }
+    if (Array.isArray(value)) return value.map((v) => this.withAssetUrls(v)) as unknown as T;
+    if (value && typeof value === "object") {
+      const out: any = {};
+      for (const [key, entry] of Object.entries(value)) out[key] = this.withAssetUrls(entry);
+      return out;
+    }
+    return value;
+  }
+
   private syncToBridge() {
     this.sendToEditor({
       type: 'init',
       npcs: this.npcs,
       particles: this.availableParticles,
+      quests: this.availableQuests,
+      spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
+      icons: this.withAssetUrls(this.availableSprites.icons),
       selectedParticles: this.selectedParticles,
       selectedNpc: this.selectedNpc,
       selectedNpcId: this.selectedNpc ? this.selectedNpc.id : null,
@@ -194,9 +223,14 @@ class NpcEditor {
               liveNpc.position.direction = msg.npc.position.direction;
             }
           }
+          // Mutate in place: selectedNpc points at this object, and replacing it
+          // would orphan the selection so later edits go to a detached copy.
           const npcIdx = this.npcs.findIndex(function (n) { return n.id === msg.npc.id; });
           if (npcIdx >= 0) {
-            this.npcs[npcIdx] = Object.assign({}, this.npcs[npcIdx], msg.npc);
+            Object.assign(this.npcs[npcIdx], msg.npc);
+          }
+          if (this.selectedNpc && this.selectedNpc.id === msg.npc.id && this.selectedNpc !== this.npcs[npcIdx]) {
+            Object.assign(this.selectedNpc, msg.npc);
           }
           this.isDirty = true;
         }
@@ -254,7 +288,7 @@ class NpcEditor {
     // Update editor NPC array
     const npcIndex = this.npcs.findIndex(function (n) { return n.id === npcData.id; });
     if (npcIndex >= 0) {
-      this.npcs[npcIndex] = Object.assign({}, this.npcs[npcIndex], npcData);
+      Object.assign(this.npcs[npcIndex], npcData);
     }
 
     const liveNpc = cache.npcs.find(function (n) { return n.id === npcData.id; });
@@ -478,6 +512,9 @@ class NpcEditor {
     this.sendToEditor({
       type: 'npcSelectUpdate',
       npc: npc,
+      quests: this.availableQuests,
+      spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
+      icons: this.withAssetUrls(this.availableSprites.icons),
     });
   }
 
@@ -507,10 +544,13 @@ class NpcEditor {
       map: "",
       position: { x: spawnX, y: spawnY, direction: "down" },
       hidden: false,
+      quest_giver: false,
       dialog: null,
+      gossip: null,
       script: null,
       particles: [],
-      quest: null,
+      questsGiven: [],
+      questsEnded: [],
       sprite_type: "none",
       sprite_body: null, sprite_head: null, sprite_helmet: null,
       sprite_shoulderguards: null, sprite_neck: null, sprite_hands: null,
@@ -525,9 +565,9 @@ class NpcEditor {
       id: null,
       location: { x: spawnX, y: spawnY, direction: "down" },
       dialog: "",
+      gossip: null,
       hidden: false,
       particles: [],
-      quest: null,
       script: null,
       map: "",
       position: { x: spawnX, y: spawnY, direction: "down" },
@@ -551,24 +591,48 @@ class NpcEditor {
     });
   }
 
-  public setNpcs(npcs: any[]) {
-    // Merge with existing to preserve unsaved position changes
+  public setNpcs(npcs: any[], quests?: any, assets?: any) {
+    if (Array.isArray(quests)) {
+      this.availableQuests = quests
+        .filter((q: any) => q && q.id !== undefined && q.id !== null)
+        .map((q: any) => ({ id: Number(q.id), name: String(q.name ?? ("Quest #" + q.id)) }));
+    }
+    if (assets && typeof assets === "object") {
+      if (assets.spriteSheets && typeof assets.spriteSheets === "object") {
+        this.availableSprites.spriteSheets = assets.spriteSheets;
+      }
+      if (Array.isArray(assets.icons)) {
+        this.availableSprites.icons = assets.icons;
+      }
+    }
+    // Merge with existing to preserve unsaved edits
     for (const newNpc of npcs) {
       const existingIdx = this.npcs.findIndex(function (n) { return n.id === newNpc.id; });
       if (existingIdx >= 0) {
         const existing = this.npcs[existingIdx];
-        // Only preserve position if dirty and this is the selected NPC
+        // Only preserve unsaved work if dirty and this is the selected NPC.
         if (this.isDirty && this.selectedNpc && this.selectedNpc.id === newNpc.id) {
-          newNpc.position = { ...newNpc.position, x: existing.position.x, y: existing.position.y };
+          if (existing.position) {
+            newNpc.position = { ...newNpc.position, x: existing.position.x, y: existing.position.y };
+          }
+          // Appearance edits are unsaved too: a refresh must not revert them.
+          for (const key of SPRITE_KEYS) newNpc[key] = existing[key];
         }
-        this.npcs[existingIdx] = newNpc;
+        // Mutate in place so selectedNpc keeps pointing at the live row.
+        Object.assign(existing, newNpc);
       } else {
         this.npcs.push(newNpc);
       }
     }
 
     this.sortNpcs();
-    this.sendToEditor({ type: 'npcListUpdate', npcs: this.npcs });
+    this.sendToEditor({
+      type: 'npcListUpdate',
+      npcs: this.npcs,
+      quests: this.availableQuests,
+      spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
+      icons: this.withAssetUrls(this.availableSprites.icons),
+    });
 
     if (this.pendingSelectId !== null) {
       const pending = this.npcs.find((n: any) => n.id === this.pendingSelectId);
@@ -592,7 +656,7 @@ class NpcEditor {
     if (this.hasPendingNew && this.lastSavedNpcId === null) {
       const tempIdx = this.npcs.findIndex(function (n) { return n.id === null; });
       if (tempIdx >= 0) {
-        this.npcs[tempIdx] = Object.assign({}, this.npcs[tempIdx], npc);
+        Object.assign(this.npcs[tempIdx], npc);
       }
       if (this.selectedNpc && this.selectedNpc.id === null) {
         Object.assign(this.selectedNpc, npc);
@@ -608,7 +672,7 @@ class NpcEditor {
 
     const existingIdx = this.npcs.findIndex(function (n) { return n.id === npc.id; });
     if (existingIdx >= 0) {
-      this.npcs[existingIdx] = Object.assign({}, this.npcs[existingIdx], npc);
+      Object.assign(this.npcs[existingIdx], npc);
     }
 
     this.sortNpcs();

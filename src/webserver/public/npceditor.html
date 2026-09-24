@@ -41,8 +41,15 @@
                 </div>
               </div>
               <div class="editor-form-section">
-                <label class="editor-form-label">Quest ID</label>
-                <input type="number" id="inp-quest" class="editor-form-input" min="0" step="1">
+                <label class="editor-form-label">Quests Given</label>
+                <div id="inp-quests-given" class="editor-checklist"></div>
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Quests Ended</label>
+                <div id="inp-quests-ended" class="editor-checklist"></div>
+              </div>
+              <div class="editor-form-section">
+                <div class="editor-form-check"><input type="checkbox" id="inp-quest-giver"><label>Quest giver</label></div>
               </div>
             </div>
             <!-- Appearance Tab -->
@@ -59,50 +66,7 @@
               <div class="editor-form-section">
                 <div class="editor-form-check"><input type="checkbox" id="inp-hidden"><label>Hidden</label></div>
               </div>
-              <div class="editor-form-section">
-                <label class="editor-form-label">Sprite Type</label>
-                <select id="inp-sprite-type" class="editor-form-input">
-                  <option value="none">None (default)</option>
-                  <option value="static">Static Image</option>
-                  <option value="animated">Animated Sprite</option>
-                </select>
-              </div>
-              <div class="editor-form-section" id="sprite-fields">
-                <label class="editor-form-label">Body (Required)</label>
-                <input type="text" id="inp-sprite-body" class="editor-form-input" spellcheck="false" placeholder="e.g. npc_merchant_body">
-              </div>
-              <div id="sprite-animated-fields">
-                <div class="editor-form-section">
-                  <label class="editor-form-label">Equipment</label>
-                </div>
-                <div class="editor-form-section">
-                  <div class="editor-form-row">
-                    <div><label class="editor-form-label">Head</label><input type="text" id="inp-sprite-head" class="editor-form-input" spellcheck="false" placeholder="e.g. npc_merchant_head"></div>
-                    <div><label class="editor-form-label">Helmet</label><input type="text" id="inp-sprite-helmet" class="editor-form-input" spellcheck="false"></div>
-                  </div>
-                </div>
-                <div class="editor-form-section">
-                  <div class="editor-form-row">
-                    <div><label class="editor-form-label">Shoulderguards</label><input type="text" id="inp-sprite-shoulderguards" class="editor-form-input" spellcheck="false"></div>
-                    <div><label class="editor-form-label">Neck</label><input type="text" id="inp-sprite-neck" class="editor-form-input" spellcheck="false"></div>
-                  </div>
-                </div>
-                <div class="editor-form-section">
-                  <div class="editor-form-row">
-                    <div><label class="editor-form-label">Hands</label><input type="text" id="inp-sprite-hands" class="editor-form-input" spellcheck="false"></div>
-                    <div><label class="editor-form-label">Chest</label><input type="text" id="inp-sprite-chest" class="editor-form-input" spellcheck="false"></div>
-                  </div>
-                </div>
-                <div class="editor-form-section">
-                  <div class="editor-form-row">
-                    <div><label class="editor-form-label">Feet</label><input type="text" id="inp-sprite-feet" class="editor-form-input" spellcheck="false"></div>
-                    <div><label class="editor-form-label">Legs</label><input type="text" id="inp-sprite-legs" class="editor-form-input" spellcheck="false"></div>
-                  </div>
-                </div>
-                <div class="editor-form-section">
-                  <div><label class="editor-form-label">Weapon</label><input type="text" id="inp-sprite-weapon" class="editor-form-input" spellcheck="false"></div>
-                </div>
-              </div>
+              <div class="editor-form-section" id="ne-appearance-fields"></div>
             </div>
             <!-- Content Tab -->
             <div class="editor-tab-panel" data-tab="content">
@@ -113,6 +77,10 @@
               <div class="editor-form-section">
                 <label class="editor-form-label">Dialog <span class="editor-hint">(500 max)</span></label>
                 <textarea id="inp-dialog" class="editor-form-input" maxlength="500" rows="3" spellcheck="false"></textarea>
+              </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Gossip chain <span class="editor-hint">(one line per step, cycles over time)</span></label>
+                <textarea id="inp-gossip" class="editor-form-input" maxlength="5000" rows="5" spellcheck="false"></textarea>
               </div>
               <div class="editor-form-section">
                 <label class="editor-form-label">Script <span class="editor-hint">(5000 max)</span></label>

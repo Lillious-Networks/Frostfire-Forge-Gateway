@@ -15,6 +15,44 @@ const settings = {
     enabled: process.env.GUEST_MODE_ENABLED === "true" || process.env.GUEST_MODE_ENABLED === "1"
   },
 };
+
+// Binary public assets (images, fonts) are served from disk per request.
+// Bundled HTML/CSS/JS snapshots its referenced assets at startup, so files
+// added later (e.g. new ui/ art) would otherwise 404 until the next build.
+const PUBLIC_ASSET_PREFIXES = ["/img/", "/fonts/"];
+const PUBLIC_ASSET_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".ttf": "font/ttf",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+async function servePublicAsset(pathname: string): Promise<Response | null> {
+  if (!PUBLIC_ASSET_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+  const rel = decodeURIComponent(pathname.slice(1));
+  const parts = rel.split("/");
+  if (!rel || parts.some((p) => !p || p === "." || p === "..") || rel.includes("\\") || rel.includes("\0")) {
+    return null;
+  }
+  const ext = "." + (rel.split(".").pop() || "").toLowerCase();
+  const contentType = PUBLIC_ASSET_TYPES[ext];
+  if (!contentType) return null;
+  const file = Bun.file(new URL("./public/" + rel, import.meta.url));
+  if (!(await file.exists())) return null;
+  return new Response(file, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=3600",
+    },
+  });
+}
 import crypto from "crypto";
 import animator_html from "./public/animator.html";
 import login_html from "./public/index.html";
@@ -25,6 +63,7 @@ import particleeditor_html from "./public/particleeditor.html";
 import npceditor_html from "./public/npceditor.html";
 import creatureeditor_html from "./public/creatureeditor.html";
 import itemeditor_html from "./public/itemeditor.html";
+import questeditor_html from "./public/questeditor.html";
 import looteditor_html from "./public/looteditor.html";
 import forgotpassword_html from "./public/forgot-password.html";
 import realmselection_html from "./public/realm-selection.html";
@@ -104,6 +143,7 @@ const routes = {
   "/npc-editor": npceditor_html,
   "/creature-editor": creatureeditor_html,
   "/item-editor": itemeditor_html,
+  "/quest-editor": questeditor_html,
   "/loot-editor": looteditor_html,
   "/animator": animator_html,
   "/login": (req: Request, server: any) => login(req, server),
@@ -310,6 +350,7 @@ Bun.serve({
       "/npc-editor": routes["/npc-editor"],
       "/creature-editor": routes["/creature-editor"],
       "/item-editor": routes["/item-editor"],
+      "/quest-editor": routes["/quest-editor"],
       "/loot-editor": routes["/loot-editor"],
       "/animator": routes["/animator"],
       "/login": routes["/login"],
@@ -348,6 +389,11 @@ Bun.serve({
 
     if (route) {
       return route[req.method as keyof typeof route]?.(req);
+    }
+
+    if (req.method === "GET") {
+      const asset = await servePublicAsset(url.pathname);
+      if (asset) return asset;
     }
 
     return Response.redirect("/", 301);

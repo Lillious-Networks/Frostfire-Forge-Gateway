@@ -21,9 +21,10 @@ let currentMouseX: number = 0;
 let currentMouseY: number = 0;
 let currentTooltipKind: "item" | "spell" | null = null;
 
-function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mouseY: number, compareMode: boolean = false) {
-  // Never show tooltips on mobile devices
-  if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
+function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mouseY: number, compareMode: boolean = false, force: boolean = false) {
+  // Tooltips are hover-driven and touch devices have no hover: only explicit
+  // gestures (e.g. press-and-hold) may force one open.
+  if (!force && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return;
   if (!tooltip || !itemData) return;
 
   currentTooltipElement = element;
@@ -189,7 +190,175 @@ function updateTooltipPosition(mouseX: number, mouseY: number) {
   }
 }
 
+// Press-and-hold to inspect on touch (no hover there): hold still past
+// HOLD_MS to open, release keeps it open, next tap dismisses. HOLD_MS sits
+// above inventory/equipment long-press-drag (500ms) so inspecting never
+// starts a drag.
+const HOLD_MS = 600;
+const HOLD_MOVE_PX = 12;
+// A still tap this quick only ever dismisses; anything longer or moved is a
+// deliberate gesture the slot's own handlers own.
+const HOLD_TAP_MS = 300;
+
+interface HoldState {
+  timer: ReturnType<typeof setTimeout> | null;
+  touch: { x: number; y: number; at: number } | null;
+  consumeClick: boolean;
+}
+
+// Element whose hold-tooltip is currently open (touch only).
+let holdOpenEl: HTMLElement | null = null;
+let holdGuardInstalled = false;
+
+const isTouchDevice = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia("(hover: none) and (pointer: coarse)").matches;
+
+function installHoldGuards(): void {
+  if (holdGuardInstalled) return;
+  holdGuardInstalled = true;
+  // A new touch anywhere else dismisses an open hold-tooltip.
+  document.addEventListener("touchstart", (e: TouchEvent) => {
+    if (!holdOpenEl) return;
+    if (holdOpenEl.contains(e.target as Node)) return;
+    holdOpenEl = null;
+    hideItemTooltip();
+  }, { passive: true, capture: true });
+  // A quick, still tap on the slot with an open hold-tooltip only dismisses:
+  // stop it here (capture runs before the slot's own bubble handlers) so it
+  // cannot complete a double-tap equip/unequip/select.
+  document.addEventListener("touchend", (e: TouchEvent) => {
+    const touches = (e as any).changedTouches;
+    const touch = touches?.[0];
+    if (!touch || touches.length !== 1) return;
+    const target = e.target as HTMLElement | null;
+    const slot = target?.closest?.("[data-hold-tip]") as HTMLElement | null;
+    if (!slot || holdOpenEl !== slot) return;
+    const st = (slot as any)._holdTip as HoldState | undefined;
+    const started = st?.touch;
+    if (!started) return;
+    const dt = Date.now() - started.at;
+    const moved = Math.abs(touch.clientX - started.x) > HOLD_MOVE_PX ||
+      Math.abs(touch.clientY - started.y) > HOLD_MOVE_PX;
+    if (dt > HOLD_TAP_MS || moved) return;
+    holdOpenEl = null;
+    hideItemTooltip();
+    if (st) st.consumeClick = true;
+    e.stopPropagation();
+  }, { capture: true });
+}
+
+function clearHoldTooltip(element: HTMLElement): void {
+  const handlers = (element as any)._holdTipHandlers;
+  if (handlers) {
+    element.removeEventListener("touchstart", handlers.onTouchStart);
+    element.removeEventListener("touchmove", handlers.onTouchMove);
+    element.removeEventListener("touchend", handlers.onTouchEnd);
+    element.removeEventListener("touchcancel", handlers.onTouchCancel);
+    element.removeEventListener("click", handlers.onClick);
+    delete (element as any)._holdTipHandlers;
+  }
+  const st = (element as any)._holdTip as HoldState | undefined;
+  if (st?.timer) clearTimeout(st.timer);
+  delete (element as any)._holdTip;
+  element.removeAttribute("data-hold-tip");
+  if (holdOpenEl === element) {
+    holdOpenEl = null;
+  }
+}
+
+function setupHoldTooltip(element: HTMLElement, getItemData: () => any): void {
+  if (!isTouchDevice()) return;
+  installHoldGuards();
+  // Recycled slots re-run setup: drop previous listeners first so stale
+  // closures can never fire alongside fresh ones.
+  clearHoldTooltip(element);
+  element.setAttribute("data-hold-tip", "1");
+  const init: HoldState = { timer: null, touch: null, consumeClick: false };
+  (element as any)._holdTip = init;
+
+  const stateOf = (): HoldState | undefined => (element as any)._holdTip;
+
+  const clearTimer = () => {
+    const st = stateOf();
+    if (st?.timer) { clearTimeout(st.timer); st.timer = null; }
+  };
+
+  const onTouchStart = (e: TouchEvent) => {
+    const st = stateOf();
+    if (!st) return;
+    const touch = e.touches[0];
+    if (!touch || e.touches.length !== 1) return;
+    st.touch = { x: touch.clientX, y: touch.clientY, at: Date.now() };
+    clearTimer();
+    st.timer = setTimeout(() => {
+      st.timer = null;
+      const fresh = stateOf();
+      if (!fresh) return;
+      // A second finger landed meanwhile: not a still single-finger hold.
+      if (holdOpenEl === element) return;
+      // A long-press drag beat us here: never pop a tooltip over a drag.
+      if ((window as any).__touchDragActive) return;
+      const data = getItemData();
+      if (!data) return;
+      holdOpenEl = element;
+      showItemTooltip(element, data, touch.clientX, touch.clientY, false, true);
+    }, HOLD_MS);
+  };
+
+  const onTouchMove = (e: TouchEvent) => {
+    const st = stateOf();
+    if (!st?.touch) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    if (Math.abs(touch.clientX - st.touch.x) > HOLD_MOVE_PX || Math.abs(touch.clientY - st.touch.y) > HOLD_MOVE_PX) {
+      clearTimer();
+      st.touch = null;
+      if (holdOpenEl === element) {
+        holdOpenEl = null;
+        hideItemTooltip();
+      }
+    }
+  };
+
+  const onTouchEnd = () => {
+    clearTimer();
+    // Release keeps a shown tooltip open for reading; a follow-up tap on the
+    // slot dismisses it via the document guard above.
+  };
+
+  const onTouchCancel = () => {
+    clearTimer();
+    const st = stateOf();
+    if (st) st.touch = null;
+    if (holdOpenEl === element) {
+      holdOpenEl = null;
+      hideItemTooltip();
+    }
+  };
+
+  const onClick = (e: Event) => {
+    // A tap consumed by the document guard must not also activate the slot
+    // (choice select etc.). Attached once here, before any site-specific
+    // click handlers added later by slot builders.
+    const st = stateOf();
+    if (st?.consumeClick) {
+      st.consumeClick = false;
+      e.stopImmediatePropagation();
+    }
+  };
+
+  element.addEventListener("touchstart", onTouchStart as EventListener, { passive: true });
+  element.addEventListener("touchmove", onTouchMove as EventListener, { passive: true });
+  element.addEventListener("touchend", onTouchEnd as EventListener);
+  element.addEventListener("touchcancel", onTouchCancel as EventListener);
+  element.addEventListener("click", onClick as EventListener);
+  (element as any)._holdTipHandlers = { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onClick };
+}
+
 function setupItemTooltip(element: HTMLElement, getItemData: () => any) {
+  // Touch devices get press-and-hold inspect alongside the hover handlers.
+  setupHoldTooltip(element, getItemData);
 
   const handleMouseEnter = (e: MouseEvent) => {
     const itemData = getItemData();
@@ -237,6 +406,9 @@ function removeItemTooltip(element: HTMLElement) {
     element.removeEventListener("mouseleave", handlers.mouseleave);
     delete (element as any)._tooltipHandlers;
   }
+
+  // Disarm press-and-hold too: recycled slots must not fire with stale state.
+  clearHoldTooltip(element);
 
   if (currentTooltipElement === element) {
     hideItemTooltip();

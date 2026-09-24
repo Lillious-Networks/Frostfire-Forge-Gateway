@@ -1,0 +1,44 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Quest Editor</title>
+    <link rel="stylesheet" href="./css/game.css" />
+    <link rel="stylesheet" href="./css/editor.css" />
+    <script defer src="./js/core/preventzoomcontrols.js" type="text/javascript"></script>
+    <script defer src="./js/core/questeditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body oncontextmenu="return false;">
+    <div id="editor-layout">
+      <div id="editor-toolbar">
+        <span id="editor-toolbar-title">Quest Editor</span>
+        <span class="tool-divider"></span>
+        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button type="button" id="btn-new" title="New quest">New</button>
+        <button type="button" id="btn-duplicate" title="Copy the selected quest">Duplicate</button>
+        <button type="button" id="btn-delete" title="Delete quest">Delete</button>
+        <span id="qe-status" class="editor-status"></span>
+      </div>
+      <div id="editor-main">
+        <div id="editor-sidebar">
+          <div class="sidebar-section-header">Quests</div>
+          <input type="text" id="qe-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false">
+          <div id="qe-list" class="editor-list"></div>
+        </div>
+        <div id="editor-content" class="editor-content-area">
+          <div id="editor-tab-bar">
+            <button class="editor-tab-btn active" data-tab="general">General</button>
+            <button class="editor-tab-btn" data-tab="objectives">Objectives</button>
+            <button class="editor-tab-btn" data-tab="rewards">Rewards</button>
+          </div>
+          <div id="editor-form">
+            <div id="qe-errors" class="editor-errors" hidden></div>
+            <div id="qe-form-fields" class="editor-form-section"></div>
+            <div id="qe-extra" class="editor-form-section"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

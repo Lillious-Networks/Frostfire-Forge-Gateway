@@ -3,7 +3,7 @@ import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 import { parseCreatureTarget } from "./creature.js";
 const cache = Cache.getInstance();
-import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns } from "./ui.js";
+import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns, questLogUI, questFrameUI } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
 import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
 import { chatInput } from "./chat.js";
@@ -50,6 +50,13 @@ function closeOtherPanels(_except: string) {
   if (_except !== "admin" && toggleAdminPanel) {
     toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
   }
+  if (_except !== "questlog" && questLogUI && questLogUI.style.display === "block") {
+    questLogUI.style.display = "none";
+    questLogUI.classList.remove("open");
+  }
+  if (_except !== "questframe" && questFrameUI && (questFrameUI.style.display === "block" || questFrameUI.style.display === "flex")) {
+    import("./questframe.js").then((m) => m.closeQuestFrame());
+  }
 }
 
 export const keyHandlers = {
@@ -91,6 +98,10 @@ export const keyHandlers = {
   KeyK: () => {
     closeOtherPanels("collectables");
     toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
+  },
+  KeyL: () => {
+    closeOtherPanels("questlog");
+    import("./questlog.js").then((m) => m.toggleQuestLog());
   },
   KeyG: () => {
     closeOtherPanels("guild");
@@ -158,6 +169,11 @@ export const keyHandlers = {
 
     if (toggleInventory) {
       toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
+    }
+
+    if (questLogUI && questLogUI.style.display === "block") {
+      questLogUI.style.display = "none";
+      questLogUI.classList.remove("open");
     }
 
     const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
@@ -731,6 +747,13 @@ function closeAllPanels() {
   }
   if (toggleAdminPanel) {
     toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
+  }
+  if (questLogUI && questLogUI.style.display === "block") {
+    questLogUI.style.display = "none";
+    questLogUI.classList.remove("open");
+  }
+  if (questFrameUI && (questFrameUI.style.display === "block" || questFrameUI.style.display === "flex")) {
+    import("./questframe.js").then((m) => m.closeQuestFrame());
   }
 }
 
