@@ -14,9 +14,7 @@
       <div id="editor-toolbar">
         <span id="editor-toolbar-title">NPC Editor</span>
         <span class="tool-divider"></span>
-        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
-        <button type="button" id="btn-new" title="New NPC">New</button>
-        <button type="button" id="btn-delete" title="Delete NPC">Delete</button>
+        <span id="ne-status" class="editor-status"></span>
       </div>
       <div id="editor-main">
         <div id="editor-sidebar">
@@ -25,74 +23,132 @@
           <div id="ne-npc-list" class="editor-list"></div>
         </div>
         <div id="editor-content" class="editor-content-area">
-          <div id="editor-tab-bar">
-            <button class="editor-tab-btn active" data-tab="general">General</button>
-            <button class="editor-tab-btn" data-tab="appearance">Appearance</button>
-            <button class="editor-tab-btn" data-tab="content">Content</button>
-            <button class="editor-tab-btn" data-tab="effects">Effects</button>
+          <div class="editor-content-head">
+            <div id="editor-tab-bar">
+              <button class="editor-tab-btn active" data-tab="general">General</button>
+              <button class="editor-tab-btn" data-tab="appearance">Appearance</button>
+              <button class="editor-tab-btn" data-tab="content">Content</button>
+              <button class="editor-tab-btn" data-tab="effects">Effects</button>
+            </div>
+            <!-- Saves the open NPC; faded while there is nothing to save. -->
+            <button type="button" id="btn-save" class="ce-save-icon" title="Save (Ctrl+S)" aria-label="Save" hidden>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+            </button>
           </div>
-          <div id="editor-form">
-            <!-- General Tab -->
-            <div class="editor-tab-panel active" data-tab="general">
-              <div class="editor-form-section">
-                <div class="editor-form-row">
-                  <div><label class="editor-form-label">ID</label><div id="ne-display-id" class="editor-display-name">—</div></div>
-                  <div><label class="editor-form-label">Position</label><div id="ne-display-pos" class="editor-display-name">—</div></div>
+          <div id="editor-form" class="editor-roomy">
+            <div id="ne-empty" class="editor-empty" hidden>Select an NPC, or create one from the top of the list.</div>
+            <div id="ne-panels">
+              <!-- Which NPC this is, above every tab. -->
+              <div class="editor-page-title">
+                <span id="ne-display-name">—</span>
+                <span class="editor-page-sub"><span id="ne-display-id">—</span> · at <span id="ne-display-pos">—</span></span>
+              </div>
+
+              <!-- General Tab -->
+              <div class="editor-tab-panel active" data-tab="general">
+                <div class="editor-card">
+                  <div class="editor-card-head">
+                    <span class="editor-card-title">Quests</span>
+                    <span class="editor-card-sub">Quests this NPC hands out and takes back</span>
+                  </div>
+                  <div class="editor-card-grid">
+                    <div class="ce-field ce-field-check ce-field-wide">
+                      <label class="editor-form-check"><input type="checkbox" id="inp-quest-giver">Quest giver</label>
+                      <div class="editor-field-hint">Only quest givers can be given quests, here or in the quest editor.</div>
+                    </div>
+                    <div class="ce-field">
+                      <label class="editor-form-label">Gives these quests</label>
+                      <div id="inp-quests-given" class="editor-checklist"></div>
+                    </div>
+                    <div class="ce-field">
+                      <label class="editor-form-label">Takes these quests back</label>
+                      <div id="inp-quests-ended" class="editor-checklist"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="editor-form-section">
-                <label class="editor-form-label">Quests Given</label>
-                <div id="inp-quests-given" class="editor-checklist"></div>
+
+              <!-- Appearance Tab -->
+              <div class="editor-tab-panel" data-tab="appearance">
+                <div class="editor-card">
+                  <div class="editor-card-head"><span class="editor-card-title">Placement</span></div>
+                  <div class="editor-card-grid">
+                    <div class="ce-field">
+                      <label class="editor-form-label">Facing</label>
+                      <select id="inp-direction" class="editor-form-input">
+                        <option value="down">Down</option>
+                        <option value="up">Up</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                      </select>
+                      <div class="editor-field-hint">Drag the NPC in the game window to move it.</div>
+                    </div>
+                    <div class="ce-field ce-field-check">
+                      <label class="editor-form-check"><input type="checkbox" id="inp-hidden">Hidden</label>
+                      <div class="editor-field-hint">Hidden NPCs are not shown to players.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="editor-card">
+                  <div class="editor-card-head"><span class="editor-card-title">Sprite</span></div>
+                  <div class="editor-card-grid" id="ne-appearance-fields"></div>
+                </div>
               </div>
-              <div class="editor-form-section">
-                <label class="editor-form-label">Quests Ended</label>
-                <div id="inp-quests-ended" class="editor-checklist"></div>
+
+              <!-- Content Tab -->
+              <div class="editor-tab-panel" data-tab="content">
+                <div class="editor-card">
+                  <div class="editor-card-head"><span class="editor-card-title">Name &amp; dialog</span></div>
+                  <div class="editor-card-grid">
+                    <div class="ce-field">
+                      <label class="editor-form-label">Name</label>
+                      <input type="text" id="inp-name" class="editor-form-input" spellcheck="false" maxlength="64">
+                    </div>
+                    <div class="ce-field ce-field-wide">
+                      <label class="editor-form-label">Dialog</label>
+                      <textarea id="inp-dialog" class="editor-form-input" maxlength="500" rows="3" spellcheck="false"></textarea>
+                      <div class="editor-field-hint">What the NPC says when clicked. Up to 500 characters.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="editor-card">
+                  <div class="editor-card-head"><span class="editor-card-title">Gossip chain</span></div>
+                  <div class="editor-card-grid">
+                    <div class="ce-field ce-field-wide">
+                      <textarea id="inp-gossip" class="editor-form-input" maxlength="5000" rows="5" spellcheck="false" aria-label="Gossip chain"></textarea>
+                      <div class="editor-field-hint">One line per step; the NPC cycles through them over time. Type ${ to insert player details, e.g. ${player.name}.</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="editor-card">
+                  <div class="editor-card-head"><span class="editor-card-title">Script</span></div>
+                  <div class="editor-card-grid">
+                    <div class="ce-field ce-field-wide">
+                      <textarea id="inp-script" class="editor-form-input editor-code-input" maxlength="5000" rows="6" spellcheck="false" aria-label="Script"></textarea>
+                      <div class="editor-field-hint">Runs with the NPC as `this` (e.g. dialogue(), show()). Up to 5000 characters.</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="editor-form-section">
-                <div class="editor-form-check"><input type="checkbox" id="inp-quest-giver"><label>Quest giver</label></div>
-              </div>
-            </div>
-            <!-- Appearance Tab -->
-            <div class="editor-tab-panel" data-tab="appearance">
-              <div class="editor-form-section">
-                <label class="editor-form-label">Direction</label>
-                <select id="inp-direction" class="editor-form-input">
-                  <option value="down">Down</option>
-                  <option value="up">Up</option>
-                  <option value="left">Left</option>
-                  <option value="right">Right</option>
-                </select>
-              </div>
-              <div class="editor-form-section">
-                <div class="editor-form-check"><input type="checkbox" id="inp-hidden"><label>Hidden</label></div>
-              </div>
-              <div class="editor-form-section" id="ne-appearance-fields"></div>
-            </div>
-            <!-- Content Tab -->
-            <div class="editor-tab-panel" data-tab="content">
-              <div class="editor-form-section">
-                <label class="editor-form-label">Name</label>
-                <input type="text" id="inp-name" class="editor-form-input" spellcheck="false" maxlength="64">
-              </div>
-              <div class="editor-form-section">
-                <label class="editor-form-label">Dialog <span class="editor-hint">(500 max)</span></label>
-                <textarea id="inp-dialog" class="editor-form-input" maxlength="500" rows="3" spellcheck="false"></textarea>
-              </div>
-              <div class="editor-form-section">
-                <label class="editor-form-label">Gossip chain <span class="editor-hint">(one line per step, cycles over time)</span></label>
-                <textarea id="inp-gossip" class="editor-form-input" maxlength="5000" rows="5" spellcheck="false"></textarea>
-              </div>
-              <div class="editor-form-section">
-                <label class="editor-form-label">Script <span class="editor-hint">(5000 max)</span></label>
-                <textarea id="inp-script" class="editor-form-input" maxlength="5000" rows="5" spellcheck="false"></textarea>
-              </div>
-            </div>
-            <!-- Effects Tab -->
-            <div class="editor-tab-panel" data-tab="effects">
-              <div class="editor-form-section">
-                <label class="editor-form-label">Particles</label>
-                <input type="text" id="ne-particle-search" class="editor-form-input" placeholder="Search particles...">
-                <div id="ne-particle-options"></div>
+
+              <!-- Effects Tab -->
+              <div class="editor-tab-panel" data-tab="effects">
+                <div class="editor-card">
+                  <div class="editor-card-head">
+                    <span class="editor-card-title">Particles</span>
+                    <span class="editor-card-sub">Effects that play around the NPC</span>
+                  </div>
+                  <div class="editor-card-grid">
+                    <div class="ce-field ce-field-wide">
+                      <input type="text" id="ne-particle-search" class="editor-form-input" placeholder="Search particles..." aria-label="Search particles">
+                      <div id="ne-particle-options"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

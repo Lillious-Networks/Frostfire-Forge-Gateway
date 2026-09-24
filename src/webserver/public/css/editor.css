@@ -146,6 +146,371 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: #0f172a; }
   color: #bff0d4;
 }
 
+/* Creature editor sections: choose what the sidebar list holds. */
+.ce-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+}
+.ce-section-btn {
+  text-align: left;
+  padding: 6px 10px;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.75);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ce-section-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.ce-section-btn.active {
+  background: rgba(46, 204, 113, 0.2);
+  border-color: rgba(46, 204, 113, 0.5);
+  color: #fff;
+}
+#editor-tab-bar[hidden] { display: none; }
+/* Creature / quest editors: tab bar with the save icon at its right end. */
+.editor-content-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding-right: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(46, 204, 113, 0.2);
+}
+.editor-content-head #editor-tab-bar {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border-bottom: none;
+}
+.ce-save-icon {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: all 0.15s;
+}
+.ce-save-icon[hidden] { display: none; }
+.ce-save-icon:hover { opacity: 0.6; }
+/* Unsaved changes: fully visible and green. */
+.ce-save-icon.has-changes {
+  opacity: 1;
+  color: #bff0d4;
+  background: rgba(46, 204, 113, 0.25);
+  border-color: rgba(46, 204, 113, 0.6);
+  box-shadow: 0 0 8px rgba(46, 204, 113, 0.25);
+}
+.ce-save-icon.has-changes:hover { background: rgba(46, 204, 113, 0.4); }
+.ce-save-icon.saving { opacity: 0.6; cursor: progress; }
+
+/* Actions on a list row (delete, duplicate); shown on hover or when selected.
+   #editor-form variants: the spawn list sits inside the form (see .ce-card-btn-x). */
+.ce-row-delete,
+.ce-row-copy,
+#editor-form .ce-row-delete,
+#editor-form .ce-row-copy {
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 120, 120, 0.9);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+}
+.editor-item:hover :is(.ce-row-delete, .ce-row-copy),
+.editor-item.active :is(.ce-row-delete, .ce-row-copy),
+:is(.ce-row-delete, .ce-row-copy):focus-visible { opacity: 0.8; }
+.ce-row-delete:hover,
+#editor-form .ce-row-delete:hover {
+  opacity: 1;
+  background: rgba(255, 80, 80, 0.2);
+  border-color: rgba(255, 100, 100, 0.5);
+}
+.ce-row-copy { color: rgba(226, 232, 240, 0.9); }
+.ce-row-copy:hover,
+#editor-form .ce-row-copy:hover {
+  opacity: 1;
+  background: rgba(46, 204, 113, 0.2);
+  border-color: rgba(46, 204, 113, 0.5);
+}
+
+/* Roomy editor forms (quest, creature): larger type, fields grouped into
+   titled cards. Scoped by container so the other editors keep their layout. */
+#qe-form-fields,
+#ce-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1000px;
+  padding: 6px 4px 16px;
+}
+#ce-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1000px;
+  padding: 0 4px 16px;
+}
+#qe-form-fields > * + *,
+#ce-form-fields > * + *,
+#ce-extra > * + * { margin-top: 0; }
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-form-label {
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.8);
+  letter-spacing: 0.4px;
+}
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-form-input {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) select.editor-form-input { height: 34px; padding: 4px 8px; }
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) textarea.editor-form-input {
+  min-height: 72px;
+  line-height: 1.5;
+  resize: vertical;
+}
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .ce-asset-button { min-height: 34px; font-size: 13px; }
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-form-check { font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+/* Checkbox fields have no label above them. Offset them by one label (16px
+   line + 5px gap, set below) and make the row input-high, so the box lines
+   up with the middle of the inputs beside it. */
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-form-label { line-height: 16px; }
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .ce-field-check {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding-top: 21px;
+}
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .ce-field-check > .editor-form-check { min-height: 34px; }
+/* The box itself, centred on its text line (browsers add an uneven margin). */
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-form-check input[type="checkbox"] {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+}
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-flags .editor-form-check { min-height: 26px; }
+:is(#qe-form-fields, #ce-form-fields, #ce-extra, .editor-roomy) .editor-flags .editor-form-check { font-size: 12px; }
+/* Name of the entry being edited, above its cards. */
+.editor-page-title {
+  color: #fff;
+  font-family: 'Clash Display', sans-serif;
+  font-size: 16px;
+}
+.editor-page-title .editor-page-sub {
+  margin-left: 8px;
+  color: rgba(226, 232, 240, 0.5);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 12px;
+}
+.editor-card {
+  padding: 12px 14px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+.editor-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.35);
+}
+.editor-card-title {
+  color: #e0e7ff;
+  font-family: 'Clash Display', sans-serif;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.editor-card-sub {
+  flex: 1;
+  min-width: 0;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-card-head .ce-card-btn-x,
+.editor-card-head .ce-card-btn { margin-left: auto; }
+.editor-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+.editor-field-hint {
+  margin-top: 5px;
+  color: rgba(226, 232, 240, 0.5);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.qe-coords {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.editor-add-btn,
+#editor-form .editor-add-btn { align-self: flex-start; height: 34px; padding: 4px 14px; font-size: 12px; }
+
+/* Item editor: its field and extra areas as columns of cards. */
+.editor-roomy > :is(#ie-form-fields, #ie-extra) {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1000px;
+  padding: 6px 4px 16px;
+  border-bottom: none;
+}
+.editor-roomy > :is(#ie-form-fields, #ie-extra) > * + * { margin-top: 0; }
+.editor-roomy > :is(#ie-form-fields, #ie-extra):empty { display: none; }
+
+/* Loot table editor: no Save (changes are sent as made), a drops table. */
+.le-autosave-note {
+  padding-left: 12px;
+  color: rgba(226, 232, 240, 0.5);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 12px;
+}
+.le-refresh-icon { opacity: 0.85; }
+.le-refresh-icon:hover { opacity: 1; border-color: rgba(46, 204, 113, 0.5); }
+#le-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1000px;
+  padding: 6px 4px 16px;
+}
+#le-panels[hidden], #le-empty[hidden] { display: none; }
+.le-search-wrap { position: relative; }
+.le-result-name { flex: 1; min-width: 100px; font-size: 13px; }
+.le-result-quality { margin-right: 4px; color: rgba(226, 232, 240, 0.5); font-size: 11px; }
+#editor-form .le-add-btn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+#editor-form .le-add-btn:hover { background: rgba(46, 204, 113, 0.25); border-color: rgba(46, 204, 113, 0.5); }
+.le-drop-list { display: flex; flex-direction: column; gap: 6px; }
+.le-drop-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 72px 72px 90px 24px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+.le-drop-head {
+  padding: 0 8px;
+  background: none;
+  border: none;
+  color: rgba(226, 232, 240, 0.8);
+  font-family: 'Clash Display', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.le-drop-head span:nth-child(n+3) { text-align: center; }
+.le-drop-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fff;
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 13px;
+}
+.editor-roomy .le-drop-row .editor-form-input { padding: 7px 6px; text-align: center; }
+
+/* NPC editor: static tab panels laid out as a column of cards. */
+#ne-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 1000px;
+  padding: 6px 4px 16px;
+}
+#ne-panels[hidden], #ne-empty[hidden] { display: none; }
+#ne-panels .editor-tab-panel.active { display: flex; flex-direction: column; gap: 14px; }
+#ne-appearance-fields:empty::before {
+  content: "Pick a sprite type to choose its images.";
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'Comic Relief', Arial, sans-serif;
+  font-size: 12px;
+}
+/* Checklists (quests, particles) at the roomy size. */
+.editor-roomy :is(.editor-checklist, #ne-particle-options) { max-height: 240px; margin-top: 0; }
+.editor-roomy #ne-particle-options { margin-top: 8px; }
+.editor-roomy :is(.editor-checklist, #ne-particle-options) label {
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.editor-roomy :is(.editor-checklist, #ne-particle-options) label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+.editor-roomy .editor-code-input { font-family: 'Space Mono', monospace; font-size: 12px; }
+
+/* A creature's spawn points / a path's points, each inside its card. */
+.ce-spawn-list { display: flex; flex-direction: column; gap: 2px; }
+.ce-point-list { display: flex; flex-direction: column; gap: 6px; }
+/* Place in World / Go To, under a spawn's position fields. */
+.ce-spawn-actions { display: flex; gap: 6px; }
+.ce-spawn-actions .ce-card-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.editor-modal-actions .btn-primary {
+  background: rgba(46, 204, 113, 0.25);
+  border-color: rgba(46, 204, 113, 0.5);
+}
+.editor-modal-actions .btn-primary:hover { background: rgba(46, 204, 113, 0.4); }
+
 #editor-tab-bar {
   flex-shrink: 0;
   display: flex;
@@ -497,13 +862,7 @@ input[type="range"].editor-range::-moz-range-thumb {
 #le-item-results { display: none; }
 
 /* Creature editor */
-#ce-form-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px 12px;
-  align-items: end;
-}
-#ce-form-fields > * + * { margin-top: 0; }
+/* #ce-form-fields / #ce-extra layout: see "Roomy editor forms" above. */
 #ce-form-fields:empty, #ce-extra:empty { display: none; }
 .ce-field { min-width: 0; }
 .ce-field-wide { grid-column: 1 / -1; }
@@ -633,10 +992,16 @@ input[type="number"].editor-form-input { color-scheme: dark; }
 .ce-card-btn:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(46, 204, 113, 0.5); }
 .ce-card-btn-danger:hover { border-color: rgba(255, 100, 100, 0.6); background: rgba(255, 80, 80, 0.12); }
 /* Compact red × remove button pinned to the top right of a card header. */
-.ce-card-btn-x {
+/* The #editor-form variants outrank game.css's `#editor-form button`
+   (32px tall, padded), which otherwise stretches these icon buttons. */
+.ce-card-btn-x,
+#editor-form .ce-card-btn-x {
   width: 24px;
   height: 24px;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   line-height: 1;
   font-size: 14px;
@@ -649,7 +1014,8 @@ input[type="number"].editor-form-input { color-scheme: dark; }
   font-family: 'Comic Relief', Arial, sans-serif;
   transition: all 0.15s;
 }
-.ce-card-btn-x:hover { background: rgba(255, 80, 80, 0.3); color: #fff; }
+.ce-card-btn-x:hover,
+#editor-form .ce-card-btn-x:hover { background: rgba(255, 80, 80, 0.3); border-color: rgba(255, 100, 100, 0.4); color: #fff; }
 .ce-ability-add { margin-top: 2px; }
 .ce-point-row {
   display: grid;
@@ -706,6 +1072,12 @@ input[type="number"].editor-form-input { color-scheme: dark; }
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 3px;
   overflow: hidden;
+}
+/* An item thumbnail keeps the full 2px quality frame (.item-frame, game.css). */
+.ce-asset-thumb.item-frame {
+  border-width: 2px;
+  border-style: solid;
+  border-radius: 4px;
 }
 .ce-asset-thumb img {
   max-width: 100%;

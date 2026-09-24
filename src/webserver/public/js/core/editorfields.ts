@@ -1,6 +1,8 @@
 // Shared editor form machinery, extracted verbatim from the creature editor
 // bridge so every editor renders the same fields, pickers and popups: the
 // NPC appearance tab and any future editor use this instead of copying it.
+import { applyItemFrame } from "./itemframe.js";
+
 export type FieldType =
   | "text" | "number" | "select" | "checkbox" | "flags" | "readonly"
   | "sheet" | "asset" | "money";
@@ -10,6 +12,8 @@ export interface AssetOption {
   label: string;
   /** Preview image URL, when the asset has one. */
   image?: string | null;
+  /** Item quality: the thumbnail gets the item's coloured quality frame. */
+  quality?: string | null;
 }
 
 export interface Field {
@@ -82,8 +86,20 @@ export class FieldRenderer {
 
   /**
    * One form field. It edits `target[field.key]` and calls `touch` on change.
+   * A `hint` is shown as a short line under the input.
    */
   renderField(field: Field, target: any, touch: () => void): HTMLElement {
+    const wrap = this.renderFieldBody(field, target, touch);
+    if (field.hint) {
+      const hint = document.createElement("div");
+      hint.className = "editor-field-hint";
+      hint.textContent = field.hint;
+      wrap.appendChild(hint);
+    }
+    return wrap;
+  }
+
+  private renderFieldBody(field: Field, target: any, touch: () => void): HTMLElement {
     const wrap = document.createElement("div");
     wrap.className = "ce-field"
       + (field.type === "flags" ? " ce-field-wide" : "")
@@ -198,6 +214,7 @@ export class FieldRenderer {
       if (!field.noIcons) {
         const thumb = document.createElement("span");
         thumb.className = "ce-asset-thumb";
+        if (match?.quality) applyItemFrame(thumb, match.quality);
         if (match?.image) {
           const img = document.createElement("img");
           img.src = match.image;
@@ -272,6 +289,7 @@ export class FieldRenderer {
         if (icons) {
           const thumb = document.createElement("span");
           thumb.className = "ce-asset-thumb";
+          if (option.quality) applyItemFrame(thumb, option.quality);
           if (option.image) {
             const img = document.createElement("img");
             img.src = option.image;

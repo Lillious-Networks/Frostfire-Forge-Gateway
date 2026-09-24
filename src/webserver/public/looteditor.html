@@ -1,2 +1,69 @@
-<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="viewport-fit=cover,width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"><title>Loot Table Editor</title><link rel="stylesheet" href="./css/game.css"><link rel="stylesheet" href="./css/editor.css"><script defer src="./js/core/preventzoomcontrols.js"></script><script defer src="./js/core/looteditorbridge.js"></script></head><body oncontextmenu="return false;"><div id="editor-layout"><div id="editor-toolbar"><span id="editor-toolbar-title">Loot Table Editor</span><span class="tool-divider"></span><button type="button" id="le-btn-create">Create Table</button><button type="button" id="le-btn-delete">Delete Table</button><button type="button" id="le-btn-refresh">Refresh</button></div><div id="editor-main"><div id="editor-sidebar"><div class="sidebar-section-header">Loot Tables</div><input type="text" id="le-table-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false"><div id="le-table-list" class="editor-list"></div></div><div id="editor-content" class="editor-content-area"><div id="editor-tab-bar"><button class="editor-tab-btn active" data-tab="details">Details</button><button class="editor-tab-btn" data-tab="items">Items</button></div><div id="editor-form"><div class="editor-tab-panel active" data-tab="details"><div class="editor-form-section"><label class="editor-form-label">Table ID</label><div id="le-display-id" class="editor-display-name">—</div></div><div class="editor-form-section"><label class="editor-form-label">Table Name</label><input type="text" id="le-inp-name" class="editor-form-input" spellcheck="false" maxlength="64" placeholder="Enter table name then click Create Table"></div></div><div class="editor-tab-panel" data-tab="items"><div class="editor-form-section"><label class="editor-form-label">Search Items</label><input type="text" id="le-inp-item-name" class="editor-form-input" placeholder="Search items..." autocomplete="off" spellcheck="false"><div id="le-item-results" class="le-item-results"></div></div><div class="editor-form-section"><label class="editor-form-label">Table Items</label><div id="le-item-list" class="editor-list"></div></div></div></div></div></div></div></body></html>
-<meta http-equiv="Cache-Control" content="no-cache">
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Loot Table Editor</title>
+    <link rel="stylesheet" href="./css/game.css" />
+    <link rel="stylesheet" href="./css/editor.css" />
+    <script defer src="./js/core/preventzoomcontrols.js" type="text/javascript"></script>
+    <script defer src="./js/core/looteditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body oncontextmenu="return false;">
+    <div id="editor-layout">
+      <div id="editor-toolbar">
+        <span id="editor-toolbar-title">Loot Table Editor</span>
+        <span class="tool-divider"></span>
+        <span id="le-status" class="editor-status"></span>
+      </div>
+      <div id="editor-main">
+        <div id="editor-sidebar">
+          <div class="sidebar-section-header">Loot Tables</div>
+          <input type="text" id="le-table-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false">
+          <div id="le-table-list" class="editor-list"></div>
+        </div>
+        <div id="editor-content" class="editor-content-area">
+          <div class="editor-content-head">
+            <span class="le-autosave-note">Changes save automatically</span>
+            <!-- No save icon: every change is sent as it is made. -->
+            <button type="button" id="le-btn-refresh" class="ce-save-icon le-refresh-icon" title="Reload tables from the server" aria-label="Reload tables">
+              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </button>
+          </div>
+          <div id="editor-form" class="editor-roomy">
+            <div id="le-empty" class="editor-empty">Select a loot table, or create one from the top of the list.</div>
+            <div id="le-panels" hidden>
+              <div class="editor-page-title">
+                <span id="le-display-name">—</span>
+                <span class="editor-page-sub"><span id="le-display-id">—</span> · <span id="le-display-count">0 drops</span></span>
+              </div>
+
+              <div class="editor-card">
+                <div class="editor-card-head">
+                  <span class="editor-card-title">Add a drop</span>
+                  <span class="editor-card-sub">Search the item list, then press Add</span>
+                </div>
+                <div class="le-search-wrap">
+                  <input type="text" id="le-inp-item-name" class="editor-form-input" placeholder="Search items..." autocomplete="off" spellcheck="false" aria-label="Search items">
+                  <div id="le-item-results" class="le-item-results"></div>
+                </div>
+              </div>
+
+              <div class="editor-card">
+                <div class="editor-card-head">
+                  <span class="editor-card-title">Drops</span>
+                  <span class="editor-card-sub">Each drop rolls its chance separately; the amount is picked between min and max</span>
+                </div>
+                <div id="le-item-list" class="le-drop-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

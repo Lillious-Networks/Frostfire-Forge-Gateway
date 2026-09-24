@@ -377,6 +377,9 @@ class NpcEditor {
       const dy = wy - this.dragStartY;
       if (!this.dragStarted && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
         this.dragStarted = true;
+        // Moving an NPC selects it, same as clicking it, so the editor shows
+        // the NPC being moved and follows its position live.
+        if (this.selectedNpc?.id !== this.draggingNpc.id) this.selectLiveNpc(this.draggingNpc.id);
       }
       if (this.dragStarted) {
         const newX = wx - this.dragOffsetX;
@@ -399,14 +402,7 @@ class NpcEditor {
     if (!this.draggingNpc) return;
 
     if (!this.dragStarted) {
-      const id = this.draggingNpc!.id;
-      const editorNpc = this.npcs.find((n) => n.id === id);
-      if (editorNpc) {
-        this.selectNpc(editorNpc);
-      } else {
-        this.pendingSelectId = id;
-        this.loadNpcs();
-      }
+      this.selectLiveNpc(this.draggingNpc.id);
       this.stopDrag();
       return;
     }
@@ -504,6 +500,17 @@ class NpcEditor {
   }
 
   // ===== NPC selection =====
+
+  /** Select an NPC picked in the world; loads the list first if it isn't in it yet. */
+  private selectLiveNpc(id: number) {
+    const editorNpc = this.npcs.find((n) => n.id === id);
+    if (editorNpc) {
+      this.selectNpc(editorNpc);
+    } else {
+      this.pendingSelectId = id;
+      this.loadNpcs();
+    }
+  }
 
   private selectNpc(npc: any) {
     this.selectedNpc = npc;
@@ -654,11 +661,15 @@ class NpcEditor {
     // If this update is the server confirming a newly-created NPC, reconcile the
     // temporary (id === null) entry with the real server-assigned id.
     if (this.hasPendingNew && this.lastSavedNpcId === null) {
+      // Checked before the merge: selectedNpc is usually this same temp row,
+      // so after Object.assign its id is no longer null. Without re-selecting,
+      // the editor window keeps id null and its next Save creates a duplicate.
+      const tempSelected = !!this.selectedNpc && this.selectedNpc.id === null;
       const tempIdx = this.npcs.findIndex(function (n) { return n.id === null; });
       if (tempIdx >= 0) {
         Object.assign(this.npcs[tempIdx], npc);
       }
-      if (this.selectedNpc && this.selectedNpc.id === null) {
+      if (tempSelected) {
         Object.assign(this.selectedNpc, npc);
         this.selectNpc(this.selectedNpc);
       }

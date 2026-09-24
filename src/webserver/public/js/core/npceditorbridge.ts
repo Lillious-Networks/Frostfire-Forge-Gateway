@@ -1,5 +1,9 @@
 import { FieldRenderer, orderFields, pick, sheetOptions, type AssetOption, type Field } from "./editorfields.js";
 
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+
 class NpcEditorBridge {
   private npcs: any[] = [];
   private availableParticles: string[] = [];
@@ -29,8 +33,6 @@ class NpcEditorBridge {
   private particleSearchQuery: string = "";
 
   private saveBtn: HTMLElement;
-  private newBtn: HTMLElement;
-  private deleteBtn: HTMLElement;
   private searchInput: HTMLInputElement;
   private npcListEl: HTMLElement;
   private particleSearchInput: HTMLInputElement;
@@ -39,8 +41,6 @@ class NpcEditorBridge {
 
   constructor() {
     this.saveBtn = document.getElementById("btn-save")!;
-    this.newBtn = document.getElementById("btn-new")!;
-    this.deleteBtn = document.getElementById("btn-delete")!;
     this.searchInput = document.getElementById("ne-npc-search") as HTMLInputElement;
     this.npcListEl = document.getElementById("ne-npc-list")!;
     this.particleSearchInput = document.getElementById("ne-particle-search") as HTMLInputElement;
@@ -54,8 +54,11 @@ class NpcEditorBridge {
     }
 
     this.saveBtn.addEventListener("click", () => this.saveNpc());
-    this.newBtn.addEventListener("click", () => this.send({ type: "createNpc" }));
-    this.deleteBtn.addEventListener("click", () => this.deleteNpc());
+    // Some edits flag changes without re-rendering (appearance pickers);
+    // refresh the save icon after any interaction.
+    for (const type of ["input", "change", "click"]) {
+      document.addEventListener(type, () => queueMicrotask(() => this.updateSaveIcon()));
+    }
     this.setupGossipAc();
     this.setupScriptAc();
     this.searchInput.addEventListener("input", () => { this.searchQuery = this.searchInput.value.toLowerCase(); this.renderNpcList(); });
@@ -70,15 +73,26 @@ class NpcEditorBridge {
     window.addEventListener("beforeunload", () => { if (window.opener) window.opener.postMessage({ type: "editorClosed" }, "*"); });
     window.addEventListener("keydown", (e) => this.onKeyDown(e));
 
+    this.updateChrome();
     if (window.opener) window.opener.postMessage({ type: "bridgeReady" }, "*");
   }
+
+  /**
+   * Status to show once the server's change arrives: the game window relays no
+   * save/delete result, only the refreshed list, so report success on that.
+   */
+  private statusOnListUpdate: string | null = null;
 
   private send(msg: any): void { if (window.opener) window.opener.postMessage(msg, "*"); }
 
   private onKeyDown(e: KeyboardEvent): void {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
-    if (e.ctrlKey && e.key === "s") { e.preventDefault(); this.saveNpc(); }
+    // Ctrl+S saves from anywhere, including while typing in a field.
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.saveNpc(); }
+  }
+
+  private status(text: string): void {
+    const el = document.getElementById("ne-status");
+    if (el) el.textContent = text;
   }
 
   private onMessage(e: MessageEvent): void {
@@ -86,7 +100,10 @@ class NpcEditorBridge {
     const msg = e.data;
     switch (msg.type) {
       case "init": this.handleInit(msg); break;
-      case "npcListUpdate": this.npcs = msg.npcs || []; if (msg.quests) this.setAvailableQuests(msg.quests); this.storeSpriteData(msg); this.refreshDraftFromList(); this.renderNpcList(); break;
+      case "npcListUpdate":
+        this.npcs = msg.npcs || []; if (msg.quests) this.setAvailableQuests(msg.quests); this.storeSpriteData(msg); this.dropDeletedSelection(); this.refreshDraftFromList(); this.renderNpcList();
+        if (this.statusOnListUpdate) { this.status(this.statusOnListUpdate); this.statusOnListUpdate = null; }
+        break;
       case "npcSelectUpdate": if (msg.npc) { this.selectedNpcId = msg.npc.id; this.setDraft(msg.npc); if (msg.quests) this.setAvailableQuests(msg.quests); this.storeSpriteData(msg); this.populateForm(); this.renderNpcList(); } break;
       case "particleOptions": this.availableParticles = msg.particles || []; this.renderParticleOptions(); break;
       case "positionUpdate": if (this.selectedNpcId === msg.id) { const el = document.getElementById("ne-display-pos"); if (el) el.textContent = "(" + msg.x + ", " + msg.y + ")"; if (this.selectedNpcData) { if (!this.selectedNpcData.position) this.selectedNpcData.position = {}; this.selectedNpcData.position.x = msg.x; this.selectedNpcData.position.y = msg.y; } } break;
@@ -152,9 +169,37 @@ class NpcEditorBridge {
     return npc?.id === null || npc?.id === undefined ? "Unsaved NPC" : "NPC #" + npc.id;
   }
 
+  /**
+   * The open NPC is gone from the list (deleted from its row, elsewhere, or an
+   * unsaved one discarded): close it instead of editing something that no
+   * longer exists.
+   */
+  private dropDeletedSelection(): void {
+    if (!this.selectedNpcData) return;
+    const stillThere = this.npcs.some((n: any) => n.id === this.selectedNpcId);
+    if (stillThere) return;
+    this.selectedNpcId = null;
+    this.selectedNpcData = null;
+    this.dirty = false;
+    this.updateChrome();
+  }
+
   private renderNpcList(): void {
     this.npcListEl.innerHTML = "";
     const q = this.searchQuery;
+    // New NPCs start from a pinned row at the top of the list.
+    const newRow = document.createElement("div");
+    newRow.className = "editor-item ce-new-row";
+    newRow.title = "New NPC (placed where you stand)";
+    const newLabel = document.createElement("span");
+    newLabel.className = "editor-item-label";
+    newLabel.textContent = "+ New NPC";
+    newRow.appendChild(newLabel);
+    newRow.addEventListener("click", () => {
+      if (this.dirty && !confirm("Discard unsaved changes?")) return;
+      this.send({ type: "createNpc" });
+    });
+    this.npcListEl.appendChild(newRow);
     for (let i = 0; i < this.npcs.length; i++) {
       const npc = this.npcs[i];
       const label = this.npcLabel(npc);
@@ -169,6 +214,17 @@ class NpcEditorBridge {
       posEl.textContent = "(" + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "-") + ")";
       item.appendChild(labelEl);
       item.appendChild(posEl);
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ce-row-delete";
+      del.title = `Delete ${label}`;
+      del.setAttribute("aria-label", `Delete ${label}`);
+      del.innerHTML = TRASH_ICON;
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.deleteNpc(npc);
+      });
+      item.appendChild(del);
       item.addEventListener("click", () => this.selectNpc(npc));
       this.npcListEl.appendChild(item);
     }
@@ -239,11 +295,14 @@ class NpcEditorBridge {
   private populateForm(): void {
     this.hideGossipAc();
     this.hideScriptAc();
+    this.updateChrome();
     const npc = this.selectedNpcData;
     if (!npc) return;
     const v = (id: string, val: any) => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) { if (el.type === "checkbox") { el.checked = !!val; } else { el.value = val != null ? String(val) : ""; } } };
-    let el = document.getElementById("ne-display-id");
-    if (el) el.textContent = npc.id === null ? "Unsaved" : "#" + npc.id;
+    let el = document.getElementById("ne-display-name");
+    if (el) el.textContent = this.npcLabel(npc);
+    el = document.getElementById("ne-display-id");
+    if (el) el.textContent = npc.id === null ? "not saved yet" : "#" + npc.id;
     el = document.getElementById("ne-display-pos");
     if (el) el.textContent = "(" + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "-") + ")";
     this.renderQuestSelects();
@@ -382,7 +441,37 @@ class NpcEditorBridge {
     };
   }
 
-  private markDirty(): void { this.dirty = true; this.sendFormUpdate(); }
+  private markDirty(): void {
+    this.dirty = true;
+    this.sendFormUpdate();
+    // The page title follows the Name field as it is typed.
+    const title = document.getElementById("ne-display-name");
+    const name = (document.getElementById("inp-name") as HTMLInputElement | null)?.value.trim();
+    if (title && this.selectedNpcData) title.textContent = name || this.npcLabel({ id: this.selectedNpcId });
+    this.updateSaveIcon();
+  }
+
+  /**
+   * Form, tabs content and save icon only show while an NPC is open; with
+   * none (e.g. it was deleted) an empty-state message takes their place.
+   */
+  private updateChrome(): void {
+    const has = !!this.selectedNpcData;
+    const panels = document.getElementById("ne-panels");
+    const empty = document.getElementById("ne-empty");
+    if (panels) panels.hidden = !has;
+    if (empty) empty.hidden = has;
+    this.saveBtn.hidden = !has;
+    this.updateSaveIcon();
+  }
+
+  /** Save icon: faded with nothing to save, highlighted with unsaved changes. */
+  private updateSaveIcon(): void {
+    // A new NPC counts as unsaved until the server gives it an id.
+    const changes = !!this.selectedNpcData && (this.dirty || this.selectedNpcId === null);
+    this.saveBtn.classList.toggle("has-changes", changes);
+    this.saveBtn.title = changes ? "Save changes (Ctrl+S)" : "No unsaved changes";
+  }
 
   // ---- Gossip ${player...} autocomplete ----
   // Popup only ever appears inside an unclosed ${...} expression.
@@ -696,19 +785,35 @@ class NpcEditorBridge {
     if (!data) return;
     this.dirty = false;
     this.send({ type: "saveNpc", npc: data });
+    this.updateSaveIcon();
+    this.status("Saving...");
+    this.statusOnListUpdate = "Saved";
   }
 
-  private deleteNpc(): void {
-    if (this.selectedNpcId === null && !this.selectedNpcData) return;
+  /** Delete an NPC from its list row (an unsaved one is just discarded). */
+  private deleteNpc(npc: any): void {
+    if (!npc) return;
     const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
     const box = document.createElement("div"); box.className = "editor-modal-box";
-    const label = this.npcLabel(this.selectedNpcData ?? { id: this.selectedNpcId });
-    box.innerHTML = '<h3>Delete NPC</h3><p>Delete <strong></strong>?</p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger">Delete</button></div>';
-    box.querySelector("strong")!.textContent = label;
+    const label = this.npcLabel(npc);
+    const unsaved = npc.id === null || npc.id === undefined;
+    box.innerHTML = '<h3></h3><p></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger"></button></div>';
+    box.querySelector("h3")!.textContent = unsaved ? "Discard NPC" : "Delete NPC";
+    box.querySelector("p")!.textContent = unsaved ? `Discard ${label}? It was never saved.` : `Delete ${label}? It is removed from the world.`;
+    box.querySelector(".btn-danger")!.textContent = unsaved ? "Discard" : "Delete";
     overlay.appendChild(box); document.body.appendChild(overlay);
-    box.querySelector(".btn-danger")!.addEventListener("click", () => { overlay.remove(); this.send({ type: "deleteNpc", id: this.selectedNpcId }); });
-    box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
-    document.addEventListener("keydown", function handler(e) { if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", handler); } });
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+    document.addEventListener("keydown", onKey);
+    box.querySelector(".btn-danger")!.addEventListener("click", () => {
+      close();
+      // The game window only discards the unsaved NPC it has selected.
+      if (unsaved && this.selectedNpcId !== null) this.selectNpc(npc);
+      this.send({ type: "deleteNpc", id: unsaved ? null : npc.id });
+      this.status(unsaved ? "Discarded" : "Deleting...");
+      if (!unsaved) this.statusOnListUpdate = "Deleted";
+    });
+    box.querySelector(".btn-cancel")!.addEventListener("click", close);
   }
 }
 

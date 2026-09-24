@@ -1,4 +1,5 @@
 import { sendRequest } from "./socket.js";
+import { itemFrameHtml } from "./itemframe.js";
 
 const QUALITY_COLORS: Record<string, string> = {
   common: "#9d9d9d", uncommon: "#1eff00", rare: "#0070dd", epic: "#a335ee", legendary: "#ff8000",
@@ -16,7 +17,7 @@ export function showLootChestPopup(chestId: string, items: any[]): void {
     const qColor = QUALITY_COLORS[item.quality] || QUALITY_COLORS.common;
     itemsHtml += `<div class="loot-chest-item" data-index="${item.index}">
         <label class="loot-item-checkbox-label"><input type="checkbox" class="loot-item-checkbox" data-index="${item.index}" checked></label>
-        <img class="loot-item-icon" src="${item.iconUrl}" alt="${item.itemName}" onerror="this.style.display='none'">
+        ${itemFrameHtml(String(item.iconUrl || ""), item.quality, 36, String(item.itemName), "loot-item-icon")}
         <span class="loot-item-name" style="color:${qColor}">${item.itemName}</span>
         <span class="loot-item-quality">${item.quality.charAt(0).toUpperCase() + item.quality.slice(1)}</span>
         <span class="loot-item-qty">x${item.quantity}</span>

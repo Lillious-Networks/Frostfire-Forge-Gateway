@@ -65,9 +65,9 @@ class LootEditor {
       case "createTable": { if (sr && msg.name) sr({ type: "COMMAND", data: { command: `loottable create "${msg.name}"` } }); setTimeout(() => this.loadTables(), 300); break; }
       case "deleteTable": { if (sr && msg.id) sr({ type: "COMMAND", data: { command: `loottable delete ${msg.id}` } }); this.selectedTableId = null; setTimeout(() => this.loadTables(), 300); break; }
       case "refresh": { this.loadTables(); break; }
-      case "addItem": { if (sr && msg.tableId && msg.itemName) sr({ type: "COMMAND", data: { command: `loottable additem ${msg.tableId} "${msg.itemName}" ${msg.minQty || 1} ${msg.maxQty || 1} ${msg.chance || 100} ${msg.quality || "common"}` } }); setTimeout(() => this.loadTables(), 300); break; }
+      case "addItem": { if (sr && msg.tableId && msg.itemName) sr({ type: "COMMAND", data: { command: `loottable additem ${msg.tableId} "${msg.itemName}" ${msg.minQty || 1} ${msg.maxQty || 1} ${msg.chance ?? 100} ${msg.quality || "common"}` } }); setTimeout(() => this.loadTables(), 300); break; }
       case "removeItem": { if (sr) sr({ type: "COMMAND", data: { command: `loottable removeitem ${msg.itemId}` } }); setTimeout(() => this.loadTables(), 300); break; }
-      case "updateItem": { if (sr && msg.itemId) sr({ type: "COMMAND", data: { command: `loottable updateitem ${msg.itemId} ${msg.minQty || 1} ${msg.maxQty || 1} ${msg.chance || 100} ${msg.quality || "common"}` } }); setTimeout(() => this.loadTables(), 300); break; }
+      case "updateItem": { if (sr && msg.itemId) sr({ type: "COMMAND", data: { command: `loottable updateitem ${msg.itemId} ${msg.minQty || 1} ${msg.maxQty || 1} ${msg.chance ?? 100} ${msg.quality || "common"}` } }); setTimeout(() => this.loadTables(), 300); break; }
       case "editorClosed": { this.onWindowClosed(); break; }
     }
   };

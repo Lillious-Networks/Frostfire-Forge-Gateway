@@ -14,32 +14,40 @@
       <div id="editor-toolbar">
         <span id="editor-toolbar-title">Creature Editor</span>
         <span class="tool-divider"></span>
-        <button type="button" id="btn-save" title="Save (Ctrl+S)" hidden>Save</button>
-        <button type="button" id="btn-new" title="New entry">New</button>
-        <button type="button" id="btn-delete" title="Delete entry" hidden>Delete</button>
-        <span class="tool-divider"></span>
-        <button type="button" id="btn-place" title="Place a spawn point in the world" hidden>Place Spawn</button>
-        <button type="button" id="btn-goto" title="Teleport to the selected spawn" hidden>Go To</button>
-        <span class="tool-divider"></span>
         <label class="editor-inline-label"><input type="checkbox" id="chk-debug"> Debug overlay</label>
         <span id="ce-status" class="editor-status"></span>
       </div>
       <div id="editor-main">
         <div id="editor-sidebar">
-          <div class="sidebar-section-header" id="ce-list-title">Templates</div>
+          <!-- Sections pick what the list below shows; they are not pages of a creature. -->
+          <nav id="ce-sections" class="ce-sections">
+            <button type="button" class="ce-section-btn active" data-tab="templates">Creatures</button>
+            <button type="button" class="ce-section-btn" data-tab="paths">Patrol Paths</button>
+            <button type="button" class="ce-section-btn" data-tab="linkGroups">Link Groups</button>
+            <button type="button" class="ce-section-btn" data-tab="pools">Spawn Pools</button>
+          </nav>
+          <div class="sidebar-section-header" id="ce-list-title">Creatures</div>
           <input type="text" id="ce-search" class="editor-search" placeholder="Search..." autocomplete="off" spellcheck="false">
           <div id="ce-list" class="editor-list"></div>
         </div>
         <div id="editor-content" class="editor-content-area">
-          <div id="editor-tab-bar">
-            <button class="editor-tab-btn active" data-tab="templates">Templates</button>
-            <button class="editor-tab-btn" data-tab="appearance" hidden>Appearance</button>
-            <button class="editor-tab-btn" data-tab="rewards" hidden>Rewards</button>
-            <button class="editor-tab-btn" data-tab="abilities" hidden>Abilities</button>
-            <button class="editor-tab-btn" data-tab="spawns">Spawns</button>
-            <button class="editor-tab-btn" data-tab="paths">Patrol Paths</button>
-            <button class="editor-tab-btn" data-tab="linkGroups">Link Groups</button>
-            <button class="editor-tab-btn" data-tab="pools">Spawn Pools</button>
+          <div id="ce-content-head" class="editor-content-head">
+            <!-- Pages of the selected creature; only shown in the Creatures section. -->
+            <div id="editor-tab-bar">
+              <button class="editor-tab-btn active" data-tab="templates">General</button>
+              <button class="editor-tab-btn" data-tab="appearance" hidden>Appearance</button>
+              <button class="editor-tab-btn" data-tab="rewards" hidden>Rewards</button>
+              <button class="editor-tab-btn" data-tab="abilities" hidden>Abilities</button>
+              <button class="editor-tab-btn" data-tab="spawns" hidden>Spawns</button>
+            </div>
+            <!-- Saves whatever is open; faded while there is nothing to save. -->
+            <button type="button" id="btn-save" class="ce-save-icon" title="Save (Ctrl+S)" aria-label="Save" hidden>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+            </button>
           </div>
           <div id="editor-form">
             <div id="ce-errors" class="editor-errors" hidden></div>

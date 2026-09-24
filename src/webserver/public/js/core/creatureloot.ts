@@ -1,6 +1,7 @@
 // Corpse loot window for server-authoritative creatures. Styled with the loot
 // chest window classes; all taking is validated server-side.
 import { sendRequest } from "./socket.js";
+import { itemFrameHtml } from "./itemframe.js";
 
 const QUALITY_COLORS: Record<string, string> = {
   common: "#9d9d9d", uncommon: "#1eff00", rare: "#0070dd", epic: "#a335ee", legendary: "#ff8000",
@@ -37,7 +38,7 @@ export function showCreatureLoot(creatureId: number, items: any[], copper: numbe
       const name = escapeHtml(String(item.itemName));
       return `<div class="loot-chest-item" data-index="${Number(item.index)}">
         <label class="loot-item-checkbox-label"><input type="checkbox" class="loot-item-checkbox" data-index="${Number(item.index)}" checked></label>
-        <img class="loot-item-icon" src="${escapeHtml(String(item.iconUrl || ""))}" alt="${name}" onerror="this.style.display='none'">
+        ${itemFrameHtml(String(item.iconUrl || ""), quality, 36, String(item.itemName), "loot-item-icon")}
         <span class="loot-item-name" style="color:${color}">${name}</span>
         <span class="loot-item-quality">${escapeHtml(quality.charAt(0).toUpperCase() + quality.slice(1))}</span>
         <span class="loot-item-qty">x${Number(item.quantity)}</span>

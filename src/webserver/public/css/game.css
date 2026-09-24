@@ -5872,12 +5872,17 @@ body.ipad-device #game-notification-container {
 #editor-form button{height:32px;padding:4px 10px;font-size:11px;white-space:nowrap;background:rgba(255,255,255,0.05);color:#e0e7ff;border:1px solid rgba(71,85,105,0.4);border-radius:3px;cursor:pointer;font-family:'Clash Display',sans-serif;transition:all .15s}
 #editor-form button:hover{background:rgba(255,255,255,0.1);border-color:rgba(71,85,105,0.7)}
 
-.le-item-icon-wrap{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:4px;border:2px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.12)}
-.le-item-icon-wrap.uncommon{border-color:rgba(52,235,73,0.6);background:rgba(52,235,73,0.12)}
-.le-item-icon-wrap.rare{border-color:rgba(52,122,235,0.6);background:rgba(52,122,235,0.12)}
-.le-item-icon-wrap.epic{border-color:rgba(189,52,235,0.6);background:rgba(189,52,235,0.1)}
-.le-item-icon-wrap.legendary{border:2px solid transparent;background:rgba(255,128,0,0.12);position:relative;overflow:visible}
-.le-item-icon-wrap.legendary::before{content:'';position:absolute;inset:-2px;border-radius:6px;padding:2px;background:linear-gradient(135deg,#ff6b6b,#ffb347,#ffe66d,#51cf66,#45b7d1,#9b59b6,#ff6b6b);background-size:300% 300%;animation:rainbow-shift-gradient 4s ease-in-out infinite;pointer-events:none;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude}
+/* Quality frame around an item icon, anywhere one is shown (js/core/itemframe.ts).
+   Keyed on data-quality so it never mixes with the inventory's .rare/.epic slot rules. */
+.item-frame{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;border-radius:4px;border:2px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.12)}
+.item-frame > img{max-width:100%;max-height:100%;border-radius:3px;image-rendering:pixelated}
+.item-frame-missing{font-size:10px;color:#888}
+.item-frame[data-quality="common"]{border-color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.12)}
+.item-frame[data-quality="uncommon"]{border-color:rgba(52,235,73,0.6);background:rgba(52,235,73,0.12)}
+.item-frame[data-quality="rare"]{border-color:rgba(52,122,235,0.6);background:rgba(52,122,235,0.12)}
+.item-frame[data-quality="epic"]{border-color:rgba(189,52,235,0.6);background:rgba(189,52,235,0.1)}
+.item-frame[data-quality="legendary"]{border-color:transparent;background:rgba(255,128,0,0.12);position:relative;overflow:visible}
+.item-frame[data-quality="legendary"]::before{content:'';position:absolute;inset:-2px;border-radius:6px;padding:2px;background:linear-gradient(135deg,#ff6b6b,#ffb347,#ffe66d,#51cf66,#45b7d1,#9b59b6,#ff6b6b);background-size:300% 300%;animation:rainbow-shift-gradient 4s ease-in-out infinite;pointer-events:none;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude}
 .le-inline-inp{width:48px;height:24px;font-size:11px;background:rgba(255,255,255,0.06);border:1px solid rgba(71,85,105,0.4);border-radius:3px;color:#e0e7ff;text-align:center;padding:0 2px;font-family:'Space Mono',monospace;box-sizing:border-box}
 .le-inline-inp:focus{outline:none;border-color:rgba(46,204,113,0.6);background:rgba(46,204,113,0.08)}
 .le-inline-inp::-webkit-outer-spin-button,.le-inline-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}

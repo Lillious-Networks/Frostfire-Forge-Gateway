@@ -6,6 +6,7 @@ import Cache from "./cache.js";
 import { config } from "../web/global.js";
 import { getCachedImage } from "./images.js";
 import { setupItemTooltip } from "./tooltip.js";
+import { applyItemFrame } from "./itemframe.js";
 import { levelColor } from "./creature.js";
 
 export interface QuestObjectiveDef {
@@ -225,6 +226,8 @@ export function rewardItemDetails(itemName: string, quantity: number): any {
 export function makeRewardSlot(itemName: string, quantity: number, opts?: { choice?: boolean; selected?: boolean; onClick?: () => void }): HTMLDivElement {
   const slot = document.createElement("div");
   slot.className = "quest-reward-slot ui" + (opts?.choice ? " choice" : "") + (opts?.selected ? " selected" : "");
+  // Same quality border as inventory and loot windows.
+  applyItemFrame(slot, findItemDetails(itemName)?.quality);
   const img = getCachedImage(iconUrlForItem(itemName));
   slot.appendChild(img);
   if (quantity > 1) {

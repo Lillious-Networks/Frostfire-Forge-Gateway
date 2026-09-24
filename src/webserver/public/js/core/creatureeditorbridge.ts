@@ -16,7 +16,13 @@ const CREATURE_FLAGS: Array<{ bit: number; label: string }> = [
 ];
 
 /** Tabs that edit one creature: the same creature list, and selection carries across. */
-const TEMPLATE_TABS = new Set(["templates", "appearance", "rewards", "abilities"]);
+const TEMPLATE_TABS = new Set(["templates", "appearance", "rewards", "abilities", "spawns"]);
+
+type SaveKind = "template" | "abilities" | "spawn" | "spawnDelete" | "delete" | "other";
+
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
 
 class CreatureEditorBridge {
   private data: any = { templates: [], abilities: [], spawns: [], patrolPaths: [], linkGroups: [], pools: [], spells: [], lootTables: [], maps: [], triggers: [], targetModes: [], spriteSheets: {}, icons: [] };
@@ -33,8 +39,22 @@ class CreatureEditorBridge {
   /** The selected creature's abilities being edited on the Abilities tab. */
   private abilityDraft: any[] = [];
   private abilitiesDirty = false;
+  /**
+   * The spawn open on the selected creature's Spawns tab. Its creature is
+   * implied (the selected one), so it has no creature picker.
+   */
+  private spawnDraft: any = null;
+  private spawnDirty = false;
   /** Which save is in flight, so its result clears the right flag. */
-  private pendingSave: "template" | "abilities" | "other" | null = null;
+  private pendingSave: SaveKind | null = null;
+  /**
+   * Packet of the save/delete in flight. Save waits for its result: a new
+   * entry has no id until then, so a second Save would insert it again.
+   */
+  private pendingPacket: string | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Section to open once the in-flight save succeeds (Save in the leave prompt). */
+  private afterSaveTab: string | null = null;
 
   private listEl = document.getElementById("ce-list")!;
   private listTitle = document.getElementById("ce-list-title")!;
@@ -46,10 +66,11 @@ class CreatureEditorBridge {
 
   constructor() {
     document.getElementById("btn-save")!.addEventListener("click", () => this.save());
-    document.getElementById("btn-new")!.addEventListener("click", () => this.toolbarNew());
-    document.getElementById("btn-delete")!.addEventListener("click", () => this.deleteEntry());
-    document.getElementById("btn-place")!.addEventListener("click", () => this.placeSpawn());
-    document.getElementById("btn-goto")!.addEventListener("click", () => this.goto());
+    // Field edits flag changes without re-rendering; refresh the save icon
+    // after any edit (the field's own handler has run by the time this does).
+    for (const type of ["input", "change", "click"]) {
+      document.addEventListener(type, () => queueMicrotask(() => this.updateSaveIcon()));
+    }
     (document.getElementById("chk-debug") as HTMLInputElement).addEventListener("change", (e) => {
       this.send({ type: "debug", on: (e.target as HTMLInputElement).checked });
     });
@@ -57,8 +78,8 @@ class CreatureEditorBridge {
       this.search = this.searchInput.value.toLowerCase();
       this.renderList();
     });
-    document.querySelectorAll(".editor-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => this.switchTab(btn.getAttribute("data-tab")!));
+    document.querySelectorAll(".editor-tab-btn, .ce-section-btn").forEach((btn) => {
+      btn.addEventListener("click", () => this.requestTab(btn.getAttribute("data-tab")!));
     });
     window.addEventListener("message", (e) => this.onMessage(e));
     window.addEventListener("keydown", (e) => {
@@ -89,29 +110,57 @@ class CreatureEditorBridge {
       this.data = msg.data;
       // Fresh ability ids from the server, unless there are edits to keep.
       if (!this.abilitiesDirty) this.loadAbilityDraft();
+      // Same for the open spawn; one deleted elsewhere closes.
+      if (this.spawnDraft?.id && !this.spawnDirty) {
+        const fresh = (this.data.spawns ?? []).find((s: any) => s.id === this.spawnDraft.id);
+        this.spawnDraft = fresh ? JSON.parse(JSON.stringify(fresh)) : null;
+      }
       this.renderList();
       this.renderForm();
       this.status("Loaded");
     } else if (msg.type === "result") {
+      // Only the in-flight save/delete's own result counts: others (Go to)
+      // must not clear unsaved changes or release the pending save.
+      if (!this.pendingPacket || (msg.action && msg.action !== this.pendingPacket)) {
+        if (!msg.ok) this.showErrors(msg.errors || ["Action failed."]);
+        return;
+      }
       const saved = this.pendingSave;
-      this.pendingSave = null;
+      this.endRequest();
       if (msg.ok) {
-        if (saved === "abilities") this.abilitiesDirty = false;
-        else this.dirty = false;
-        if (msg.id && this.draft) {
-          this.selectedId = msg.id;
-          // A new entry now exists: later saves must update it, not insert again.
-          if (!this.draft.id && saved !== "abilities") this.draft.id = msg.id;
+        if (saved === "abilities") {
+          this.abilitiesDirty = false;
+        } else if (saved === "spawn") {
+          this.spawnDirty = false;
+          // A new spawn now exists: later saves must update it, not insert again.
+          if (msg.id && this.spawnDraft && !this.spawnDraft.id) this.spawnDraft.id = msg.id;
+        } else if (saved === "spawnDelete") {
+          // The open spawn only closes if it was the one deleted (cleared in deleteSpawn).
+        } else if (saved === "delete") {
+          // Deleting a list entry leaves the open entry's unsaved edits alone.
+        } else {
+          this.dirty = false;
+          if (msg.id && this.draft) {
+            this.selectedId = msg.id;
+            // A new entry now exists: later saves must update it, not insert again.
+            if (!this.draft.id) this.draft.id = msg.id;
+          }
         }
-        // Creature saved first; its abilities follow now that it has an id.
-        if (saved === "template" && this.abilitiesDirty && this.draft?.id) {
-          this.sendAbilities();
-          return;
-        }
+        const deleted = saved === "delete" || saved === "spawnDelete";
+        // One Save covers the whole creature: fields first (a new creature
+        // needs its id), then abilities, then the open spawn.
+        if (!deleted && this.saveNextDirty()) return;
         this.showErrors([]);
-        this.status("Saved");
+        this.status(deleted ? "Deleted" : "Saved");
+        this.updateSaveIcon();
         this.send({ type: "request", packet: "CREATURE_EDITOR_LIST", data: null });
+        // Saved from the leave prompt: now go where the user was heading.
+        const next = this.afterSaveTab;
+        this.afterSaveTab = null;
+        if (next) this.switchTab(next);
       } else {
+        // A failed save keeps the user here, with the errors, instead of leaving.
+        this.afterSaveTab = null;
         this.showErrors(msg.errors || ["Save failed."]);
         this.status("Not saved");
       }
@@ -120,10 +169,11 @@ class CreatureEditorBridge {
       this.send({ type: "request", packet: "CREATURE_EDITOR_LIST", data: null });
     } else if (msg.type === "pointPicked") {
       // The game window collected a world position / path for the current draft.
-      if (msg.what === "spawn" && this.draft) {
-        this.draft.x = msg.x;
-        this.draft.y = msg.y;
-        this.draft.map = msg.map;
+      if (msg.what === "spawn" && this.spawnDraft) {
+        this.spawnDraft.x = msg.x;
+        this.spawnDraft.y = msg.y;
+        this.spawnDraft.map = msg.map;
+        this.spawnDirty = true;
         this.renderForm();
         this.status("Position set - remember to save");
       } else if (msg.what === "path" && this.draft) {
@@ -154,7 +204,6 @@ class CreatureEditorBridge {
 
   private get collection(): any[] {
     switch (this.tab) {
-      case "spawns": return this.data.spawns;
       case "paths": return this.data.patrolPaths;
       case "linkGroups": return this.data.linkGroups;
       case "pools": return this.data.pools;
@@ -168,8 +217,6 @@ class CreatureEditorBridge {
 
   private label(entry: any): string {
     switch (this.tab) {
-      case "spawns":
-        return `${this.templateName(entry.template_id)} @ ${entry.map} ${entry.x},${entry.y}`;
       case "paths":
         return `#${entry.id} ${entry.map} (${entry.points?.length ?? 0} points)`;
       case "linkGroups":
@@ -186,65 +233,69 @@ class CreatureEditorBridge {
     const templateOptions = (): AssetOption[] => [none, ...this.data.templates.map((t: any) => ({ value: t.id, label: t.name }))];
     switch (this.tab) {
       case "abilities":
-        // Drawn as one card per ability (renderAbilities), not as form fields.
-        return [];
       case "spawns":
-        return [
-          { key: "template_id", label: "Creature", type: "asset", noIcons: true, assets: templateOptions },
-          { key: "map", label: "Map", type: "asset", noIcons: true, assets: () => this.data.maps.map((m: string) => ({ value: m, label: m })) },
-          { key: "x", label: "X", type: "number" },
-          { key: "y", label: "Y", type: "number" },
-          { key: "direction", label: "Facing", type: "select", options: pick(["down", "up", "left", "right"]) },
-          { key: "layer_policy", label: "Layers", type: "select", options: pick(["per_layer", "shared"]) },
-          { key: "respawn_min_s", label: "Respawn min (s)", type: "number" },
-          { key: "respawn_max_s", label: "Respawn max (s)", type: "number" },
-          { key: "movement_type", label: "Movement", type: "select", options: pick(["idle", "wander", "patrol"]) },
-          { key: "wander_radius", label: "Wander radius (yards)", type: "number" },
-          { key: "patrol_path_id", label: "Patrol path", type: "asset", noIcons: true, assets: () => [none, ...this.data.patrolPaths.map((p: any) => ({ value: p.id, label: `#${p.id} ${p.map}` }))] },
-          { key: "link_group_id", label: "Link group", type: "asset", noIcons: true, assets: () => [none, ...this.data.linkGroups.map((g: any) => ({ value: g.id, label: g.name }))] },
-          { key: "pool_id", label: "Spawn pool", type: "asset", noIcons: true, assets: () => [none, ...this.data.pools.map((p: any) => ({ value: p.id, label: `#${p.id}` }))] },
-        ];
+        // Drawn as cards (renderAbilities / renderSpawns), not as form fields.
+        return [];
       case "rewards":
       case "appearance":
         return this.templateSectionFields(this.tab, none);
       case "paths":
         return [
           { key: "map", label: "Map", type: "asset", assets: () => this.data.maps.map((m: string) => ({ value: m, label: m })) },
-          { key: "loop", label: "Loop (otherwise walks back and forth)", type: "checkbox" },
+          { key: "loop", label: "Loop", type: "checkbox", hint: "Walks back to the first point. Otherwise it walks back and forth." },
         ];
       case "linkGroups":
-        return [{ key: "name", label: "Name", type: "text" }];
+        return [{ key: "name", label: "Name", type: "text", hint: "Spawns in the same link group are pulled together." }];
       case "pools":
         return [
-          { key: "max_active", label: "Max active at once", type: "number" },
-          { key: "rare_chance_pct", label: "Rare chance %", type: "number" },
+          { key: "max_active", label: "Max alive at once", type: "number", hint: "How many of the pool's spawn points can be alive together." },
+          { key: "rare_chance_pct", label: "Rare chance %", type: "number", hint: "Chance a respawn is the rare creature instead. Never two rares at once." },
           { key: "rare_template_id", label: "Rare creature", type: "asset", assets: templateOptions },
         ];
       default:
         return [
           { key: "name", label: "Name", type: "text" },
-          { key: "subname", label: "Title", type: "text" },
-          { key: "level_min", label: "Level min", type: "number" },
+          { key: "subname", label: "Title", type: "text", hint: "Shown under the name, e.g. <Blacksmith>." },
+          { key: "level_min", label: "Level min", type: "number", hint: "Each spawn picks a level between min and max." },
           { key: "level_max", label: "Level max", type: "number" },
           { key: "rank", label: "Rank", type: "select", options: pick(["normal", "elite", "rare", "rare_elite", "boss"]) },
           { key: "creature_type", label: "Type", type: "select", options: pick(["beast", "humanoid", "undead", "elemental", "demon", "dragonkin", "critter", "mechanical"]) },
-          { key: "stance", label: "Stance", type: "select", options: pick(["aggressive", "neutral", "passive"]) },
-          { key: "health_base", label: "Health base", type: "number" },
-          { key: "health_per_level", label: "Health per level", type: "number" },
+          { key: "stance", label: "Stance", type: "select", options: pick(["aggressive", "neutral", "passive"]), hint: "Aggressive attacks players who come close. Neutral fights back. Passive runs when hit." },
+          { key: "health_base", label: "Health at level 1", type: "number" },
+          { key: "health_per_level", label: "Health per level", type: "number", hint: "Added for each level above 1." },
           { key: "armor", label: "Armor", type: "number" },
           { key: "ranged", label: "Keeps its distance (stops at range)", type: "checkbox" },
-          { key: "move_speed_walk", label: "Walk speed (yd/s)", type: "number", step: 0.1 },
-          { key: "move_speed_run", label: "Run speed (yd/s)", type: "number", step: 0.1 },
-          { key: "aggro_radius_override", label: "Aggro radius override (yards)", type: "number" },
-          { key: "assist_radius", label: "Assist radius (yards)", type: "number" },
-          { key: "call_for_help_radius", label: "Call for help radius (yards)", type: "number" },
-          { key: "flee_at_hp_pct", label: "Flee at health %", type: "number" },
+          { key: "move_speed_walk", label: "Walk speed (yd/s)", type: "number", step: 0.1, hint: "Used when idle, wandering or patrolling." },
+          { key: "move_speed_run", label: "Run speed (yd/s)", type: "number", step: 0.1, hint: "Used when chasing or fleeing." },
+          { key: "leash_override", label: "Leash range (yards)", type: "number", hint: "How far it chases from where the fight started before resetting. Empty = 60." },
+          { key: "aggro_radius_override", label: "Aggro radius (yards)", type: "number", hint: "Empty = 20. Grows or shrinks 1 yard per level of difference to the player." },
+          { key: "assist_radius", label: "Assist radius (yards)", type: "number", hint: "Idle allies this close join in when it is pulled." },
+          { key: "call_for_help_radius", label: "Call for help radius (yards)", type: "number", hint: "Idle allies this close join in when it flees." },
+          { key: "flee_at_hp_pct", label: "Flee at health %", type: "number", hint: "0 = never flees." },
           { key: "flee_duration_ms", label: "Flee duration (ms)", type: "number" },
-          { key: "leash_override", label: "Leash override (yards)", type: "number" },
           { key: "regen_ooc", label: "Regenerates out of combat", type: "checkbox" },
           { key: "flags", label: "Flags", type: "flags" },
         ];
     }
+  }
+
+  /** Fields of one spawn. The creature is implied: the one selected. */
+  private spawnFields(): Field[] {
+    const none = { value: 0, label: "None" };
+    return [
+          { key: "map", label: "Map", type: "asset", noIcons: true, assets: () => this.data.maps.map((m: string) => ({ value: m, label: m })) },
+          { key: "x", label: "X", type: "number" },
+          { key: "y", label: "Y", type: "number" },
+          { key: "direction", label: "Facing", type: "select", options: pick(["down", "up", "left", "right"]) },
+          { key: "layer_policy", label: "Layers", type: "select", options: pick(["per_layer", "shared"]), hint: "per_layer: one creature on every layer. shared: one creature all layers see." },
+          { key: "respawn_min_s", label: "Respawn min (s)", type: "number", hint: "Respawn time is picked between min and max." },
+          { key: "respawn_max_s", label: "Respawn max (s)", type: "number" },
+          { key: "movement_type", label: "Movement", type: "select", options: pick(["idle", "wander", "patrol"]) },
+          { key: "wander_radius", label: "Wander radius (yards)", type: "number", hint: "Only used with wander movement." },
+          { key: "patrol_path_id", label: "Patrol path", type: "asset", noIcons: true, hint: "Only used with patrol movement.", assets: () => [none, ...this.data.patrolPaths.map((p: any) => ({ value: p.id, label: `#${p.id} ${p.map}` }))] },
+          { key: "link_group_id", label: "Link group", type: "asset", noIcons: true, hint: "Linked spawns are pulled together.", assets: () => [none, ...this.data.linkGroups.map((g: any) => ({ value: g.id, label: g.name }))] },
+          { key: "pool_id", label: "Spawn pool", type: "asset", noIcons: true, hint: "Caps how many spawns in the pool are alive at once.", assets: () => [none, ...this.data.pools.map((p: any) => ({ value: p.id, label: `#${p.id}` }))] },
+    ];
   }
 
   /** Fields of one ability card. The creature is implied: the one selected. */
@@ -270,9 +321,9 @@ class CreatureEditorBridge {
     switch (tab) {
       case "rewards":
         return [
-          { key: "xp_mult", label: "XP multiplier", type: "number", step: 0.1 },
-          { key: "loot_table_id", label: "Loot table", type: "asset", noIcons: true, assets: () => [none, ...this.data.lootTables.map((t: any) => ({ value: t.id, label: t.name }))] },
-          { key: "gold_min", label: "Money min", type: "money", newRow: true },
+          { key: "xp_mult", label: "XP multiplier", type: "number", step: 0.1, hint: "1 = normal XP for its level." },
+          { key: "loot_table_id", label: "Loot table", type: "asset", noIcons: true, hint: "Items rolled into its corpse.", assets: () => [none, ...this.data.lootTables.map((t: any) => ({ value: t.id, label: t.name }))] },
+          { key: "gold_min", label: "Money min", type: "money", newRow: true, hint: "Money dropped is picked between min and max." },
           { key: "gold_max", label: "Money max", type: "money" },
         ];
       case "appearance": {
@@ -304,7 +355,7 @@ class CreatureEditorBridge {
                 { key: "sprite_weapon", label: "Weapon", type: "sheet", slot: "weapon" },
               ] as Field[])
             : []),
-          { key: "scale", label: "Scale", type: "number", step: 0.1 },
+          { key: "scale", label: "Scale", type: "number", step: 0.1, hint: "1 = normal size. Bigger creatures also reach further in melee." },
         ];
       }
     }
@@ -318,8 +369,6 @@ class CreatureEditorBridge {
 
   private blank(): any {
     switch (this.tab) {
-      case "spawns":
-        return { id: 0, template_id: this.data.templates[0]?.id ?? 0, map: this.data.maps[0] ?? "", x: 0, y: 0, direction: "down", layer_policy: "per_layer", respawn_min_s: 120, respawn_max_s: 180, wander_radius: 0, movement_type: "idle", patrol_path_id: 0, link_group_id: 0, pool_id: 0 };
       case "paths":
         return { id: 0, map: this.data.maps[0] ?? "", loop: true, points: [] };
       case "linkGroups":
@@ -329,6 +378,13 @@ class CreatureEditorBridge {
       default:
         return { id: 0, name: "New Creature", subname: "", level_min: 1, level_max: 1, rank: "normal", creature_type: "beast", stance: "aggressive", health_base: 50, health_per_level: 10, armor: 0, damage_min: 1, damage_max: 3, attack_speed_ms: 2000, ranged: false, move_speed_walk: 2.5, move_speed_run: 7, aggro_radius_override: null, assist_radius: 10, call_for_help_radius: 15, flee_at_hp_pct: 0, flee_duration_ms: 4000, leash_override: null, regen_ooc: true, xp_mult: 1, loot_table_id: 0, gold_min: 0, gold_max: 0, sprite_type: "none", sprite: "", sprite_head: "", sprite_helmet: "", sprite_shoulderguards: "", sprite_neck: "", sprite_hands: "", sprite_chest: "", sprite_feet: "", sprite_legs: "", sprite_weapon: "", scale: 1, flags: 0 };
     }
+  }
+
+  /** A new spawn for the selected creature; its map defaults to where the last one was. */
+  private blankSpawn(): any {
+    const mine = (this.data.spawns ?? []).filter((s: any) => s.template_id === this.draft?.id);
+    const map = mine[mine.length - 1]?.map ?? this.data.maps[0] ?? "";
+    return { id: 0, map, x: 0, y: 0, direction: "down", layer_policy: "per_layer", respawn_min_s: 120, respawn_max_s: 180, wander_radius: 0, movement_type: "idle", patrol_path_id: 0, link_group_id: 0, pool_id: 0 };
   }
 
   /** A new ability for the selected creature (bound to it when saved). */
@@ -346,6 +402,75 @@ class CreatureEditorBridge {
 
   // ------------------------------------------------------------------ render
 
+  /**
+   * A tab or section click. Moving between a creature's own pages keeps its
+   * edits; moving to another section drops the selection, so unsaved changes
+   * get a Save / Discard / Cancel prompt first.
+   */
+  private requestTab(tab: string): void {
+    if (tab === this.tab) return;
+    const sameTemplate = TEMPLATE_TABS.has(this.tab) && TEMPLATE_TABS.has(tab);
+    if (sameTemplate || !this.hasUnsaved || !this.draft) {
+      this.switchTab(tab);
+      return;
+    }
+    if (this.pendingPacket) {
+      this.status("Saving...");
+      return;
+    }
+    this.promptUnsaved(tab);
+  }
+
+  private promptUnsaved(tab: string): void {
+    const overlay = document.createElement("div");
+    overlay.className = "editor-modal-overlay";
+    const box = document.createElement("div");
+    box.className = "editor-modal-box";
+    box.innerHTML =
+      '<h3>Unsaved changes</h3><p></p><div class="editor-modal-actions">' +
+      '<button type="button" data-choice="cancel">Cancel</button>' +
+      '<button type="button" class="btn-danger" data-choice="discard">Discard</button>' +
+      '<button type="button" class="btn-primary" data-choice="save">Save</button></div>';
+    const name = TEMPLATE_TABS.has(this.tab) ? this.draft?.name : null;
+    box.querySelector("p")!.textContent = `Save your changes${name ? ` to ${name}` : ""} before leaving?`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const close = () => {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey, true);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    box.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const choice = btn.getAttribute("data-choice");
+        close();
+        if (choice === "discard") {
+          this.switchTab(tab);
+        } else if (choice === "save") {
+          // Leave only once the server confirms; a failed save stays put.
+          this.afterSaveTab = tab;
+          this.save();
+          // Nothing was actually sent (nothing to save): just go.
+          if (!this.pendingPacket) {
+            this.afterSaveTab = null;
+            this.switchTab(tab);
+          }
+        }
+      });
+    });
+    (box.querySelector('[data-choice="save"]') as HTMLElement).focus();
+  }
+
   private switchTab(tab: string): void {
     // Templates, Appearance, Rewards and Abilities all edit the same creature:
     // moving between them keeps the selection and any unsaved edits.
@@ -357,12 +482,21 @@ class CreatureEditorBridge {
       this.dirty = false;
       this.abilityDraft = [];
       this.abilitiesDirty = false;
+      this.spawnDraft = null;
+      this.spawnDirty = false;
       this.showErrors([]);
     }
+    const creature = TEMPLATE_TABS.has(tab);
     document.querySelectorAll(".editor-tab-btn").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === tab));
-    this.listTitle.textContent = TEMPLATE_TABS.has(tab)
-      ? "Templates"
-      : (document.querySelector(`.editor-tab-btn[data-tab="${tab}"]`) as HTMLElement)?.textContent ?? "Entries";
+    document.querySelectorAll(".ce-section-btn").forEach((b) => {
+      const section = b.getAttribute("data-tab");
+      b.classList.toggle("active", creature ? section === "templates" : section === tab);
+    });
+    // A creature's pages only make sense in the Creatures section.
+    document.getElementById("editor-tab-bar")!.hidden = !creature;
+    this.listTitle.textContent = creature
+      ? "Creatures"
+      : (document.querySelector(`.ce-section-btn[data-tab="${tab}"]`) as HTMLElement)?.textContent ?? "Entries";
     this.renderList();
     this.renderForm();
   }
@@ -370,8 +504,7 @@ class CreatureEditorBridge {
   private renderList(): void {
     const entries = this.collection.filter((e: any) => !this.search || this.label(e).toLowerCase().includes(this.search));
     this.listEl.innerHTML = "";
-    // Non-creature tabs create entries from a pinned row, not the toolbar:
-    // the toolbar New button always starts a creature.
+    // Every section creates entries from a pinned row at the top of its list.
     const newLabel = this.newRowLabel();
     if (newLabel) {
       const row = document.createElement("div");
@@ -382,7 +515,7 @@ class CreatureEditorBridge {
       row.title = newLabel;
       row.appendChild(text);
       row.addEventListener("click", () => {
-        if ((this.dirty || this.abilitiesDirty) && !confirm("Discard unsaved changes?")) return;
+        if (this.hasUnsaved && !confirm("Discard unsaved changes?")) return;
         this.newEntry();
       });
       this.listEl.appendChild(row);
@@ -395,51 +528,65 @@ class CreatureEditorBridge {
       text.textContent = this.label(entry);
       row.title = text.textContent;
       row.appendChild(text);
+      row.appendChild(this.rowDeleteButton(`Delete ${this.label(entry)}`, () => this.deleteEntry(entry)));
       row.addEventListener("click", () => this.select(entry.id));
       this.listEl.appendChild(row);
     }
   }
 
+  /** Trash icon on a list row; deletes that row's entry without selecting it. */
+  private rowDeleteButton(title: string, onDelete: () => void): HTMLElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ce-row-delete";
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+    btn.innerHTML = TRASH_ICON;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onDelete();
+    });
+    return btn;
+  }
+
   private select(id: number): void {
-    if ((this.dirty || this.abilitiesDirty) && !confirm("Discard unsaved changes?")) return;
+    if (this.hasUnsaved && !confirm("Discard unsaved changes?")) return;
     this.selectedId = id;
     this.draft = JSON.parse(JSON.stringify(this.collection.find((e: any) => e.id === id) ?? this.blank()));
     this.dirty = false;
     this.abilitiesDirty = false;
+    this.spawnDraft = null;
+    this.spawnDirty = false;
     this.loadAbilityDraft();
     this.showErrors([]);
     this.renderList();
     this.renderForm();
   }
 
-  /** Creation row for tabs whose entries are not creatures (toolbar New is creatures only). */
-  private newRowLabel(): string | null {
+  /** Label of the pinned creation row at the top of the current section's list. */
+  private newRowLabel(): string {
     switch (this.tab) {
-      case "spawns": return "New spawn";
       case "paths": return "New patrol path";
       case "linkGroups": return "New link group";
       case "pools": return "New spawn pool";
-      default: return null;
+      default: return "New creature";
     }
   }
 
   private newEntry(): void {
+    // A new creature starts on its General page, whichever creature page was open.
+    if (TEMPLATE_TABS.has(this.tab) && this.tab !== "templates") this.switchTab("templates");
     this.selectedId = 0;
     this.draft = this.blank();
     this.dirty = true;
     this.abilityDraft = [];
     this.abilitiesDirty = false;
+    this.spawnDraft = null;
+    this.spawnDirty = false;
     this.showErrors([]);
     this.renderList();
     this.renderForm();
     this.status("New entry - fill it in and save");
-  }
-
-  /** The toolbar New button always starts a creature, whatever the tab is. */
-  private toolbarNew(): void {
-    if ((this.dirty || this.abilitiesDirty) && !confirm("Discard unsaved changes?")) return;
-    if (!TEMPLATE_TABS.has(this.tab)) this.switchTab("templates");
-    this.newEntry();
   }
 
   private renderForm(): void {
@@ -447,26 +594,198 @@ class CreatureEditorBridge {
     this.fieldsEl.innerHTML = "";
     this.extraEl.innerHTML = "";
     if (!this.draft) {
-      this.fieldsEl.innerHTML = `<div class="editor-empty">Select an entry, or press New.</div>`;
+      this.fieldsEl.innerHTML = `<div class="editor-empty">Select an entry, or create one from the top of the list.</div>`;
       return;
     }
     // Live point updates re-render the form while a wait box may be focused;
     // remember it so typing there is not interrupted.
     const focusedWait = (document.activeElement as HTMLElement | null)?.dataset?.waitIndex ?? null;
 
-    const idRow = document.createElement("div");
-    idRow.className = "ce-field ce-field-wide";
-    idRow.innerHTML = `<label class="editor-form-label">ID</label><div class="editor-display-name"></div>`;
-    // Tabs without a name field: show whose section this is.
-    const showName = TEMPLATE_TABS.has(this.tab) && this.tab !== "templates";
-    idRow.querySelector(".editor-display-name")!.textContent =
-      `${this.draft.id || "new"}${showName && this.draft.name ? ` (${this.draft.name})` : ""}`;
-    this.fieldsEl.appendChild(idRow);
-
-    for (const field of orderFields(this.fields())) this.fieldsEl.appendChild(this.renderField(field));
-    if (this.tab === "paths") this.renderPathPoints(focusedWait);
+    // Which entry this is, on every page (the pages without a name field too).
+    const heading = document.createElement("div");
+    heading.className = "editor-page-title";
+    heading.textContent = this.pageTitle();
+    const sub = document.createElement("span");
+    sub.className = "editor-page-sub";
+    sub.textContent = this.draft.id ? `#${this.draft.id}` : "not saved yet";
+    heading.appendChild(sub);
+    this.fieldsEl.appendChild(heading);
+    // What the creature ends up with in game, before the details.
     if (this.tab === "templates" && this.draft.id) this.renderTemplateSummary();
+
+    for (const group of this.formCards()) {
+      const grid = this.card(this.fieldsEl, group.title, group.sub);
+      for (const field of orderFields(group.fields)) grid.appendChild(this.renderField(field));
+    }
+    if (this.tab === "paths") this.renderPathPoints(focusedWait);
     if (this.tab === "abilities") this.renderAbilities();
+    if (this.tab === "spawns") this.renderSpawns();
+  }
+
+  private pageTitle(): string {
+    if (TEMPLATE_TABS.has(this.tab)) return this.draft.name || "New creature";
+    switch (this.tab) {
+      case "paths": return this.draft.id ? `Patrol path on ${this.draft.map || "?"}` : "New patrol path";
+      case "linkGroups": return this.draft.name || "New link group";
+      case "pools": return this.draft.id ? "Spawn pool" : "New spawn pool";
+      default: return "Entry";
+    }
+  }
+
+  /** The current page's fields, grouped into titled cards. */
+  private formCards(): Array<{ title: string; sub?: string; fields: Field[] }> {
+    const fields = this.fields();
+    if (fields.length === 0) return [];
+    if (this.tab !== "templates") {
+      const titles: Record<string, string> = {
+        appearance: "Appearance", rewards: "Rewards", paths: "Patrol path", linkGroups: "Link group", pools: "Spawn pool",
+      };
+      return [{ title: titles[this.tab] ?? "Details", fields }];
+    }
+    const byKey = new Map(fields.map((f) => [f.key, f]));
+    const taken = new Set<string>();
+    const take = (keys: string[]) => keys.map((k) => byKey.get(k)).filter((f): f is Field => !!f && !taken.has(f.key) && !!taken.add(f.key));
+    const groups: Array<{ title: string; sub?: string; fields: Field[] }> = [
+      { title: "Identity", fields: take(["name", "subname", "level_min", "level_max", "rank", "creature_type"]) },
+      { title: "Combat", fields: take(["stance", "health_base", "health_per_level", "armor", "ranged"]) },
+      { title: "Movement", fields: take(["move_speed_walk", "move_speed_run", "leash_override"]) },
+      { title: "Awareness", sub: "How it notices players and gets help", fields: take(["aggro_radius_override", "assist_radius", "call_for_help_radius"]) },
+      { title: "Fleeing & recovery", fields: take(["flee_at_hp_pct", "flee_duration_ms", "regen_ooc"]) },
+      { title: "Flags", fields: take(["flags"]) },
+    ];
+    // A field added to fields() but not to a group above still shows up.
+    groups.push({ title: "Other", fields: fields.filter((f) => !taken.has(f.key)) });
+    return groups.filter((group) => group.fields.length > 0);
+  }
+
+  /**
+   * A titled card appended to `parent`; returns its field grid. `action` goes
+   * at the right of the header (a × or a button).
+   */
+  private card(parent: HTMLElement, title: string, sub?: string, action?: HTMLElement): HTMLElement {
+    const card = document.createElement("div");
+    card.className = "editor-card";
+    const head = document.createElement("div");
+    head.className = "editor-card-head";
+    const titleEl = document.createElement("span");
+    titleEl.className = "editor-card-title";
+    titleEl.textContent = title;
+    head.appendChild(titleEl);
+    if (sub) {
+      const subEl = document.createElement("span");
+      subEl.className = "editor-card-sub";
+      subEl.textContent = sub;
+      subEl.title = sub;
+      head.appendChild(subEl);
+    }
+    if (action) head.appendChild(action);
+    card.appendChild(head);
+    const grid = document.createElement("div");
+    grid.className = "editor-card-grid";
+    card.appendChild(grid);
+    parent.appendChild(card);
+    return grid;
+  }
+
+  private removeButton(title: string, onClick: () => void): HTMLElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ce-card-btn-x";
+    btn.textContent = "×";
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+
+  private addButton(parent: HTMLElement, label: string, onClick: () => void): HTMLElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ce-card-btn editor-add-btn";
+    btn.textContent = `+ ${label}`;
+    btn.addEventListener("click", onClick);
+    parent.appendChild(btn);
+    return btn;
+  }
+
+  /**
+   * The selected creature's spawn points: a list to pick from, and the picked
+   * one's fields. The toolbar Save stores it along with the creature.
+   */
+  private renderSpawns(): void {
+    if (!this.draft.id) {
+      const empty = document.createElement("div");
+      empty.className = "editor-empty";
+      empty.textContent = "Save this creature before adding spawn points.";
+      this.extraEl.appendChild(empty);
+      return;
+    }
+    const mine = (this.data.spawns ?? []).filter((s: any) => s.template_id === this.draft.id);
+
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "ce-card-btn";
+    add.textContent = "+ New spawn";
+    add.addEventListener("click", () => {
+      if (this.spawnDirty && !confirm("Discard unsaved spawn changes?")) return;
+      this.spawnDraft = this.blankSpawn();
+      this.spawnDirty = true;
+      this.renderForm();
+      this.status("New spawn - place it in the world, then save");
+    });
+    const listGrid = this.card(this.extraEl, `Spawn points (${mine.length})`, "Where this creature appears in the world", add);
+
+    const list = document.createElement("div");
+    list.className = "ce-spawn-list ce-field-wide";
+    listGrid.appendChild(list);
+    for (const spawn of mine) {
+      const row = document.createElement("div");
+      row.className = "editor-item" + (this.spawnDraft?.id === spawn.id ? " active" : "");
+      const text = document.createElement("span");
+      text.className = "editor-item-label";
+      text.textContent = `#${spawn.id} ${spawn.map} (${spawn.x}, ${spawn.y})`;
+      row.appendChild(text);
+      row.appendChild(this.rowDeleteButton(`Delete spawn #${spawn.id}`, () => this.deleteSpawn(spawn)));
+      row.addEventListener("click", () => {
+        if (this.spawnDraft?.id === spawn.id) return;
+        if (this.spawnDirty && !confirm("Discard unsaved spawn changes?")) return;
+        this.spawnDraft = JSON.parse(JSON.stringify(spawn));
+        this.spawnDirty = false;
+        this.renderForm();
+      });
+      list.appendChild(row);
+    }
+    if (mine.length === 0 && !this.spawnDraft) {
+      const empty = document.createElement("div");
+      empty.className = "editor-empty";
+      empty.textContent = "No spawn points: this creature never appears in the world.";
+      list.appendChild(empty);
+    }
+
+    if (!this.spawnDraft) return;
+    // Saved spawns are deleted from their list row; a new one can only be discarded.
+    let discard: HTMLElement | undefined;
+    if (!this.spawnDraft.id) {
+      discard = document.createElement("button");
+      (discard as HTMLButtonElement).type = "button";
+      discard.className = "ce-card-btn ce-card-btn-danger";
+      discard.textContent = "Discard";
+      discard.addEventListener("click", () => {
+        this.spawnDraft = null;
+        this.spawnDirty = false;
+        this.renderForm();
+      });
+    }
+    const where = this.spawnDraft.map ? `${this.spawnDraft.map} (${this.spawnDraft.x}, ${this.spawnDraft.y})` : undefined;
+    const grid = this.card(this.extraEl, this.spawnDraft.id ? `Spawn #${this.spawnDraft.id}` : "New spawn (unsaved)", where, discard);
+    const touch = () => {
+      this.spawnDirty = true;
+    };
+    for (const field of orderFields(this.spawnFields())) {
+      grid.appendChild(this.renderField(field, this.spawnDraft, touch));
+      // World placement sits with the position it sets.
+      if (field.key === "y") grid.appendChild(this.renderSpawnActions());
+    }
   }
 
   /**
@@ -487,44 +806,20 @@ class CreatureEditorBridge {
     }
 
     this.abilityDraft.forEach((ability, index) => {
-      const card = document.createElement("div");
-      card.className = "ce-ability";
-
-      const header = document.createElement("div");
-      header.className = "ce-ability-header";
-      const title = document.createElement("span");
-      title.className = "ce-ability-title";
-      title.textContent = `${index + 1}. ${spellName(Number(ability.spell_id))}`;
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "ce-card-btn ce-card-btn-danger";
-      remove.textContent = "Remove";
-      remove.addEventListener("click", () => {
+      const remove = this.removeButton("Remove ability", () => {
         this.abilityDraft.splice(index, 1);
         touch();
         this.renderForm();
       });
-      header.appendChild(title);
-      header.appendChild(remove);
-      card.appendChild(header);
-
-      const grid = document.createElement("div");
-      grid.className = "ce-ability-fields";
+      const grid = this.card(this.extraEl, `Ability ${index + 1}`, `${spellName(Number(ability.spell_id))} · ${ability.trigger}`, remove);
       for (const field of orderFields(this.abilityFields())) grid.appendChild(this.renderField(field, ability, touch));
-      card.appendChild(grid);
-      this.extraEl.appendChild(card);
     });
 
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "ce-card-btn ce-ability-add";
-    add.textContent = "Add ability";
-    add.addEventListener("click", () => {
+    this.addButton(this.extraEl, "Add ability", () => {
       this.abilityDraft.push(this.blankAbility());
       touch();
       this.renderForm();
     });
-    this.extraEl.appendChild(add);
   }
 
   /**
@@ -533,13 +828,21 @@ class CreatureEditorBridge {
    */
   private updateChrome(): void {
     const has = !!this.draft;
-    for (const id of ["btn-save", "btn-delete", "btn-place", "btn-goto"]) {
-      const el = document.getElementById(id);
-      if (el) el.hidden = !has;
-    }
+    document.getElementById("btn-save")!.hidden = !has;
     document
-      .querySelectorAll('.editor-tab-btn[data-tab="appearance"], .editor-tab-btn[data-tab="rewards"], .editor-tab-btn[data-tab="abilities"]')
+      .querySelectorAll('.editor-tab-btn[data-tab="appearance"], .editor-tab-btn[data-tab="rewards"], .editor-tab-btn[data-tab="abilities"], .editor-tab-btn[data-tab="spawns"]')
       .forEach((btn) => ((btn as HTMLElement).hidden = !has));
+    this.updateSaveIcon();
+  }
+
+  /** Save icon: faded with nothing to save, highlighted with unsaved changes. */
+  private updateSaveIcon(): void {
+    const btn = document.getElementById("btn-save");
+    if (!btn) return;
+    const changes = !!this.draft && this.hasUnsaved;
+    btn.classList.toggle("has-changes", changes);
+    btn.classList.toggle("saving", !!this.pendingPacket);
+    btn.title = this.pendingPacket ? "Saving..." : changes ? "Save changes (Ctrl+S)" : "No unsaved changes";
   }
 
   /**
@@ -550,22 +853,46 @@ class CreatureEditorBridge {
     return this.fieldRenderer.renderField(field, target, touch);
   }
 
+  /** Place in World / Go To, shown under the spawn's map and position. */
+  private renderSpawnActions(): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "ce-field ce-field-wide ce-spawn-actions";
+    const place = document.createElement("button");
+    place.type = "button";
+    place.className = "ce-card-btn";
+    place.textContent = "Place in World";
+    place.title = "Click in the game window to set this spawn's map and position";
+    place.addEventListener("click", () => this.placeSpawn());
+    const goto = document.createElement("button");
+    goto.type = "button";
+    goto.className = "ce-card-btn";
+    goto.textContent = "Go To";
+    goto.disabled = !this.spawnDraft?.id;
+    goto.title = this.spawnDraft?.id ? "Teleport to this spawn" : "Save the spawn first";
+    goto.addEventListener("click", () => this.goto());
+    row.appendChild(place);
+    row.appendChild(goto);
+    return row;
+  }
+
   private renderPathPoints(focusWait: string | null = null): void {
     const points = this.draft.points || [];
-    const headRow = document.createElement("div");
-    headRow.className = "ce-points-head";
-    const header = document.createElement("div");
-    header.className = "sidebar-section-header";
-    header.textContent = `Points (${points.length})`;
-    headRow.appendChild(header);
     const draw = document.createElement("button");
     draw.type = "button";
     draw.className = "ce-card-btn";
     draw.textContent = "Draw Path";
     draw.title = "Draw points in the world";
     draw.addEventListener("click", () => this.drawPath());
-    headRow.appendChild(draw);
-    this.extraEl.appendChild(headRow);
+    const grid = this.card(this.extraEl, `Points (${points.length})`, "Wait = how long it pauses at the point (ms)", draw);
+    const rows = document.createElement("div");
+    rows.className = "ce-point-list ce-field-wide";
+    grid.appendChild(rows);
+    if (points.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "editor-empty";
+      empty.textContent = "No points yet: press Draw Path and click in the game window.";
+      rows.appendChild(empty);
+    }
     points.forEach((p: any, i: number) => {
       const row = document.createElement("div");
       row.className = "ce-point-row";
@@ -582,11 +909,7 @@ class CreatureEditorBridge {
         p.wait_ms = Number(wait.value) || 0;
         this.dirty = true;
       });
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "editor-danger-btn";
-      remove.textContent = "Remove";
-      remove.addEventListener("click", () => {
+      const remove = this.removeButton(`Remove point #${i + 1}`, () => {
         points.splice(i, 1);
         this.dirty = true;
         this.renderForm();
@@ -594,7 +917,7 @@ class CreatureEditorBridge {
       row.appendChild(label);
       row.appendChild(wait);
       row.appendChild(remove);
-      this.extraEl.appendChild(row);
+      rows.appendChild(row);
     });
     // A live update rebuilt the list under a focused wait box: hand focus back
     // so typing continues where it left off.
@@ -611,11 +934,17 @@ class CreatureEditorBridge {
     const health = (level: number) => Math.round(Number(t.health_base) + Number(t.health_per_level) * (level - 1));
     const box = document.createElement("div");
     box.className = "editor-summary";
+    const min = Number(t.level_min);
+    const max = Number(t.level_max);
+    // A fixed-level creature has one health value; a range shows both ends.
+    const healthText = min === max
+      ? `Health ${health(min)} at level ${min}.`
+      : `Health ${health(min)} at level ${min}, ${health(max)} at level ${max}.`;
     box.textContent =
-      `Health ${health(Number(t.level_min))} at level ${t.level_min}, ${health(Number(t.level_max))} at level ${t.level_max}. ` +
+      `${healthText} ` +
       `${abilities} abilit${abilities === 1 ? "y" : "ies"}, ${spawns} spawn point${spawns === 1 ? "" : "s"}.` +
       (abilities === 0 ? " No abilities: this creature cannot attack." : "");
-    this.extraEl.appendChild(box);
+    this.fieldsEl.appendChild(box);
   }
 
   // ----------------------------------------------------------------- actions
@@ -626,7 +955,7 @@ class CreatureEditorBridge {
       appearance: "TEMPLATE",
       rewards: "TEMPLATE",
       abilities: "TEMPLATE",
-      spawns: "SPAWN",
+      spawns: "TEMPLATE",
       paths: "PATH",
       linkGroups: "LINKGROUP",
       pools: "POOL",
@@ -634,56 +963,138 @@ class CreatureEditorBridge {
     return `CREATURE_EDITOR_${action}_${suffix[this.tab]}`;
   }
 
+  /** Anything on the current entry (creature fields, abilities, open spawn) not yet saved. */
+  private get hasUnsaved(): boolean {
+    return this.dirty || this.abilitiesDirty || this.spawnDirty;
+  }
+
   private save(): void {
     if (!this.draft) return;
+    if (this.pendingPacket) {
+      this.status("Saving...");
+      return;
+    }
     if (TEMPLATE_TABS.has(this.tab)) {
       // The creature's own fields go first when changed (a new creature needs
-      // its id); its abilities follow from the result handler.
+      // its id); abilities and the open spawn follow from the result handler.
       if (this.dirty || !this.draft.id) this.sendEntry("template");
-      else if (this.abilitiesDirty) this.sendAbilities();
-      else this.status("Nothing to save");
+      else if (!this.saveNextDirty()) this.status("Nothing to save");
       return;
     }
     this.sendEntry("other");
   }
 
-  private sendEntry(kind: "template" | "other"): void {
-    const payload = { ...this.draft };
-    // The server treats 0 as "no relation" for optional links.
+  /** Send the creature's next unsaved part (abilities, then the open spawn). */
+  private saveNextDirty(): boolean {
+    if (!TEMPLATE_TABS.has(this.tab) || !this.draft?.id) return false;
+    if (this.abilitiesDirty) {
+      this.sendAbilities();
+      return true;
+    }
+    if (this.spawnDirty && this.spawnDraft) {
+      this.sendSpawn();
+      return true;
+    }
+    return false;
+  }
+
+  /** The server treats 0 as "no relation" for optional links. */
+  private withNullLinks(entry: any): any {
+    const payload = { ...entry };
     for (const key of ["patrol_path_id", "link_group_id", "pool_id", "loot_table_id", "rare_template_id"]) {
       if (payload[key] === 0) payload[key] = null;
     }
-    this.pendingSave = kind;
-    this.send({ type: "request", packet: this.packetFor("SAVE"), data: payload });
+    return payload;
+  }
+
+  private sendEntry(kind: "template" | "other"): void {
+    this.beginRequest(kind, this.packetFor("SAVE"), this.withNullLinks(this.draft));
     this.status("Saving...");
   }
 
   /** The selected creature's whole ability list, saved as one. */
   private sendAbilities(): void {
-    this.pendingSave = "abilities";
-    this.send({
-      type: "request",
-      packet: "CREATURE_EDITOR_SAVE_ABILITIES",
-      data: { template_id: this.draft.id, abilities: this.abilityDraft },
-    });
+    this.beginRequest("abilities", "CREATURE_EDITOR_SAVE_ABILITIES", { template_id: this.draft.id, abilities: this.abilityDraft });
     this.status("Saving abilities...");
   }
 
-  private deleteEntry(): void {
-    if (!this.draft?.id) return;
-    if (!confirm("Delete this entry? Creatures using it are removed too.")) return;
-    this.pendingSave = "other";
-    this.send({ type: "request", packet: this.packetFor("DELETE"), data: { id: this.draft.id } });
-    this.draft = null;
-    this.selectedId = null;
-    this.abilityDraft = [];
-    this.abilitiesDirty = false;
-    this.updateChrome();
+  /** The open spawn, always bound to the selected creature. */
+  private sendSpawn(): void {
+    this.beginRequest("spawn", "CREATURE_EDITOR_SAVE_SPAWN", { ...this.withNullLinks(this.spawnDraft), template_id: this.draft.id });
+    this.status("Saving spawn...");
+  }
+
+  /** Delete a saved spawn from its list row. Closes it if it is the open one. */
+  private deleteSpawn(spawn: any): void {
+    if (!spawn?.id) return;
+    if (this.pendingPacket) {
+      this.status("Saving...");
+      return;
+    }
+    if (!confirm(`Delete spawn #${spawn.id}? Its creature is removed from the world.`)) return;
+    if (this.spawnDraft?.id === spawn.id) {
+      this.spawnDraft = null;
+      this.spawnDirty = false;
+    }
+    this.beginRequest("spawnDelete", "CREATURE_EDITOR_DELETE_SPAWN", { id: spawn.id });
+    this.renderForm();
+    this.status("Deleting spawn...");
+  }
+
+  private beginRequest(kind: SaveKind, packet: string, data: any): void {
+    this.pendingSave = kind;
+    this.pendingPacket = packet;
+    if (this.pendingTimer) clearTimeout(this.pendingTimer);
+    // No result ever comes back if the server rejects the packet outright
+    // (e.g. permissions): don't leave Save blocked forever.
+    this.pendingTimer = setTimeout(() => {
+      if (this.pendingPacket !== packet) return;
+      this.endRequest();
+      this.afterSaveTab = null;
+      this.status("No response from the server - try again");
+      this.updateSaveIcon();
+    }, 15000);
+    this.send({ type: "request", packet, data });
+    this.updateSaveIcon();
+  }
+
+  private endRequest(): void {
+    if (this.pendingTimer) clearTimeout(this.pendingTimer);
+    this.pendingTimer = null;
+    this.pendingPacket = null;
+    this.pendingSave = null;
+    this.updateSaveIcon();
+  }
+
+  /** Delete a list entry from its row. Closes it if it is the open one. */
+  private deleteEntry(entry: any): void {
+    if (!entry?.id) return;
+    if (this.pendingPacket) {
+      this.status("Saving...");
+      return;
+    }
+    const what = TEMPLATE_TABS.has(this.tab)
+      ? `creature "${entry.name}"? Its spawn points and creatures in the world are removed too.`
+      : `${this.label(entry)}? Creatures using it are removed too.`;
+    if (!confirm(`Delete ${what}`)) return;
+    if (this.selectedId === entry.id) {
+      this.draft = null;
+      this.selectedId = null;
+      this.dirty = false;
+      this.abilityDraft = [];
+      this.abilitiesDirty = false;
+      this.spawnDraft = null;
+      this.spawnDirty = false;
+    }
+    this.beginRequest("delete", this.packetFor("DELETE"), { id: entry.id });
+    this.renderList();
+    this.renderForm();
+    this.status("Deleting...");
   }
 
   private placeSpawn(): void {
-    if (this.tab !== "spawns" || !this.draft) {
-      this.status("Open the Spawns tab and select or create a spawn first");
+    if (this.tab !== "spawns" || !this.spawnDraft) {
+      this.status("Open a creature's Spawns tab and select or add a spawn first");
       return;
     }
     this.send({ type: "placeSpawn" });
@@ -700,11 +1111,11 @@ class CreatureEditorBridge {
   }
 
   private goto(): void {
-    if (this.tab !== "spawns" || !this.draft?.id) {
+    if (this.tab !== "spawns" || !this.spawnDraft?.id) {
       this.status("Select a saved spawn first");
       return;
     }
-    this.send({ type: "request", packet: "CREATURE_EDITOR_ACTION", data: { action: "goto", spawnId: this.draft.id } });
+    this.send({ type: "request", packet: "CREATURE_EDITOR_ACTION", data: { action: "goto", spawnId: this.spawnDraft.id } });
   }
 }
 

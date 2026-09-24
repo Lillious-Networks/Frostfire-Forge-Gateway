@@ -14,10 +14,6 @@
       <div id="editor-toolbar">
         <span id="editor-toolbar-title">Item Editor</span>
         <span class="tool-divider"></span>
-        <button type="button" id="btn-save" title="Save (Ctrl+S)">Save</button>
-        <button type="button" id="btn-new" title="New item">New</button>
-        <button type="button" id="btn-duplicate" title="Copy the selected item">Duplicate</button>
-        <button type="button" id="btn-delete" title="Delete item">Delete</button>
         <span id="ie-status" class="editor-status"></span>
       </div>
       <div id="editor-main">
@@ -27,12 +23,22 @@
           <div id="ie-list" class="editor-list"></div>
         </div>
         <div id="editor-content" class="editor-content-area">
-          <div id="editor-tab-bar">
-            <button class="editor-tab-btn active" data-tab="general">General</button>
-            <button class="editor-tab-btn" data-tab="equipment">Equipment</button>
-            <button class="editor-tab-btn" data-tab="stats">Stats</button>
+          <div class="editor-content-head">
+            <div id="editor-tab-bar">
+              <button class="editor-tab-btn active" data-tab="general">General</button>
+              <button class="editor-tab-btn" data-tab="equipment">Equipment</button>
+              <button class="editor-tab-btn" data-tab="stats">Stats</button>
+            </div>
+            <!-- Saves the open item; faded while there is nothing to save. -->
+            <button type="button" id="btn-save" class="ce-save-icon" title="Save (Ctrl+S)" aria-label="Save" hidden>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                <polyline points="17 21 17 13 7 13 7 21"/>
+                <polyline points="7 3 7 8 15 8"/>
+              </svg>
+            </button>
           </div>
-          <div id="editor-form">
+          <div id="editor-form" class="editor-roomy">
             <div id="ie-errors" class="editor-errors" hidden></div>
             <div id="ie-form-fields" class="editor-form-section"></div>
             <div id="ie-extra" class="editor-form-section"></div>

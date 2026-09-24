@@ -161,6 +161,8 @@ class CreatureEditor {
         this.close();
         break;
       case "request":
+        // Saving the path means drawing is done: leave draw mode like Enter.
+        if (msg.packet === "CREATURE_EDITOR_SAVE_PATH" && this.mode === "drawPath") this.stopTool();
         sendRequest({ type: msg.packet, data: msg.data });
         break;
       case "debug":
@@ -206,8 +208,7 @@ class CreatureEditor {
 
     if (this.mode === "placeSpawn") {
       this.toEditor({ type: "pointPicked", what: "spawn", x: point.x, y: point.y, map: this.currentMap() });
-      this.mode = "none";
-      document.body.style.cursor = "";
+      this.stopTool();
       return;
     }
     // drawPath: shift-click adds a 2s wait at the new point. Every point streams
@@ -222,16 +223,20 @@ class CreatureEditor {
     if (event.key === "Escape") {
       // Just leave draw mode: points were already streamed to the editor, so
       // there is nothing to lose. Delete strays in the popup's Points list.
-      this.mode = "none";
-      document.body.style.cursor = "";
+      this.stopTool();
       return;
     }
     if (event.key === "Enter" && this.mode === "drawPath") {
       // Points are already in the editor; Enter only finishes drawing.
       this.toEditor({ type: "pointPicked", what: "path", points: this.pathPoints, map: this.currentMap() });
-      this.mode = "none";
-      document.body.style.cursor = "";
+      this.stopTool();
     }
+  }
+
+  /** Leave spawn-placing / path-drawing mode. */
+  private stopTool(): void {
+    this.mode = "none";
+    document.body.style.cursor = "";
   }
 
   /** Right-click actions on a creature while the editor is open. */
