@@ -19,6 +19,8 @@ const BUFFER_SIZE = MINIMAP_SIZE * BUFFER_SCALE;
 let minimapCanvas: HTMLCanvasElement;
 let minimapCtx: CanvasRenderingContext2D;
 let minimapContainer: HTMLDivElement;
+let minimapTimeEl: HTMLDivElement;
+let minimapLocationEl: HTMLDivElement;
 let bufferCanvas: HTMLCanvasElement;
 let bufferCtx: CanvasRenderingContext2D;
 
@@ -33,6 +35,16 @@ function createMinimap() {
   minimapCanvas.height = MINIMAP_SIZE;
 
   minimapContainer.appendChild(minimapCanvas);
+
+  minimapTimeEl = document.createElement("div");
+  minimapTimeEl.id = "minimap-time";
+  minimapTimeEl.className = "ui";
+  minimapContainer.appendChild(minimapTimeEl);
+
+  minimapLocationEl = document.createElement("div");
+  minimapLocationEl.id = "minimap-location";
+  minimapLocationEl.className = "ui";
+  minimapContainer.appendChild(minimapLocationEl);
 
   bufferCanvas = document.createElement("canvas");
   bufferCanvas.width = BUFFER_SIZE;
@@ -126,6 +138,17 @@ function renderMinimap() {
   );
   const currentPlayer = playersArray.find((p: any) => p.id === cachedPlayerId);
   if (!currentPlayer) return;
+
+  // Sync the frame plaque labels (top: server time, bottom: map name).
+  if (minimapTimeEl) {
+    const timeText = serverTime?.textContent || "";
+    if (minimapTimeEl.textContent !== timeText) minimapTimeEl.textContent = timeText;
+  }
+  if (minimapLocationEl) {
+    const rawName = (window.mapData?.name || "").replace(/\.json$/i, "");
+    const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    if (minimapLocationEl.textContent !== displayName) minimapLocationEl.textContent = displayName;
+  }
 
   const playerX = currentPlayer.renderPosition?.x ?? currentPlayer.position.x;
   const playerY = currentPlayer.renderPosition?.y ?? currentPlayer.position.y;
@@ -246,37 +269,6 @@ function renderMinimap() {
   vignetteGradient.addColorStop(1, "rgba(0, 0, 0, 0.25)");
   ctx.fillStyle = vignetteGradient;
   ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
-
-  // Cardinal direction markers
-  ctx.font = "bold 11px 'Comic Relief', sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#FFFFFF";
-  const labelOffset = radius - 12;
-  ctx.fillText("N", halfSize, halfSize - labelOffset);
-  ctx.fillText("S", halfSize, halfSize + labelOffset);
-  ctx.fillText("E", halfSize + labelOffset, halfSize);
-  ctx.fillText("W", halfSize - labelOffset, halfSize);
-
-  // Server time at bottom of minimap (drawn after markers so it sits on top)
-  const timeText = serverTime?.textContent || "";
-  if (timeText) {
-    const timeY = halfSize + radius - 37;
-    const timeW = 80;
-    const timeH = 24;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-    ctx.beginPath();
-    ctx.roundRect(halfSize - timeW / 2, timeY - timeH / 2, timeW, timeH, 5);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-    ctx.font = "bold 13px 'Comic Relief', sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-    ctx.fillText(timeText, halfSize, timeY);
-  }
 
   // Draw player dots
   for (const player of playersArray) {
