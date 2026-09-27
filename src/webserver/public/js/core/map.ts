@@ -1,8 +1,8 @@
 import { canvas, ctx, progressBar, loadingScreen } from "../core/ui";
-import { invalidateTilesetLookupCache, recordChunkLoadTime, clearChunkTracking } from "./renderer.js";
+import { recordChunkLoadTime, clearChunkTracking } from "./renderer.js";
 import pako from "../libs/pako.js";
 import { config } from "../web/global.js";
-import { SHADOW_MAX_OFFSET } from "./shadows.js";
+import { setMap } from "./glmap/index.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 declare global {
@@ -62,75 +62,6 @@ export function segmentIndexForZ(z: number, cuts: LayerCut[]): number {
   return i;
 }
 
-function getBaseGID(gid: number): number { return gid & 0x0FFFFFFF; }
-
-function getTileFlags(gid: number): { flipH: boolean; flipV: boolean; flipD: boolean } {
-  return {
-    flipH: (gid & 0x80000000) !== 0,
-    flipV: (gid & 0x40000000) !== 0,
-    flipD: (gid & 0x20000000) !== 0,
-  };
-}
-
-function drawRotatedTile(
-  ctx: CanvasRenderingContext2D,
-  image: HTMLImageElement,
-  srcX: number, srcY: number, srcW: number, srcH: number,
-  destX: number, destY: number, destW: number, destH: number,
-  flipH: boolean, flipV: boolean, flipD: boolean
-): void {
-  const hasFlags = flipH || flipV || flipD;
-  if (!hasFlags) {
-    ctx.drawImage(image, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
-    return;
-  }
-
-  const cx = destX + destW / 2;
-  const cy = destY + destH / 2;
-
-  // Tiled's exact approach:
-  // 1. If anti-diagonal: set rotation=90°, swap H↔V and invert H flag
-  // 2. Translate to center, rotate, scale (negatives for flips)
-  let rot = 0;
-  let effH = flipH;
-  let effV = flipV;
-
-  if (flipD) {
-    rot = Math.PI / 2;
-    effH = flipV;           // original V becomes horizontal after 90° rotation
-    effV = !flipH;          // original H becomes vertical, inverted
-  }
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  if (rot !== 0) ctx.rotate(rot);
-  ctx.scale(effH ? -1 : 1, effV ? -1 : 1);
-  ctx.drawImage(image, srcX, srcY, srcW, srcH, -destW / 2, -destH / 2, destW, destH);
-  ctx.restore();
-}
-
-export { getBaseGID, getTileFlags, drawRotatedTile };
-
-interface AnimationFrame {
-  tileid: number;
-  duration: number;
-}
-
-interface AnimatedTile {
-  segment: number;
-  zIndex: number;
-  destX: number;
-  destY: number;
-  tilesetIndex: number;
-  tileset: any;
-  animation: AnimationFrame[];
-  totalDuration: number;
-  rotation: number;
-  flipH: boolean;
-  flipV: boolean;
-  flipD: boolean;
-}
-
 interface ChunkData {
   chunkX: number;
   chunkY: number;
@@ -148,69 +79,17 @@ interface ChunkData {
     height: number;
     locked?: boolean;
   }>;
-  canvas?: HTMLCanvasElement;
-  segmentCanvases?: HTMLCanvasElement[];
-  animatedTiles?: AnimatedTile[];
-  shadowLayers?: Array<{ canvas: HTMLCanvasElement; zIndex: number }>;
-  sortedLayers?: Array<{ name: string; zIndex: number; data: number[]; width: number; height: number; locked?: boolean }>;
 }
-
-// True while loadMap is baking the initial chunk set. During this phase the
-// loading screen covers the viewport, so chunk baking runs synchronously
-// (no per-N-tiles setTimeout yields) - the yield cadence that keeps gameplay
-// smooth costs hundreds of milliseconds per chunk when it's not needed.
-let isMapLoading = false;
 
 // Decoded tileset images persist across map changes so warping back to a
 // recently visited map skips the fetch + pako inflate + image decode entirely.
 const tilesetImageCache = new Map<string, Promise<HTMLImageElement>>();
 const TILESET_IMAGE_CACHE_MAX = 8;
 
-interface TilesetTileInfo { tileset: any; image: HTMLImageElement }
-interface AnimatedLookupInfo { tilesetIndex: number; tileset: any; animation: AnimationFrame[]; totalDuration: number }
-
-// O(1) tile-id -> tileset/image lookups are rebuilt per chunk bake today,
-// which is wasted work (tilesets are fixed for the lifetime of a map). Memoize
-// on window.mapData; a new LOAD_MAP assigns a fresh object, so no invalidation
-// is needed.
-function getTilesetLookupMap(): Map<number, TilesetTileInfo> {
-  if (!window.mapData._tilesetLookupMap) {
-    const map = new Map<number, TilesetTileInfo>();
-    for (let i = 0; i < window.mapData.tilesets.length; i++) {
-      const ts = window.mapData.tilesets[i];
-      const img = window.mapData.images[i];
-      if (img && img.complete && img.naturalWidth > 0) {
-        for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
-          map.set(tileIdx, { tileset: ts, image: img });
-        }
-      }
-    }
-    window.mapData._tilesetLookupMap = map;
-  }
-  return window.mapData._tilesetLookupMap;
-}
-
-function getAnimatedTileLookup(): Map<number, AnimatedLookupInfo> {
-  if (!window.mapData._animatedTileLookup) {
-    const map = new Map<number, AnimatedLookupInfo>();
-    for (let i = 0; i < window.mapData.tilesets.length; i++) {
-      const ts = window.mapData.tilesets[i];
-      if (!Array.isArray(ts.tiles)) continue;
-      for (const tile of ts.tiles) {
-        if (!Array.isArray(tile.animation) || tile.animation.length === 0) continue;
-        const totalDuration = tile.animation.reduce((sum: number, frame: AnimationFrame) => sum + (frame.duration || 0), 0);
-        map.set(ts.firstgid + tile.id, {
-          tilesetIndex: i,
-          tileset: ts,
-          animation: tile.animation,
-          totalDuration,
-        });
-      }
-    }
-    window.mapData._animatedTileLookup = map;
-  }
-  return window.mapData._animatedTileLookup;
-}
+// Tileset <img> elements can have their decoded pixels discarded by the browser
+// and re-decoded synchronously on drawImage; an ImageBitmap stays decoded, so
+// the tile atlas is packed from it when available.
+const tilesetBitmaps = new WeakMap<HTMLImageElement, ImageBitmap>();
 
 export default async function loadMap(metadata: any): Promise<boolean> {
     if (!(window as any).__suppressLoadingScreen) {
@@ -223,9 +102,6 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     }
 
     if (window.mapData) {
-      for (const chunkData of window.mapData.loadedChunks.values()) {
-        disposeChunkCanvases(chunkData);
-      }
       window.mapData.loadedChunks.clear();
       clearChunkTracking();
     }
@@ -348,13 +224,10 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       requestChunk: async (chunkX: number, chunkY: number) => {
         return await requestChunk(chunkX, chunkY);
       },
-      getChunkCanvas: (chunkX: number, chunkY: number) => {
-        return getChunkCanvas(chunkX, chunkY);
-      },
     };
 
-    // Preloaded chunks skip re-baking, so seed the layer cuts from their layer
-    // structure; otherwise cuts are computed during the first chunk bake.
+    // Seed the layer cuts from preloaded chunks' layer structure; otherwise
+    // they're computed when the first chunk loads.
     for (const preloadedChunk of preloadedChunks.values()) {
       const layers = (preloadedChunk as any)?.layers;
       if (Array.isArray(layers)) {
@@ -363,8 +236,10 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       }
     }
 
-    // Invalidate tileset lookup cache for the new map
-    invalidateTilesetLookupCache();
+    // Build the GPU tile atlas for this map's tilesets.
+    setMap(window.mapData, images.map((img) =>
+      img && img.complete && img.naturalWidth > 0 ? (tilesetBitmaps.get(img) ?? img) : null
+    ));
 
     const { initializeCamera } = await import('./renderer.js');
     initializeCamera(spawnX, spawnY);
@@ -403,38 +278,33 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     const totalChunks = chunksToLoad.length;
     let loadedCount = 0;
 
-    isMapLoading = true;
-    try {
-      const chunkPromises = chunksToLoad.map(chunk =>
-        requestChunk(chunk.x, chunk.y).then(chunkData => {
-          if (chunkData && chunkData.canvas) {
-            loadedCount++;
+    const chunkPromises = chunksToLoad.map(chunk =>
+      requestChunk(chunk.x, chunk.y).then(chunkData => {
+        if (chunkData) {
+          loadedCount++;
 
-            const chunkProgress = 40 + (loadedCount / totalChunks) * 50;
-            progressBar.style.width = `${chunkProgress}%`;
-          }
-          return chunkData;
-        })
-      );
+          const chunkProgress = 40 + (loadedCount / totalChunks) * 50;
+          progressBar.style.width = `${chunkProgress}%`;
+        }
+        return chunkData;
+      })
+    );
 
-      await Promise.all(chunkPromises);
+    await Promise.all(chunkPromises);
 
-      const allChunksLoaded = chunksToLoad.every(chunk => {
+    const allChunksLoaded = chunksToLoad.every(chunk => {
+      const chunkKey = `${chunk.x}-${chunk.y}`;
+      return window.mapData.loadedChunks.has(chunkKey);
+    });
+
+    if (!allChunksLoaded) {
+
+      for (const chunk of chunksToLoad) {
         const chunkKey = `${chunk.x}-${chunk.y}`;
-        return window.mapData.loadedChunks.has(chunkKey);
-      });
-
-      if (!allChunksLoaded) {
-
-        for (const chunk of chunksToLoad) {
-          const chunkKey = `${chunk.x}-${chunk.y}`;
-          if (!window.mapData.loadedChunks.has(chunkKey)) {
-            await requestChunk(chunk.x, chunk.y);
-          }
+        if (!window.mapData.loadedChunks.has(chunkKey)) {
+          await requestChunk(chunk.x, chunk.y);
         }
       }
-    } finally {
-      isMapLoading = false;
     }
 
     if (window.mapData.loadedChunks.size > 0) {
@@ -566,16 +436,6 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
     return uint8Array;
   };
 
-  const uint8ArrayToBase64 = (bytes: Uint8Array) => {
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode(...chunk);
-    }
-    return btoa(binary);
-  };
-
   const tilesetPromises = tilesets.map(async (tileset) => {
     const name = tileset.image.split("/").pop();
 
@@ -598,28 +458,39 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
 
       //@ts-expect-error - Imported via HTML
       const inflatedBytes = pako.inflate(compressedBytes);
-      const imageBase64 = uint8ArrayToBase64(inflatedBytes);
+      const blob = new Blob([inflatedBytes], { type: "image/png" });
 
-      return new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
         const image = new Image();
         image.crossOrigin = "anonymous";
+        const objectUrl = URL.createObjectURL(blob);
 
         image.onload = () => {
+          URL.revokeObjectURL(objectUrl);
           if (image.complete && image.naturalWidth > 0) resolve(image);
           else reject(new Error(`Image loaded but invalid: ${name}`));
         };
 
         image.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
           reject(new Error(`Failed to load tileset image: ${name}`));
         };
 
-        image.src = `data:image/png;base64,${imageBase64}`;
+        image.src = objectUrl;
 
         setTimeout(() => {
           if (!image.complete)
             reject(new Error(`Timeout loading tileset image: ${name}`));
         }, 15000);
       });
+
+      try {
+        tilesetBitmaps.set(image, await createImageBitmap(blob));
+      } catch {
+        // Fall back to drawing from the <img> element.
+      }
+
+      return image;
     })();
 
     // Failed decodes must not poison the cache permanently.
@@ -684,7 +555,20 @@ async function saveChunkToCache(mapName: string, chunkX: number, chunkY: number,
   try {
     const db = await getCacheDB();
     const cacheKey = getCacheKey(mapName, chunkX, chunkY);
-    const cacheEntry = { id: cacheKey, timestamp: Date.now(), data: chunkData };
+    // Store only the serializable tile data: the live chunk object gains
+    // canvases while it bakes, which IndexedDB can't structured-clone.
+    const data = {
+      chunkX: chunkData.chunkX,
+      chunkY: chunkData.chunkY,
+      startX: chunkData.startX,
+      startY: chunkData.startY,
+      width: chunkData.width,
+      height: chunkData.height,
+      tilewidth: chunkData.tilewidth,
+      tileheight: chunkData.tileheight,
+      layers: chunkData.layers,
+    };
+    const cacheEntry = { id: cacheKey, timestamp: Date.now(), data };
 
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction('chunks', 'readwrite');
@@ -854,21 +738,28 @@ function growBoundsForChunk(chunkData: any): void {
 
 async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData | null> {
   if (!window.mapData) return null;
+  // A LOAD_MAP while this request is in flight replaces window.mapData; the
+  // result then belongs to a map that's gone and must not be installed.
+  const mapData = window.mapData;
 
   const chunkKey = `${chunkX}-${chunkY}`;
 
-  const existingChunk = window.mapData.loadedChunks.get(chunkKey);
-  if (existingChunk && existingChunk.canvas && existingChunk.segmentCanvases) {
+  // Chunks placed in loadedChunks directly (warp preloading, editor-created
+  // chunks) are drawable as-is; they only need installing once.
+  const existingChunk = mapData.loadedChunks.get(chunkKey);
+  if (existingChunk) {
+    if (!installedChunks.has(existingChunk)) installChunk(mapData, chunkKey, existingChunk);
     return existingChunk;
   }
 
-  if (chunkX < 0 || chunkY < 0 || chunkX >= window.mapData.chunksX || chunkY >= window.mapData.chunksY) {
+  if (chunkX < 0 || chunkY < 0 || chunkX >= mapData.chunksX || chunkY >= mapData.chunksY) {
     return null;
   }
 
   try {
 
-    const cachedChunkData = await loadChunkFromCache(window.mapData.name, chunkX, chunkY);
+    const cachedChunkData = await loadChunkFromCache(mapData.name, chunkX, chunkY);
+    if (window.mapData !== mapData) return null;
     let chunkData: ChunkData | null;
 
     if (cachedChunkData) {
@@ -877,51 +768,47 @@ async function requestChunk(chunkX: number, chunkY: number): Promise<ChunkData |
     } else {
 
       try {
-        chunkData = await requestChunkViaAssetServer(window.mapData.name, chunkX, chunkY);
+        chunkData = await requestChunkViaAssetServer(mapData.name, chunkX, chunkY);
+        if (window.mapData !== mapData) return null;
         if (!chunkData) {
           return null;
         }
 
         // Cache write is fire-and-forget: blocking the bake on an IndexedDB
         // transaction adds avoidable latency to every chunk load.
-        void saveChunkToCache(window.mapData.name, chunkX, chunkY, chunkData);
+        void saveChunkToCache(mapData.name, chunkX, chunkY, chunkData);
       } catch (error) {
         return null;
       }
     }
 
-    // During initial map load the loading screen is up, so bake synchronously
-    // (skipYield) - the per-tile setTimeout yields would otherwise cost
-    // hundreds of milliseconds per chunk. Gameplay-area chunks keep yielding.
-    const { segmentCanvases } = await renderChunkToCanvas(chunkData, isMapLoading);
-    chunkData.segmentCanvases = segmentCanvases;
-    chunkData.canvas = segmentCanvases[0];
+    // Nothing to bake: the WebGL map renderer draws straight from the chunk's
+    // tile data, uploading it the first time the chunk is on screen.
+    mapData.loadedChunks.set(chunkKey, chunkData);
+    installChunk(mapData, chunkKey, chunkData);
 
-    bakeChunkShadowEdges(chunkData);
-    window.mapData.loadedChunks.set(chunkKey, chunkData);
-
-    // If this chunk carries shadow tiles at its edge, already-baked neighbors
-    // need their silhouettes re-baked to include them in their aprons.
-    if (hasShadowTilesNearBorder(chunkData)) {
-      rebakeNeighborShadowEdges(chunkX, chunkY);
-    }
-
-    // Keep persisted out-of-border content visible on reload even if the LOAD_MAP
-    // dimensions are stale: grow the bounds to include this chunk's content.
-    growBoundsForChunk(chunkData);
-
-    const preloadCache = (window as any).__preloadedMaps?.[window.mapData.name]?.loadedChunks;
+    const preloadCache = (window as any).__preloadedMaps?.[mapData.name]?.loadedChunks;
     if (preloadCache) {
       preloadCache.set(chunkKey, chunkData);
     }
-
-    // Record chunk load time for fade-in effect
-    recordChunkLoadTime(chunkKey);
 
     return chunkData;
   } catch (error) {
     return null;
   }
+}
+
+const installedChunks = new WeakSet<object>();
+
+// One-time setup for a chunk entering loadedChunks.
+function installChunk(mapData: any, chunkKey: string, chunkData: ChunkData): void {
+  installedChunks.add(chunkData);
+  if (Array.isArray(chunkData.layers)) mapData.layerCuts = computeLayerCuts(chunkData.layers);
+  // Keep persisted out-of-border content visible on reload even if the LOAD_MAP
+  // dimensions are stale: grow the bounds to include this chunk's content.
+  growBoundsForChunk(chunkData);
+  // Record chunk load time for fade-in effect
+  recordChunkLoadTime(chunkKey);
 }
 
 async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunkY: number): Promise<ChunkData | null> {
@@ -958,246 +845,6 @@ async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunk
   }
 }
 
-async function renderChunkToCanvas(chunkData: ChunkData, skipYield: boolean = false): Promise<{segmentCanvases: HTMLCanvasElement[]}> {
-  if (!window.mapData) throw new Error("Map data not initialized");
-
-  const pixelWidth = chunkData.width * window.mapData.tilewidth;
-  const pixelHeight = chunkData.height * window.mapData.tileheight;
-
-  const cuts = computeLayerCuts(chunkData.layers);
-  window.mapData.layerCuts = cuts;
-
-  disposeChunkCanvases(chunkData);
-
-  const segmentCanvases: HTMLCanvasElement[] = [];
-  const segmentCtxs: CanvasRenderingContext2D[] = [];
-  for (let i = 0; i <= cuts.length; i++) {
-    const segCanvas = document.createElement("canvas");
-    segCanvas.width = pixelWidth;
-    segCanvas.height = pixelHeight;
-    const segCtx = segCanvas.getContext("2d", { willReadFrequently: false, alpha: true });
-    if (!segCtx) throw new Error("Failed to get canvas context");
-    segCtx.imageSmoothingEnabled = false;
-    segCtx.clearRect(0, 0, pixelWidth, pixelHeight);
-    segmentCanvases.push(segCanvas);
-    segmentCtxs.push(segCtx);
-  }
-
-  const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
-  chunkData.sortedLayers = sortedLayers;
-
-  // Tiles drawn between yields during gameplay baking. Kept low: each drawImage
-  // can trigger a synchronous "Image decode" of the tileset region it touches,
-  // so a large batch is a visible frame hitch every time new chunks scroll into
-  // view. The initial map load bakes with skipYield (loading screen is up) and
-  // ignores this. Was briefly raised to 300 in an optimization pass, which is
-  // what caused the per-chunk-boundary stutter.
-  const TILES_PER_FRAME = 64;
-
-  // Fast tileset lookup map: tileIndex -> {tileset, image} (memoized per map)
-  const tilesetLookupMap = getTilesetLookupMap();
-
-  // Animated tile lookup from Tiled tileset `tiles[].animation` definitions (memoized per map)
-  const animatedTileLookup = getAnimatedTileLookup();
-
-  const animatedTiles: AnimatedTile[] = [];
-
-  for (let layerIdx = 0; layerIdx < sortedLayers.length; layerIdx++) {
-    const layer = sortedLayers[layerIdx];
-
-    const layerName = layer.name ? layer.name.toLowerCase() : '';
-    if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp') || layerName.includes('shadow')) {
-      continue;
-    }
-
-    const tileEditor = (window as any).tileEditor;
-    if (tileEditor?.isActive && !tileEditor.isLayerVisible(layer.name)) {
-      continue;
-    }
-
-    const layerZ = Number(layer.zIndex);
-    const segment = segmentIndexForZ(layerZ, cuts);
-    const ctx = segmentCtxs[segment];
-
-    let tileCount = 0;
-    const layerWidth = chunkData.width;
-    const layerData = layer.data;
-
-    for (let y = 0; y < chunkData.height; y++) {
-      const rowOffset = y * layerWidth;
-      for (let x = 0; x < layerWidth; x++) {
-        const tileIndex = layerData[rowOffset + x];
-        if (tileIndex === 0) continue;
-
-        const baseGID = getBaseGID(tileIndex);
-        const { flipH, flipV, flipD } = getTileFlags(tileIndex);
-
-        // Animated tiles are not baked into the static chunk canvas; they are
-        // recorded here and drawn per-frame by the renderer on top of this layer group.
-        const animInfo = animatedTileLookup.get(baseGID);
-        if (animInfo) {
-          animatedTiles.push({
-            segment,
-            zIndex: layer.zIndex,
-            destX: x * window.mapData.tilewidth,
-            destY: y * window.mapData.tileheight,
-            tilesetIndex: animInfo.tilesetIndex,
-            tileset: animInfo.tileset,
-            animation: animInfo.animation,
-            totalDuration: animInfo.totalDuration,
-            rotation: flipD ? 1 : flipH && flipV ? 2 : 0,
-            flipH, flipV, flipD,
-          });
-          continue;
-        }
-
-        // Use fast O(1) tileset lookup
-        const tilesetInfo = tilesetLookupMap.get(baseGID);
-        if (!tilesetInfo) continue;
-
-        const tileset = tilesetInfo.tileset;
-        const image = tilesetInfo.image;
-
-        const localTileIndex = baseGID - tileset.firstgid;
-        const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-        const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
-        const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
-
-        const destX = x * window.mapData.tilewidth;
-        const destY = y * window.mapData.tileheight;
-        const tileW = window.mapData.tilewidth;
-        const tileH = window.mapData.tileheight;
-
-        try {
-          drawRotatedTile(ctx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, destX, destY, tileW, tileH, flipH, flipV, flipD);
-        } catch (drawError) {
-            console.error(`Error drawing tile at (${x}, ${y}) in layer "${layer.name}":`, drawError);
-        }
-
-        tileCount++;
-
-        // Yield to browser every TILES_PER_FRAME tiles to keep frame rate smooth
-        if (!skipYield && tileCount % TILES_PER_FRAME === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
-      }
-    }
-  }
-
-  // Order animated tiles by layer zIndex so stacked animations draw correctly.
-  animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
-  chunkData.animatedTiles = animatedTiles;
-
-  return { segmentCanvases };
-}
-
-// Incrementally re-composite specific cells of an already-baked chunk. Used by the
-// tile editor so placing/erasing a tile only redraws the affected cells instead of
-// re-baking the entire chunk (which is far too expensive for interactive editing).
-// Mirrors the per-cell logic of renderChunkToCanvas (layer filtering, lower/upper
-// split, animated-tile handling) so results match a full re-bake.
-export function redrawChunkCells(chunkData: ChunkData, cells: Array<{ x: number; y: number }>): void {
-  if (!window.mapData || !chunkData.segmentCanvases || chunkData.segmentCanvases.length === 0) return;
-
-  const cuts: LayerCut[] = window.mapData.layerCuts || computeLayerCuts(chunkData.layers);
-  const segmentCtxs: CanvasRenderingContext2D[] = [];
-  for (const segCanvas of chunkData.segmentCanvases) {
-    const segCtx = segCanvas.getContext("2d");
-    if (!segCtx) return;
-    segCtx.imageSmoothingEnabled = false;
-    segmentCtxs.push(segCtx);
-  }
-
-  const tilewidth = window.mapData.tilewidth;
-  const tileheight = window.mapData.tileheight;
-
-  const tilesetLookupMap = getTilesetLookupMap();
-  const animatedTileLookup = getAnimatedTileLookup();
-
-  const sortedLayers = [...chunkData.layers].sort((a, b) => a.zIndex - b.zIndex);
-  chunkData.sortedLayers = sortedLayers;
-  if (!chunkData.animatedTiles) chunkData.animatedTiles = [];
-
-  for (const cell of cells) {
-    const { x, y } = cell;
-    if (x < 0 || y < 0 || x >= chunkData.width || y >= chunkData.height) continue;
-
-    const px = x * tilewidth;
-    const py = y * tileheight;
-
-    for (const segCtx of segmentCtxs) {
-      segCtx.clearRect(px, py, tilewidth, tileheight);
-    }
-
-    // Drop animated-tile records previously registered at this cell.
-    chunkData.animatedTiles = chunkData.animatedTiles.filter((at) => !(at.destX === px && at.destY === py));
-
-    for (const layer of sortedLayers) {
-      const layerName = layer.name ? layer.name.toLowerCase() : '';
-      if (layerName.includes('collision') || layerName.includes('nopvp') || layerName.includes('no-pvp') || layerName.includes('shadow')) continue;
-
-      const tileEditor = (window as any).tileEditor;
-      if (tileEditor?.isActive && !tileEditor.isLayerVisible(layer.name)) continue;
-
-      const tileIndex = layer.data[y * chunkData.width + x];
-      if (tileIndex === 0) continue;
-
-      const baseGID = getBaseGID(tileIndex);
-      const { flipH, flipV, flipD } = getTileFlags(tileIndex);
-
-      const segment = Math.min(segmentIndexForZ(Number(layer.zIndex), cuts), segmentCtxs.length - 1);
-
-      const animInfo = animatedTileLookup.get(baseGID);
-      if (animInfo) {
-        chunkData.animatedTiles.push({
-          segment,
-          zIndex: layer.zIndex,
-          destX: px,
-          destY: py,
-          tilesetIndex: animInfo.tilesetIndex,
-          tileset: animInfo.tileset,
-          animation: animInfo.animation,
-          totalDuration: animInfo.totalDuration,
-          rotation: flipD ? 1 : flipH && flipV ? 2 : 0,
-          flipH, flipV, flipD,
-        });
-        continue;
-      }
-
-      const tilesetInfo = tilesetLookupMap.get(baseGID);
-      if (!tilesetInfo) continue;
-
-      const tileset = tilesetInfo.tileset;
-      const image = tilesetInfo.image;
-      const localTileIndex = baseGID - tileset.firstgid;
-      const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-      const srcX = (localTileIndex % tilesPerRow) * tileset.tilewidth;
-      const srcY = Math.floor(localTileIndex / tilesPerRow) * tileset.tileheight;
-
-      const targetCtx = segmentCtxs[segment];
-      try {
-        drawRotatedTile(targetCtx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, px, py, tilewidth, tileheight, flipH, flipV, flipD);
-      } catch (drawError) {
-        console.error(`Error drawing tile at (${x}, ${y}) in layer "${layer.name}":`, drawError);
-      }
-    }
-  }
-
-  chunkData.animatedTiles.sort((a, b) => a.zIndex - b.zIndex);
-  bakeChunkShadowEdges(chunkData);
-
-  // Edits touching the chunk's edge can change what neighboring chunks see in
-  // their silhouette aprons, so re-bake their shadow edges too.
-  const touchesBorder = cells.some((c) =>
-    c.x <= 0 || c.y <= 0 || c.x >= chunkData.width - 1 || c.y >= chunkData.height - 1
-  );
-  if (touchesBorder) {
-    const chunkX = chunkData.chunkX ?? Math.floor(chunkData.startX / chunkData.width);
-    const chunkY = chunkData.chunkY ?? Math.floor(chunkData.startY / chunkData.height);
-    rebakeNeighborShadowEdges(chunkX, chunkY);
-  }
-}
-
 // Create an empty in-memory chunk, used by the editor when painting into the
 // infinite zone beyond the currently-loaded chunks. Its layer structure is
 // cloned from an existing loaded chunk so it matches the rest of the map.
@@ -1218,16 +865,7 @@ function createEmptyChunk(chunkX: number, chunkY: number): any | null {
     locked: l.locked,
   }));
 
-  const pixelW = chunkSize * window.mapData.tilewidth;
-  const pixelH = chunkSize * window.mapData.tileheight;
-  const cuts: LayerCut[] = window.mapData.layerCuts || computeLayerCuts(layers);
-  const segmentCanvases: HTMLCanvasElement[] = [];
-  for (let i = 0; i <= cuts.length; i++) {
-    const segCanvas = document.createElement("canvas");
-    segCanvas.width = pixelW;
-    segCanvas.height = pixelH;
-    segmentCanvases.push(segCanvas);
-  }
+  if (!window.mapData.layerCuts) window.mapData.layerCuts = computeLayerCuts(layers);
 
   const chunk: any = {
     chunkX, chunkY,
@@ -1238,12 +876,10 @@ function createEmptyChunk(chunkX: number, chunkY: number): any | null {
     tilewidth: window.mapData.tilewidth,
     tileheight: window.mapData.tileheight,
     layers,
-    segmentCanvases,
-    canvas: segmentCanvases[0],
-    animatedTiles: [],
   };
 
   window.mapData.loadedChunks.set(`${chunkX}-${chunkY}`, chunk);
+  installedChunks.add(chunk);
   return chunk;
 }
 
@@ -1303,225 +939,5 @@ export function ensureChunkForTile(worldTileX: number, worldTileY: number): { ch
   return { chunk, chunkX, chunkY, localX, localY };
 }
 
-function getChunkCanvas(chunkX: number, chunkY: number): HTMLCanvasElement | null {
-  if (!window.mapData) return null;
 
-  const chunkKey = `${chunkX}-${chunkY}`;
-  const chunk = window.mapData.loadedChunks.get(chunkKey);
-
-  return chunk?.canvas || null;
-}
-
-export function disposeChunkCanvases(chunkData: ChunkData): void {
-  if (chunkData.segmentCanvases) {
-    for (const c of chunkData.segmentCanvases) {
-      c.width = 0;
-      c.height = 0;
-    }
-    chunkData.segmentCanvases.length = 0;
-  }
-  if (chunkData.shadowLayers) {
-    for (const sl of chunkData.shadowLayers) {
-      sl.canvas.width = 0;
-      sl.canvas.height = 0;
-    }
-    chunkData.shadowLayers = undefined;
-  }
-  chunkData.animatedTiles = [];
-  chunkData.canvas = undefined;
-}
-
-async function rebakeAllChunks() {
-  if (!window.mapData) return;
-
-  const chunks = [...window.mapData.loadedChunks.values()];
-  for (const chunkData of chunks) {
-    try {
-      const { segmentCanvases } = await renderChunkToCanvas(chunkData);
-      chunkData.segmentCanvases = segmentCanvases;
-      chunkData.canvas = segmentCanvases[0];
-      bakeChunkShadowEdges(chunkData);
-    } catch (error) {
-      console.error('Error rebaking chunk:', error);
-    }
-  }
-}
-
-function bakeChunkShadowEdges(chunkData: ChunkData): void {
-  if (!window.mapData) return;
-  const shadowLayerNames = window.mapData.shadowLayerNames;
-  if (!shadowLayerNames || shadowLayerNames.length === 0) {
-    chunkData.shadowLayers = undefined;
-    return;
-  }
-
-  const shadowNameSet = new Set(shadowLayerNames.map((n: string) => n.toLowerCase()));
-  const shadowLayers = chunkData.layers.filter((l: any) =>
-    l.name && shadowNameSet.has(l.name.toLowerCase())
-  );
-  if (shadowLayers.length === 0) {
-    chunkData.shadowLayers = undefined;
-    return;
-  }
-
-  const tw = window.mapData.tilewidth;
-  const th = window.mapData.tileheight;
-  const pw = chunkData.width * tw;
-  const ph = chunkData.height * th;
-
-  // Silhouettes are baked with a padded apron of neighbor-chunk tiles so the
-  // bottom-edge trim and blur see shapes that continue across chunk borders;
-  // the result is cropped back to the chunk rect so adjacent chunks never
-  // overlap (which would double-darken the translucent shadows).
-  const bottomTrim = SHADOW_MAX_OFFSET + 2;
-  const pad = bottomTrim + 4;
-  const cw = pw + pad * 2;
-  const ch = ph + pad * 2;
-
-  const chunkX = chunkData.chunkX ?? Math.floor(chunkData.startX / chunkData.width);
-  const chunkY = chunkData.chunkY ?? Math.floor(chunkData.startY / chunkData.height);
-
-  // O(1) tileset lookup (memoized per map)
-  const tsInfo = getTilesetLookupMap();
-
-  if (chunkData.shadowLayers) {
-    for (const sl of chunkData.shadowLayers) {
-      sl.canvas.width = 0;
-      sl.canvas.height = 0;
-    }
-  }
-
-  const canvases: Array<{ canvas: HTMLCanvasElement; zIndex: number }> = [];
-
-  // Produce one silhouette canvas per shadow layer
-  for (const sl of shadowLayers) {
-    if (!sl.data) continue;
-
-    // Gather this chunk's layer plus the same layer from any loaded neighbor
-    // chunk, positioned so tiles near the shared border land in the apron.
-    const sources: Array<{ data: number[]; w: number; h: number; offX: number; offY: number }> = [
-      { data: sl.data, w: chunkData.width, h: chunkData.height, offX: pad, offY: pad },
-    ];
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const neighbor = window.mapData.loadedChunks.get(`${chunkX + dx}-${chunkY + dy}`);
-        const nl = neighbor?.layers?.find((l: any) => l.name === sl.name);
-        if (!nl?.data) continue;
-        sources.push({
-          data: nl.data,
-          w: neighbor.width,
-          h: neighbor.height,
-          offX: pad + (dx === -1 ? -neighbor.width * tw : dx * pw),
-          offY: pad + (dy === -1 ? -neighbor.height * th : dy * ph),
-        });
-      }
-    }
-
-    let sil: HTMLCanvasElement | null = null;
-    let sctx: CanvasRenderingContext2D | null = null;
-
-    for (const src of sources) {
-      const startTx = Math.max(0, Math.floor(-src.offX / tw));
-      const endTx = Math.min(src.w - 1, Math.ceil((cw - src.offX) / tw) - 1);
-      const startTy = Math.max(0, Math.floor(-src.offY / th));
-      const endTy = Math.min(src.h - 1, Math.ceil((ch - src.offY) / th) - 1);
-      for (let y = startTy; y <= endTy; y++) {
-        for (let x = startTx; x <= endTx; x++) {
-          const gid = src.data[y * src.w + x];
-          if (gid === 0) continue;
-          const info = tsInfo.get(gid & 0x0FFFFFFF);
-          if (!info) continue;
-          if (!sctx || !sil) {
-            sil = document.createElement('canvas');
-            sil.width = cw; sil.height = ch;
-            sctx = sil.getContext('2d')!;
-            sctx.imageSmoothingEnabled = false;
-          }
-          const ts = info.tileset; const img = info.image;
-          const li = (gid & 0x0FFFFFFF) - ts.firstgid;
-          const tpr = Math.floor(ts.imagewidth / ts.tilewidth);
-          sctx.drawImage(img,
-            (li % tpr) * ts.tilewidth,
-            Math.floor(li / tpr) * ts.tileheight,
-            ts.tilewidth, ts.tileheight,
-            src.offX + x * tw, src.offY + y * th, tw, th);
-        }
-      }
-    }
-
-    if (!sil || !sctx) continue;
-
-    // Convert colored tiles to solid black silhouette
-    sctx.globalCompositeOperation = 'source-in';
-    sctx.fillStyle = '#000000';
-    sctx.fillRect(0, 0, cw, ch);
-
-    // Objects don't cast from their base: erode the silhouette's bottom edges by
-    // the maximum downward sun offset (+ blur radius), keeping only pixels that
-    // still have silhouette material that far below them. This stops the
-    // translated silhouette's bottom outline from protruding beneath the object.
-    const trimmed = document.createElement('canvas');
-    trimmed.width = cw; trimmed.height = ch;
-    const tctx = trimmed.getContext('2d')!;
-    tctx.drawImage(sil, 0, 0);
-    tctx.globalCompositeOperation = 'destination-in';
-    tctx.drawImage(sil, 0, -bottomTrim);
-
-    // Blur for soft shadow edges
-    const blurred = document.createElement('canvas');
-    blurred.width = cw; blurred.height = ch;
-    const bctx = blurred.getContext('2d')!;
-    bctx.filter = 'blur(2px)';
-    bctx.drawImage(trimmed, 0, 0);
-
-    // Crop the apron away so the stored canvas maps 1:1 onto the chunk rect
-    const cropped = document.createElement('canvas');
-    cropped.width = pw; cropped.height = ph;
-    const cctx = cropped.getContext('2d')!;
-    cctx.drawImage(blurred, pad, pad, pw, ph, 0, 0, pw, ph);
-
-    canvases.push({ canvas: cropped, zIndex: Number(sl.zIndex) });
-
-    sil.width = 0; sil.height = 0;
-    trimmed.width = 0; trimmed.height = 0;
-    blurred.width = 0; blurred.height = 0;
-  }
-
-  chunkData.shadowLayers = canvases.length > 0 ? canvases : undefined;
-}
-
-// True when any shadow layer has a tile in the chunk's outermost tile ring -
-// only then can this chunk's content affect a neighbor's baked silhouette apron.
-function hasShadowTilesNearBorder(chunkData: ChunkData): boolean {
-  const shadowLayerNames = window.mapData?.shadowLayerNames;
-  if (!shadowLayerNames || shadowLayerNames.length === 0) return false;
-  const shadowNameSet = new Set(shadowLayerNames.map((n: string) => n.toLowerCase()));
-  const w = chunkData.width;
-  const h = chunkData.height;
-  for (const l of chunkData.layers) {
-    if (!l.name || !shadowNameSet.has(l.name.toLowerCase()) || !l.data) continue;
-    for (let x = 0; x < w; x++) {
-      if (l.data[x] !== 0 || l.data[(h - 1) * w + x] !== 0) return true;
-    }
-    for (let y = 0; y < h; y++) {
-      if (l.data[y * w] !== 0 || l.data[y * w + w - 1] !== 0) return true;
-    }
-  }
-  return false;
-}
-
-// Re-bake the shadow silhouettes of loaded chunks adjacent to (chunkX, chunkY)
-// so shapes spanning chunk borders pick up newly available neighbor context.
-function rebakeNeighborShadowEdges(chunkX: number, chunkY: number): void {
-  if (!window.mapData?.shadowLayerNames?.length) return;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const neighbor = window.mapData.loadedChunks.get(`${chunkX + dx}-${chunkY + dy}`);
-      if (neighbor) bakeChunkShadowEdges(neighbor);
-    }
-  }
-}
-
-export { clearMapCache, renderChunkToCanvas, clearChunkFromCache, isChunkCached, rebakeAllChunks, bakeChunkShadowEdges };
+export { clearMapCache, clearChunkFromCache, isChunkCached };

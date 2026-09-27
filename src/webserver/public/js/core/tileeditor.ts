@@ -1,6 +1,7 @@
 import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox, shadowsDebugCheckbox } from "./ui.js";
-import { renderChunkToCanvas, redrawChunkCells, ensureChunkForTile, parseChunkKey, clearChunkFromCache, rebakeAllChunks } from "./map.js";
+import { ensureChunkForTile, parseChunkKey, clearChunkFromCache } from "./map.js";
+import { invalidateChunk } from "./glmap/index.js";
 import { panEditorCamera } from "./renderer.js";
 
 declare global {
@@ -253,8 +254,6 @@ class TileEditor {
   private async restoreLayerSnapshot() {
     if (!window.mapData || !this.layerDataSnapshot) return;
 
-    const rebakes: Promise<void>[] = [];
-
     for (const chunkKey of this.modifiedChunkKeys) {
       const chunkData = window.mapData.loadedChunks.get(chunkKey);
       const savedLayers = this.layerDataSnapshot.get(chunkKey);
@@ -269,15 +268,9 @@ class TileEditor {
         }
       }
 
-      rebakes.push(
-        renderChunkToCanvas(chunkData, true).then(({ segmentCanvases }) => {
-          chunkData.segmentCanvases = segmentCanvases;
-          chunkData.canvas = segmentCanvases[0];
-        })
-      );
+      invalidateChunk(chunkData);
     }
 
-    await Promise.all(rebakes);
     this.layerDataSnapshot = null;
   }
 
@@ -357,10 +350,8 @@ class TileEditor {
           this.selectLayer(msg.layerName);
           break;
         case 'layerToggle':
+          // The map renderer reads layer visibility every frame.
           this.layerVisibility.set(msg.layerName, msg.visible);
-          if (msg.visible) {
-            rebakeAllChunks();
-          }
           break;
         case 'layerLock': {
           this.layerLocked.set(msg.layerName, msg.locked);
@@ -2085,19 +2076,15 @@ class TileEditor {
     this.sendTileEdits([{ chunkX, chunkY, layerName: this.selectedLayer as string, x: localTileX, y: localTileY, tileId: this.copiedTile as number }]);
   }
 
-  // Incrementally redraw only the given local cells of a chunk's canvases. Falls
-  // back to a full (async) re-bake if the chunk's canvases aren't ready yet.
+  // Push edited cells to the GPU: the chunk's tile data is re-uploaded on the
+  // next frame (a few KB, so the whole chunk is sent rather than single cells).
   private redrawCells(chunkX: number, chunkY: number, cells: Array<{ x: number; y: number }>) {
     if (!window.mapData || cells.length === 0) return;
     const chunkKey = `${chunkX}-${chunkY}`;
     this.modifiedChunkKeys.add(chunkKey);
     const chunk = window.mapData.loadedChunks.get(chunkKey);
     if (!chunk) return;
-    if (!chunk.segmentCanvases || chunk.segmentCanvases.length === 0) {
-      this.rerenderChunk(chunkX, chunkY);
-      return;
-    }
-    redrawChunkCells(chunk, cells);
+    invalidateChunk(chunk);
   }
 
   private getLineTiles(x0: number, y0: number, x1: number, y1: number): { x: number, y: number }[] {
@@ -2317,19 +2304,6 @@ class TileEditor {
         layer.locked = locked;
       }
     }
-  }
-
-  private async rerenderChunk(chunkX: number, chunkY: number) {
-    if (!window.mapData) return;
-
-    const chunkKey = `${chunkX}-${chunkY}`;
-    const chunk = window.mapData.loadedChunks.get(chunkKey);
-    if (!chunk) return;
-
-    const { segmentCanvases } = await renderChunkToCanvas(chunk);
-    chunk.segmentCanvases = segmentCanvases;
-    chunk.canvas = segmentCanvases[0];
-
   }
 
   private clearAllEdits() {

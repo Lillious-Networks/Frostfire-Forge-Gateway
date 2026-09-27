@@ -4,6 +4,7 @@ import { serverTime } from "./ui.js";
 import { getCorpseMarkerTarget } from "./death.js";
 import { getCachedImage } from "./images.js";
 import { getSkeletonSpriteUrl } from "./skeletons.js";
+import { renderMinimapMap } from "./glmap/index.js";
 
 const cache = Cache.getInstance();
 
@@ -70,66 +71,6 @@ function createMinimap() {
 
   requestAnimationFrame(minimapLoop);
 }
-
-// Draws a static first-frame representation of a chunk's animated tiles onto the
-// minimap buffer. The minimap never animates; it always shows animation frame 0.
-function drawChunkAnimatedFirstFrames(chunkData: any, bufX: number, bufY: number, scale: number) {
-  if (!bufferCtx || !window.mapData) return;
-  const animatedTiles = chunkData?.animatedTiles;
-  if (!animatedTiles || animatedTiles.length === 0) return;
-
-  const destW = window.mapData.tilewidth * scale;
-  const destH = window.mapData.tileheight * scale;
-
-  for (const at of animatedTiles) {
-    const image = window.mapData.images[at.tilesetIndex];
-    if (!image || !image.complete || image.naturalWidth === 0) continue;
-
-    const tileset = at.tileset;
-    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-    if (tilesPerRow <= 0) continue;
-
-    const firstTileId = at.animation[0]?.tileid ?? 0;
-    const srcX = (firstTileId % tilesPerRow) * tileset.tilewidth;
-    const srcY = Math.floor(firstTileId / tilesPerRow) * tileset.tileheight;
-
-    const destBX = bufX + at.destX * scale;
-    const destBY = bufY + at.destY * scale;
-    const flipH = at.flipH || false;
-    const flipV = at.flipV || false;
-    const flipD = at.flipD || false;
-
-    if (flipH || flipV || flipD) {
-      const cx = destBX + destW / 2;
-      const cy = destBY + destH / 2;
-      let rot = 0;
-      let effH = flipH;
-      let effV = flipV;
-      if (flipD) { rot = Math.PI / 2; effH = flipV; effV = !flipH; }
-      bufferCtx.save();
-      bufferCtx.translate(cx, cy);
-      if (rot !== 0) bufferCtx.rotate(rot);
-      bufferCtx.scale(effH ? -1 : 1, effV ? -1 : 1);
-      bufferCtx.drawImage(
-        image,
-        srcX, srcY,
-        tileset.tilewidth, tileset.tileheight,
-        -destW / 2, -destH / 2,
-        destW, destH,
-      );
-      bufferCtx.restore();
-    } else {
-      bufferCtx.drawImage(
-        image,
-        srcX, srcY,
-        tileset.tilewidth, tileset.tileheight,
-        destBX, destBY,
-        destW, destH,
-      );
-    }
-  }
-}
-
 function renderMinimap() {
   if (!minimapCtx || !window.mapData) return;
 
@@ -158,8 +99,6 @@ function renderMinimap() {
   const worldLeft = playerX - worldViewWidth / 2;
   const worldTop = playerY - worldViewHeight / 2;
 
-  const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
-
   // Compose all chunks into the offscreen buffer
   bufferCtx.clearRect(0, 0, BUFFER_SIZE, BUFFER_SIZE);
   bufferCtx.fillStyle = "#0a0a0a";
@@ -181,43 +120,11 @@ function renderMinimap() {
   bufferCtx.rect(mapBufX, mapBufY, mapBufW, mapBufH);
   bufferCtx.clip();
 
-  window.mapData.loadedChunks.forEach((chunkData: any, _chunkKey: string) => {
-    const cx = chunkData.chunkX;
-    const cy = chunkData.chunkY;
-    const chunkWorldX = cx * chunkPixelSize;
-    const chunkWorldY = cy * chunkPixelSize;
-
-    if (
-      chunkWorldX + chunkPixelSize < worldLeft ||
-      chunkWorldX > worldLeft + worldViewWidth ||
-      chunkWorldY + chunkPixelSize < worldTop ||
-      chunkWorldY > worldTop + worldViewHeight
-    ) {
-      return;
-    }
-
-    const bufX = (chunkWorldX - worldLeft) * scale;
-    const bufY = (chunkWorldY - worldTop) * scale;
-    const actualW = chunkData.width * window.mapData.tilewidth;
-    const actualH = chunkData.height * window.mapData.tileheight;
-    const bufW = actualW * scale;
-    const bufH = actualH * scale;
-
-    const segmentCanvases = chunkData.segmentCanvases;
-    if (segmentCanvases) {
-      for (const segmentCanvas of segmentCanvases) {
-        bufferCtx.drawImage(
-          segmentCanvas,
-          0, 0, segmentCanvas.width, segmentCanvas.height,
-          bufX, bufY, bufW, bufH,
-        );
-      }
-    }
-
-    // Animated tiles are skipped during static chunk baking, so draw a static
-    // first-frame version of each onto the minimap buffer.
-    drawChunkAnimatedFirstFrames(chunkData, bufX, bufY, scale);
-  });
+  // Tile layers of the loaded chunks, rendered on the GPU at world resolution
+  // and scaled into the buffer (glmap).
+  const tileEditor = (window as any).tileEditor;
+  renderMinimapMap(bufferCtx, worldLeft, worldTop, worldViewWidth, worldViewHeight, 0, 0, BUFFER_SIZE, BUFFER_SIZE,
+    tileEditor?.isActive ? (name: string) => tileEditor.isLayerVisible(name) : null);
 
   bufferCtx.restore();
 

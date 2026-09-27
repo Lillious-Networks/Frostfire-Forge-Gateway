@@ -13,7 +13,8 @@ let currentWeatherData = null as any; // Store full weather object for wind spee
 const cache = Cache.getInstance();
 import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js";
 import { updateWeatherCanvas, weather } from './weather.ts';
-import { renderShadows } from './shadows.js';
+import { getShadowParams, SHADOW_MAX_OFFSET } from './shadows.js';
+import { renderMapPass, setShadowMaxOffset } from './glmap/index.js';
 import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
 import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
@@ -38,7 +39,6 @@ const chunkLoadTimes = new Map<string, number>();
 const CHUNK_FADE_DURATION = 0.5; // Fade duration in seconds
 
 // Tileset lookup cache for fast tile->tileset resolution
-let tilesetLookupCache: Map<number, {tileset: any, index: number}> = new Map();
 
 import { canvas, ctx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, fpsSlider, healthBar, staminaBar, collisionDebugCheckbox, chunkOutlineDebugCheckbox, collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText } from "./ui.js";
 
@@ -274,26 +274,8 @@ async function loadVisibleChunks() {
     }
   }
 
+  // The map renderer frees a chunk's GPU texture once it leaves loadedChunks.
   for (const chunkKey of chunksToUnload) {
-    const chunkData = window.mapData.loadedChunks.get(chunkKey);
-    if (chunkData) {
-      if (chunkData.segmentCanvases) {
-        for (const c of chunkData.segmentCanvases) {
-          c.width = 0;
-          c.height = 0;
-        }
-        chunkData.segmentCanvases.length = 0;
-      }
-      if (chunkData.shadowLayers) {
-        for (const sl of chunkData.shadowLayers) {
-          sl.canvas.width = 0;
-          sl.canvas.height = 0;
-        }
-        chunkData.shadowLayers = undefined;
-      }
-      chunkData.animatedTiles = [];
-      chunkData.canvas = undefined;
-    }
     window.mapData.loadedChunks.delete(chunkKey);
     loadedChunksSet.delete(chunkKey);
     chunkLoadTimes.delete(chunkKey);
@@ -316,6 +298,11 @@ async function loadVisibleChunks() {
   }
 
   if (chunksToLoad.length > 0) {
+    // Request the nearest chunks first so they arrive first.
+    const distanceToCamera = (c: { x: number; y: number }) =>
+      Math.hypot((c.x + 0.5) * chunkPixelSize - cameraX, (c.y + 0.5) * chunkPixelSize - cameraY);
+    chunksToLoad.sort((a, b) => distanceToCamera(a) - distanceToCamera(b));
+
     const loadPromises = chunksToLoad.map(chunk =>
       window.mapData.requestChunk(chunk.x, chunk.y)
         .then((chunkData: any) => {
@@ -335,74 +322,6 @@ async function loadVisibleChunks() {
 }
 
 let chunkLoadThrottle = 0;
-
-function segmentForZ(z: number, cuts: Array<{ key: number }>): number {
-  let i = 0;
-  while (i < cuts.length && z > cuts[i].key) i++;
-  return i;
-}
-
-function drawAllLayersWithOpacity(segment: number, cuts: Array<{ key: number }>, visibleChunks: any[], offsetX: number, offsetY: number, selectedLayerName: string) {
-  if (!ctx || !window.mapData) return;
-
-  const now = performance.now();
-
-  for (const chunk of visibleChunks) {
-    const chunkKey = `${chunk.x}-${chunk.y}`;
-    const chunkData = window.mapData.loadedChunks.get(chunkKey);
-    if (!chunkData) continue;
-
-    const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
-    const chunkWorldX = chunk.x * chunkPixelSize;
-    const chunkWorldY = chunk.y * chunkPixelSize;
-
-    const screenX = chunkWorldX + offsetX;
-    const screenY = chunkWorldY + offsetY;
-
-    // Get the appropriate pre-rendered chunk segment canvas
-    const chunkCanvas = chunkData.segmentCanvases?.[segment];
-
-    if (!chunkCanvas) continue;
-
-    // Chunks cache their z-sorted layer order at bake time; only sort here for
-    // chunks baked before that caching existed (or editor-mutated chunks).
-    const sortedLayers = (chunkData as any).sortedLayers
-      || [...chunkData.layers].sort((a: any, b: any) => a.zIndex - b.zIndex);
-    const tileEditor = (window as any).tileEditor;
-
-    // Check whether any visible layer lives here (collision/no-pvp are excluded unless selected).
-    let hasVisibleLayer = false;
-
-    for (const chunkLayer of sortedLayers) {
-      const belongsToThisCanvas = segmentForZ(Number(chunkLayer.zIndex), cuts) === segment;
-
-      if (!belongsToThisCanvas) continue;
-
-      const layerNameLower = chunkLayer.name.toLowerCase();
-      const isCollisionOrNoPvp = layerNameLower.includes('collision') ||
-        layerNameLower.includes('nopvp') || layerNameLower.includes('no-pvp') || layerNameLower.includes('shadow');
-
-      if (isCollisionOrNoPvp && chunkLayer.name !== selectedLayerName) continue;
-
-      const isLayerVisible = tileEditor?.isLayerVisible(chunkLayer.name) ?? true;
-      if (isLayerVisible) {
-        hasVisibleLayer = true;
-      }
-    }
-
-    if (hasVisibleLayer) {
-      try {
-        ctx.globalAlpha = 1.0;
-        ctx.drawImage(chunkCanvas, screenX, screenY);
-        drawChunkAnimatedTiles(chunkData, segment, screenX, screenY, 1.0, now);
-      } catch (error) {
-        console.error("Error drawing chunk canvas:", error);
-      }
-    }
-  }
-
-  ctx.globalAlpha = 1;
-}
 
 function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: number, offsetY: number) {
   if (!window.mapData) return;
@@ -674,108 +593,10 @@ function renderGraveyardsAndWarps(renderCtx: CanvasRenderingContext2D, offsetX: 
   }
 }
 
-// Build a fast tileset lookup map: tileIndex -> {tileset, tilesetIndex}
-function buildTilesetLookupMap(): Map<number, {tileset: any, index: number}> {
-  const map = new Map<number, {tileset: any, index: number}>();
-  if (!window.mapData?.tilesets) return map;
-
-  for (let i = 0; i < window.mapData.tilesets.length; i++) {
-    const ts = window.mapData.tilesets[i];
-    for (let tileIdx = ts.firstgid; tileIdx < ts.firstgid + ts.tilecount; tileIdx++) {
-      map.set(tileIdx, { tileset: ts, index: i });
-    }
-  }
-  return map;
-}
-
-function invalidateTilesetLookupCache() {
-  tilesetLookupCache.clear();
-}
-
 function recordChunkLoadTime(chunkKey: string) {
   if (!chunkLoadTimes.has(chunkKey)) {
     chunkLoadTimes.set(chunkKey, performance.now() / 1000);
   }
-}
-
-// Resolve the active local tile id for a Tiled animation at the given time (ms).
-function getCurrentAnimationTileId(animation: Array<{ tileid: number; duration: number }>, totalDuration: number, now: number): number {
-  if (!animation || animation.length === 0) return 0;
-  if (totalDuration <= 0) return animation[0].tileid;
-  let t = now % totalDuration;
-  for (let i = 0; i < animation.length; i++) {
-    if (t < animation[i].duration) return animation[i].tileid;
-    t -= animation[i].duration;
-  }
-  return animation[animation.length - 1].tileid;
-}
-
-// Draw a chunk's animated tiles (which are skipped during static chunk baking) on
-// top of the matching segment's pre-rendered canvas, at the current frame.
-function drawChunkAnimatedTiles(chunkData: any, segment: number, screenX: number, screenY: number, alpha: number, now: number, targetCtx: CanvasRenderingContext2D | null = ctx) {
-  if (!targetCtx || !window.mapData) return;
-  const animatedTiles = chunkData?.animatedTiles;
-  if (!animatedTiles || animatedTiles.length === 0 || alpha <= 0) return;
-
-  const mapTileW = window.mapData.tilewidth;
-  const mapTileH = window.mapData.tileheight;
-  const prevAlpha = targetCtx.globalAlpha;
-  targetCtx.globalAlpha = alpha;
-
-  for (const at of animatedTiles) {
-    if (at.segment !== segment) continue;
-
-    const image = window.mapData.images[at.tilesetIndex];
-    if (!image || !image.complete || image.naturalWidth === 0) continue;
-
-    const tileset = at.tileset;
-    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-    if (tilesPerRow <= 0) continue;
-
-    const frameTileId = getCurrentAnimationTileId(at.animation, at.totalDuration, now);
-    const srcX = (frameTileId % tilesPerRow) * tileset.tilewidth;
-    const srcY = Math.floor(frameTileId / tilesPerRow) * tileset.tileheight;
-
-    try {
-      const destX = screenX + at.destX;
-      const destY = screenY + at.destY;
-      const flipH = at.flipH || false;
-      const flipV = at.flipV || false;
-      const flipD = at.flipD || false;
-
-      if (flipH || flipV || flipD) {
-        const cx = destX + mapTileW / 2;
-        const cy = destY + mapTileH / 2;
-        let rot = 0;
-        let effH = flipH;
-        let effV = flipV;
-        if (flipD) { rot = Math.PI / 2; effH = flipV; effV = !flipH; }
-        targetCtx.save();
-        targetCtx.translate(cx, cy);
-        if (rot !== 0) targetCtx.rotate(rot);
-        targetCtx.scale(effH ? -1 : 1, effV ? -1 : 1);
-        targetCtx.drawImage(
-          image, srcX, srcY,
-          tileset.tilewidth, tileset.tileheight,
-          -mapTileW / 2, -mapTileH / 2,
-          mapTileW, mapTileH
-        );
-        targetCtx.restore();
-      } else {
-        targetCtx.drawImage(
-          image,
-          srcX, srcY,
-          tileset.tilewidth, tileset.tileheight,
-          destX, destY,
-          mapTileW, mapTileH
-        );
-      }
-    } catch {
-      // Ignore individual animated tile draw errors
-    }
-  }
-
-  targetCtx.globalAlpha = prevAlpha;
 }
 
 // Draws the Tiled-style "infinite paint zone" outside the current map bounds while
@@ -840,22 +661,14 @@ function renderInfiniteZone() {
   ctx.restore();
 }
 
-// Renders the map's baked zIndex segments in order, drawing each shadow layer's
-// dynamic silhouette at its own zIndex between segments. The 'below' phase draws
-// every segment up to the player cut (zIndex < PLAYER_Z_INDEX); the 'above' phase
-// draws the remaining segments.
+setShadowMaxOffset(SHADOW_MAX_OFFSET);
+
+// Renders the map's tile layers in zIndex order on the GPU (glmap), with each
+// shadow layer's silhouette at its own zIndex. The 'below' phase draws every
+// layer up to the player cut (zIndex < PLAYER_Z_INDEX); the 'above' phase draws
+// the rest.
 function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderingContext2D | null = ctx) {
   if (!targetCtx || !window.mapData) return;
-
-  const cuts: Array<{ key: number; shadowZ: number | null; player: boolean }> = window.mapData.layerCuts || [];
-  let playerCutIndex = cuts.findIndex((c) => c.player);
-  if (playerCutIndex === -1) playerCutIndex = cuts.length;
-
-  const startSegment = phase === 'below' ? 0 : playerCutIndex + 1;
-  const endSegment = phase === 'below' ? playerCutIndex : cuts.length;
-  if (startSegment > endSegment) return;
-
-  const now = performance.now();
 
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
@@ -875,75 +688,40 @@ function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderin
   const offsetX = Math.round(viewportWidth / 2 - smoothMapX + mapCenterOffsetX);
   const offsetY = Math.round(viewportHeight / 2 - smoothMapY + mapCenterOffsetY);
 
-  const visibleChunks = getVisibleChunksCached();
-
   const tileEditor = (window as any).tileEditor;
-  const isEditorActive = tileEditor?.isActive;
-  const selectedLayer = tileEditor?.selectedLayer;
+  const isEditorActive = !!tileEditor?.isActive;
 
-  // Build tileset lookup map for this frame (cached if possible)
-  if (tilesetLookupCache.size === 0) {
-    tilesetLookupCache = buildTilesetLookupMap();
+  // Clip to the map bounds, extended to include any negative/expanded area
+  // while editing an infinite map.
+  const clipMinX = (window.mapData.minTileX ?? 0) * window.mapData.tilewidth;
+  const clipMinY = (window.mapData.minTileY ?? 0) * window.mapData.tileheight;
+
+  let shadow: { offsetX: number; offsetY: number; alpha: number } | null = null;
+  if (getWeatherType() !== "thunderstorm") {
+    const params = getShadowParams();
+    if (params.alpha >= 0.005) shadow = params;
   }
 
-  // Set up clipping region to prevent rendering outside map bounds (extended to
-  // include any negative/expanded area while editing an infinite map).
-  targetCtx.save();
-  targetCtx.beginPath();
-  const clipMinTileX = window.mapData.minTileX ?? 0;
-  const clipMinTileY = window.mapData.minTileY ?? 0;
-  const clipMinX = clipMinTileX * window.mapData.tilewidth;
-  const clipMinY = clipMinTileY * window.mapData.tileheight;
-  targetCtx.rect(offsetX + clipMinX, offsetY + clipMinY, mapWidth - clipMinX, mapHeight - clipMinY);
-  targetCtx.clip();
-
-  const chunkPixelSize = window.mapData.chunkSize * window.mapData.tilewidth;
   const nowSeconds = performance.now() / 1000;
 
-  for (let segment = startSegment; segment <= endSegment; segment++) {
-    if (isEditorActive && selectedLayer) {
-      drawAllLayersWithOpacity(segment, cuts, visibleChunks, offsetX, offsetY, selectedLayer);
-    } else {
-      for (const chunk of visibleChunks) {
-        const chunkKey = `${chunk.x}-${chunk.y}`;
-        const chunkData = window.mapData.loadedChunks.get(chunkKey);
-        if (!chunkData) continue;
-
-        const chunkCanvas = chunkData.segmentCanvases?.[segment];
-        if (!chunkCanvas) continue;
-
-        const screenX = chunk.x * chunkPixelSize + offsetX;
-        const screenY = chunk.y * chunkPixelSize + offsetY;
-
-        // Calculate fade-in alpha based on chunk load time
-        let chunkAlpha = 1;
-        const loadTime = chunkLoadTimes.get(chunkKey);
-        if (loadTime !== undefined) {
-          const elapsed = nowSeconds - loadTime;
-          chunkAlpha = Math.min(elapsed / CHUNK_FADE_DURATION, 1);
-        }
-
-        try {
-          targetCtx.globalAlpha = chunkAlpha;
-          targetCtx.drawImage(chunkCanvas, screenX, screenY);
-          targetCtx.globalAlpha = 1;
-          drawChunkAnimatedTiles(chunkData, segment, screenX, screenY, chunkAlpha, now, targetCtx);
-        } catch (error) {
-          console.error("Error drawing chunk canvas:", error);
-        }
-      }
-    }
-
-    // Draw shadow silhouettes belonging to the cut that ends this segment, so
-    // shadows render at exactly their own layer zIndex.
-    if (segment < cuts.length) {
-      const cut = cuts[segment];
-      if (cut.shadowZ !== null) {
-        renderShadows(targetCtx, visibleChunks, cut.shadowZ, offsetX, offsetY);
-      }
-    }
-  }
-  targetCtx.restore();
+  renderMapPass({
+    phase,
+    target: targetCtx,
+    offsetX,
+    offsetY,
+    visibleChunks: getVisibleChunksCached(),
+    cuts: window.mapData.layerCuts || [],
+    clip: { minX: clipMinX, minY: clipMinY, maxX: mapWidth, maxY: mapHeight },
+    shadow,
+    chunkAlpha: (chunkKey: string) => {
+      // Fade-in based on chunk load time.
+      const loadTime = chunkLoadTimes.get(chunkKey);
+      if (loadTime === undefined || isEditorActive) return 1;
+      return Math.min((nowSeconds - loadTime) / CHUNK_FADE_DURATION, 1);
+    },
+    isLayerVisible: isEditorActive ? (name: string) => tileEditor.isLayerVisible(name) : null,
+    now: performance.now(),
+  });
 }
 
 function renderGroundAoeZones(ctx: CanvasRenderingContext2D, deltaTime: number) {
@@ -2415,7 +2193,6 @@ export {
   resetCameraInitialized,
   setPendingRequest,
   getPendingRequest,
-  invalidateTilesetLookupCache,
   recordChunkLoadTime,
   clearChunkTracking,
   deleteChunkTracking
