@@ -5,6 +5,8 @@ import { getCorpseMarkerTarget } from "./death.js";
 import { getCachedImage } from "./images.js";
 import { getSkeletonSpriteUrl } from "./skeletons.js";
 import { renderMinimapMap } from "./glmap/index.js";
+import { renderMinimapMap as renderMinimapMapMobile } from "./glmap-mobile/index.js";
+import { MOBILE_RENDERER } from "./renderpath.js";
 
 const cache = Cache.getInstance();
 
@@ -47,10 +49,13 @@ function createMinimap() {
   minimapLocationEl.className = "ui";
   minimapContainer.appendChild(minimapLocationEl);
 
-  bufferCanvas = document.createElement("canvas");
-  bufferCanvas.width = BUFFER_SIZE;
-  bufferCanvas.height = BUFFER_SIZE;
-  bufferCtx = bufferCanvas.getContext("2d")!;
+  // Mobile draws the map into its own #minimap-map canvas (no buffer).
+  if (!MOBILE_RENDERER) {
+    bufferCanvas = document.createElement("canvas");
+    bufferCanvas.width = BUFFER_SIZE;
+    bufferCanvas.height = BUFFER_SIZE;
+    bufferCtx = bufferCanvas.getContext("2d")!;
+  }
 
   const overlay = document.getElementById("overlay");
   if (overlay) {
@@ -99,34 +104,42 @@ function renderMinimap() {
   const worldLeft = playerX - worldViewWidth / 2;
   const worldTop = playerY - worldViewHeight / 2;
 
-  // Compose all chunks into the offscreen buffer
-  bufferCtx.clearRect(0, 0, BUFFER_SIZE, BUFFER_SIZE);
-  bufferCtx.fillStyle = "#0a0a0a";
-  bufferCtx.fillRect(0, 0, BUFFER_SIZE, BUFFER_SIZE);
-  bufferCtx.imageSmoothingEnabled = true;
-  bufferCtx.imageSmoothingQuality = "high";
+  if (MOBILE_RENDERER) {
+    // Mobile: glmap-mobile renders the map into #minimap-map, a WebGL canvas
+    // placed under minimapCanvas; this canvas only draws the overlays.
+    const tileEditor = (window as any).tileEditor;
+    renderMinimapMapMobile(minimapCanvas, worldLeft, worldTop, worldViewWidth, worldViewHeight,
+      tileEditor?.isActive ? (name: string) => tileEditor.isLayerVisible(name) : null);
+  } else {
+    // Compose all chunks into the offscreen buffer
+    bufferCtx.clearRect(0, 0, BUFFER_SIZE, BUFFER_SIZE);
+    bufferCtx.fillStyle = "#0a0a0a";
+    bufferCtx.fillRect(0, 0, BUFFER_SIZE, BUFFER_SIZE);
+    bufferCtx.imageSmoothingEnabled = true;
+    bufferCtx.imageSmoothingQuality = "high";
 
-  const mapPixelWidth = window.mapData.width * window.mapData.tilewidth;
-  const mapPixelHeight = window.mapData.height * window.mapData.tileheight;
-  const scale = BUFFER_SIZE / worldViewWidth;
+    const mapPixelWidth = window.mapData.width * window.mapData.tilewidth;
+    const mapPixelHeight = window.mapData.height * window.mapData.tileheight;
+    const scale = BUFFER_SIZE / worldViewWidth;
 
-  const mapBufX = (0 - worldLeft) * scale;
-  const mapBufY = (0 - worldTop) * scale;
-  const mapBufW = mapPixelWidth * scale;
-  const mapBufH = mapPixelHeight * scale;
+    const mapBufX = (0 - worldLeft) * scale;
+    const mapBufY = (0 - worldTop) * scale;
+    const mapBufW = mapPixelWidth * scale;
+    const mapBufH = mapPixelHeight * scale;
 
-  bufferCtx.save();
-  bufferCtx.beginPath();
-  bufferCtx.rect(mapBufX, mapBufY, mapBufW, mapBufH);
-  bufferCtx.clip();
+    bufferCtx.save();
+    bufferCtx.beginPath();
+    bufferCtx.rect(mapBufX, mapBufY, mapBufW, mapBufH);
+    bufferCtx.clip();
 
-  // Tile layers of the loaded chunks, rendered on the GPU at world resolution
-  // and scaled into the buffer (glmap).
-  const tileEditor = (window as any).tileEditor;
-  renderMinimapMap(bufferCtx, worldLeft, worldTop, worldViewWidth, worldViewHeight, 0, 0, BUFFER_SIZE, BUFFER_SIZE,
-    tileEditor?.isActive ? (name: string) => tileEditor.isLayerVisible(name) : null);
+    // Tile layers of the loaded chunks, rendered on the GPU at world resolution
+    // and scaled into the buffer (glmap).
+    const tileEditor = (window as any).tileEditor;
+    renderMinimapMap(bufferCtx, worldLeft, worldTop, worldViewWidth, worldViewHeight, 0, 0, BUFFER_SIZE, BUFFER_SIZE,
+      tileEditor?.isActive ? (name: string) => tileEditor.isLayerVisible(name) : null);
 
-  bufferCtx.restore();
+    bufferCtx.restore();
+  }
 
   // Draw the composited buffer onto the minimap
   const ctx = minimapCtx;
@@ -140,9 +153,11 @@ function renderMinimap() {
   ctx.arc(halfSize, halfSize, radius, 0, Math.PI * 2);
   ctx.clip();
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(bufferCanvas, 0, 0, BUFFER_SIZE, BUFFER_SIZE, 0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+  if (!MOBILE_RENDERER) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(bufferCanvas, 0, 0, BUFFER_SIZE, BUFFER_SIZE, 0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+  }
 
   // Tinted overlay to desaturate and give a map-like feel
   ctx.globalAlpha = 0.35;

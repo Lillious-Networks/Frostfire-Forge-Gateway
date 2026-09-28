@@ -2503,23 +2503,24 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "MOVEXY": {
       if (data instanceof Uint8Array || data instanceof ArrayBuffer) {
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-        if (bytes.length < 11) break;
+        // [u8 header][u32 id][i32 x][i32 y][u8 dir|stealth][u8 pad][u32 s][u16 ms]
+        if (bytes.length < 15) break;
 
         const DIRECTION_MAP = [
           "up", "down", "left", "right",
           "upleft", "upright", "downleft", "downright"
         ];
 
-        const view = new DataView(bytes.buffer, bytes.byteOffset, 11);
+        const view = new DataView(bytes.buffer, bytes.byteOffset, 15);
         const playerId = view.getUint32(1, true);
-        const x = view.getInt16(5, true);
-        const y = view.getInt16(7, true);
-        const dirStealth = bytes[9];
+        const x = view.getInt32(5, true);
+        const y = view.getInt32(9, true);
+        const dirStealth = bytes[13];
         const direction = dirStealth & 0x0F;
         const stealth = (dirStealth >> 4) & 0x0F;
         // Trailing server send time: [u32 seconds][u16 ms].
-        const sentAt = bytes.length >= 17
-          ? new DataView(bytes.buffer, bytes.byteOffset).getUint32(11, true) * 1000 + new DataView(bytes.buffer, bytes.byteOffset).getUint16(15, true)
+        const sentAt = bytes.length >= 21
+          ? new DataView(bytes.buffer, bytes.byteOffset).getUint32(15, true) * 1000 + new DataView(bytes.buffer, bytes.byteOffset).getUint16(19, true)
           : undefined;
 
         data = {
@@ -2605,14 +2606,14 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             const playerId = idView.getUint32(0, true);
             offset += 4;
 
-            if (offset + 5 > bytes.length) break;
-            const moveView = new DataView(bytes.buffer, bytes.byteOffset + offset, 5);
-            const x = moveView.getInt16(0, true);
-            const y = moveView.getInt16(2, true);
-            const dirStealth = bytes[offset + 4];
+            if (offset + 9 > bytes.length) break;
+            const moveView = new DataView(bytes.buffer, bytes.byteOffset + offset, 9);
+            const x = moveView.getInt32(0, true);
+            const y = moveView.getInt32(4, true);
+            const dirStealth = bytes[offset + 8];
             const direction = dirStealth & 0x0F;
             const stealth = (dirStealth >> 4) & 0x0F;
-            offset += 5;
+            offset += 9;
 
             movements.push({
               i: playerId,

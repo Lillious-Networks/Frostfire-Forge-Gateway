@@ -3,6 +3,8 @@ import { recordChunkLoadTime, clearChunkTracking } from "./renderer.js";
 import pako from "../libs/pako.js";
 import { config } from "../web/global.js";
 import { setMap } from "./glmap/index.js";
+import { setMap as setMapMobile } from "./glmap-mobile/index.js";
+import { MOBILE_RENDERER } from "./renderpath.js";
 
 const PLAYER_Z_INDEX = config?.PLAYER_Z_INDEX;
 declare global {
@@ -237,9 +239,16 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     }
 
     // Build the GPU tile atlas for this map's tilesets.
-    setMap(window.mapData, images.map((img) =>
-      img && img.complete && img.naturalWidth > 0 ? (tilesetBitmaps.get(img) ?? img) : null
-    ));
+    if (MOBILE_RENDERER) {
+      // Mobile packs the atlas from the <img> elements (no ImageBitmaps).
+      setMapMobile(window.mapData, images.map((img) =>
+        img && img.complete && img.naturalWidth > 0 ? img : null
+      ));
+    } else {
+      setMap(window.mapData, images.map((img) =>
+        img && img.complete && img.naturalWidth > 0 ? (tilesetBitmaps.get(img) ?? img) : null
+      ));
+    }
 
     const { initializeCamera } = await import('./renderer.js');
     initializeCamera(spawnX, spawnY);
@@ -347,7 +356,8 @@ export default async function loadMap(metadata: any): Promise<boolean> {
     canvas.style.left = "0";
     canvas.style.right = "0";
     canvas.style.bottom = "0";
-    canvas.style.backgroundColor = "#000000";
+    // Mobile: the map is drawn by #map-below underneath this canvas.
+    canvas.style.backgroundColor = MOBILE_RENDERER ? "transparent" : "#000000";
 
     canvas.style.width = displayWidth + "px";
     canvas.style.height = displayHeight + "px";
@@ -484,10 +494,13 @@ async function loadTilesets(tilesets: any[]): Promise<HTMLImageElement[]> {
         }, 15000);
       });
 
-      try {
-        tilesetBitmaps.set(image, await createImageBitmap(blob));
-      } catch {
-        // Fall back to drawing from the <img> element.
+      // Mobile packs the atlas from the <img> element instead.
+      if (!MOBILE_RENDERER) {
+        try {
+          tilesetBitmaps.set(image, await createImageBitmap(blob));
+        } catch {
+          // Fall back to drawing from the <img> element.
+        }
       }
 
       return image;

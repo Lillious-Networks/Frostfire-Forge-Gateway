@@ -2,6 +2,8 @@ import { sendRequest } from "./socket.js";
 import { canvas, ctx, collisionTilesDebugCheckbox, noPvpDebugCheckbox, shadowsDebugCheckbox } from "./ui.js";
 import { ensureChunkForTile, parseChunkKey, clearChunkFromCache } from "./map.js";
 import { invalidateChunk } from "./glmap/index.js";
+import { invalidateChunk as invalidateChunkMobile } from "./glmap-mobile/index.js";
+import { MOBILE_RENDERER } from "./renderpath.js";
 import { panEditorCamera } from "./renderer.js";
 
 declare global {
@@ -268,7 +270,8 @@ class TileEditor {
         }
       }
 
-      invalidateChunk(chunkData);
+      if (MOBILE_RENDERER) invalidateChunkMobile(chunkData);
+      else invalidateChunk(chunkData);
     }
 
     this.layerDataSnapshot = null;
@@ -2084,7 +2087,8 @@ class TileEditor {
     this.modifiedChunkKeys.add(chunkKey);
     const chunk = window.mapData.loadedChunks.get(chunkKey);
     if (!chunk) return;
-    invalidateChunk(chunk);
+    if (MOBILE_RENDERER) invalidateChunkMobile(chunk);
+    else invalidateChunk(chunk);
   }
 
   private getLineTiles(x0: number, y0: number, x1: number, y1: number): { x: number, y: number }[] {

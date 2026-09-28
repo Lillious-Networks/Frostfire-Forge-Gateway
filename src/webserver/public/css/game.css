@@ -1723,7 +1723,8 @@ input {
   z-index: 2;
 }
 
-#minimap-canvas {
+#minimap-canvas,
+#minimap-map {
   position: absolute;
   left: 50%;
   top: 46%;
@@ -3808,7 +3809,8 @@ body.mobile-landscape {
     transform-origin: top right;
   }
 
-  #minimap-canvas {
+  #minimap-canvas,
+  #minimap-map {
     width: 137px;
     height: 137px;
   }

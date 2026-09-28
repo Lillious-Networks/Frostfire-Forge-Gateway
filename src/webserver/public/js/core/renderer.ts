@@ -15,6 +15,12 @@ import { updateHealthBar, updateStaminaBar, updateAbsorptionBar } from "./ui.js"
 import { updateWeatherCanvas, weather } from './weather.ts';
 import { getShadowParams, SHADOW_MAX_OFFSET } from './shadows.js';
 import { renderMapPass, setShadowMaxOffset } from './glmap/index.js';
+import {
+  renderMapPass as renderMapPassMobile,
+  setShadowMaxOffset as setShadowMaxOffsetMobile,
+  setMapVisible as setMapVisibleMobile,
+} from './glmap-mobile/index.js';
+import { MOBILE_RENDERER } from './renderpath.js';
 import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
 import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
@@ -661,7 +667,11 @@ function renderInfiniteZone() {
   ctx.restore();
 }
 
-setShadowMaxOffset(SHADOW_MAX_OFFSET);
+if (MOBILE_RENDERER) {
+  setShadowMaxOffsetMobile(SHADOW_MAX_OFFSET);
+} else {
+  setShadowMaxOffset(SHADOW_MAX_OFFSET);
+}
 
 // A character sprite drawn centred on (cx, cy), for y-sorting: its world-space
 // box (the union of its visible animation frames, else its static image, else
@@ -771,6 +781,30 @@ function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderin
   }
 
   const nowSeconds = performance.now() / 1000;
+
+  if (MOBILE_RENDERER) {
+    // Mobile: glmap-mobile renders into its own page canvases (#map-below /
+    // #map-above) placed under targetCtx's canvas instead of copying into it.
+    renderMapPassMobile({
+      phase,
+      target: targetCtx,
+      offsetX,
+      offsetY,
+      visibleChunks: getVisibleChunksCached(),
+      cuts: window.mapData.layerCuts || [],
+      clip: { minX: clipMinX, minY: clipMinY, maxX: mapWidth, maxY: mapHeight },
+      shadow,
+      chunkAlpha: (chunkKey: string) => {
+        const loadTime = chunkLoadTimes.get(chunkKey);
+        if (loadTime === undefined || isEditorActive) return 1;
+        return Math.min((nowSeconds - loadTime) / CHUNK_FADE_DURATION, 1);
+      },
+      isLayerVisible: isEditorActive ? (name: string) => tileEditor.isLayerVisible(name) : null,
+      occluders: collectOccluders(),
+      now: performance.now(),
+    });
+    return;
+  }
 
   renderMapPass({
     phase,
@@ -1083,8 +1117,12 @@ function animationLoop() {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Mobile: the map is drawn by #map-below underneath this canvas, so it must
+  // stay transparent (no black fill).
+  if (!MOBILE_RENDERER) {
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
   ctx.restore();
   ctx.imageSmoothingEnabled = false;
 
@@ -1199,6 +1237,8 @@ function animationLoop() {
     }
   }
 
+  // Mobile: the map surfaces are page canvases, so hide them in wireframe mode.
+  if (MOBILE_RENDERER) setMapVisibleMobile(!wireframeDebugCheckbox.checked);
   if (!wireframeDebugCheckbox.checked) {
     if ((window as any).tileEditor?.isActive && window.mapData?.infinite) {
       renderInfiniteZone();

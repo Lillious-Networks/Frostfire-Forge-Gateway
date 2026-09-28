@@ -1,3 +1,5 @@
+// First, so errors while the rest of the client loads are forwarded too.
+import '../core/clientlog';
 import '../core/socket';
 import '../core/preventzoomcontrols';
 import './notification';

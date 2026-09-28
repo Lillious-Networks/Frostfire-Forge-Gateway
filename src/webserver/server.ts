@@ -132,6 +132,58 @@ async function requireAuth(req: Request): Promise<{ username: string } | Respons
   return { username };
 }
 
+// Client console forwarding (js/core/clientlog.ts): lets players' browser
+// errors - e.g. on phones without devtools - land in the server log. Only
+// logged-in players may post, and each is rate-limited.
+const CLIENT_LOG_MAX_BODY = 32 * 1024;
+const CLIENT_LOG_MAX_ENTRIES = 50;
+const CLIENT_LOG_MAX_MESSAGE = 2000;
+const CLIENT_LOG_PER_MINUTE = 120;
+const clientLogBudget = new Map<string, { windowStart: number; count: number }>();
+
+async function handleClientLog(req: Request): Promise<Response> {
+  const username = await getUsernameFromToken(req);
+  if (!username) return new Response(null, { status: 401 });
+
+  const body = await req.text();
+  if (body.length > CLIENT_LOG_MAX_BODY) return new Response(null, { status: 413 });
+
+  let payload: any;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return new Response(null, { status: 400 });
+  }
+  const entries = Array.isArray(payload?.entries) ? payload.entries.slice(0, CLIENT_LOG_MAX_ENTRIES) : [];
+
+  const now = Date.now();
+  let budget = clientLogBudget.get(username);
+  if (!budget || now - budget.windowStart > 60_000) {
+    budget = { windowStart: now, count: 0 };
+    clientLogBudget.set(username, budget);
+  }
+
+  // One line per entry, control characters flattened so a client can't forge
+  // extra log lines.
+  const clean = (value: unknown) => {
+    let out = "";
+    for (const ch of String(value ?? "").slice(0, CLIENT_LOG_MAX_MESSAGE)) {
+      const code = ch.charCodeAt(0);
+      out += code < 0x20 || code === 0x7f ? " " : ch;
+    }
+    return out;
+  };
+  for (const entry of entries) {
+    if (budget.count >= CLIENT_LOG_PER_MINUTE) break;
+    budget.count++;
+    const line = `[client ${username}] ${clean(entry?.level)}: ${clean(entry?.message)}`;
+    if (entry?.level === "error") log.error(line);
+    else if (entry?.level === "warn") log.warn(line);
+    else log.info(line);
+  }
+  return new Response(null, { status: 204 });
+}
+
 const routes = {
   "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
   "/service-worker.js": (req: Request) => new Response(service_worker_js, { status: 200, headers: { "Content-Type": "application/javascript", "Cache-Control": "max-age=3600" } }),
@@ -203,6 +255,9 @@ const routes = {
         });
       }
     }
+  },
+  "/api/client-log": {
+    POST: async (req: Request) => handleClientLog(req),
   },
   "/api/gateway/connection-token": {
     GET: async (req: Request) => {
@@ -357,6 +412,7 @@ Bun.serve({
       "/verify": routes["/verify"],
       "/api/gateway/servers": routes["/api/gateway/servers"],
       "/api/gateway/connection-token": routes["/api/gateway/connection-token"],
+      "/api/client-log": routes["/api/client-log"],
       "/manage-profile": routes["/manage-profile"],
       "/2fa-challenge": routes["/2fa-challenge"],
       "/api/profile": routes["/api/profile"],
