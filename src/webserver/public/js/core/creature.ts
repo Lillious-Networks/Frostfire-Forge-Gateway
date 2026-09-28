@@ -430,7 +430,7 @@ function drawFloatingTexts(
  * below the anchor (+16 on a 64px frame); creatures use the same rule so both
  * stand on the ground the same way.
  */
-const FEET_FRACTION = 0.25;
+export const FEET_FRACTION = 0.25;
 
 function spriteMetrics(c: CreatureView): { height: number; feetY: number } | null {
   const scale = c.scale > 0 ? c.scale : 1;

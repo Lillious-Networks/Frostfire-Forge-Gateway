@@ -6,6 +6,12 @@ export const MAX_SLICES_PER_DRAW = 32;
 // Max Gaussian taps on each side of the centre texel (blur radius 3 sigma).
 export const MAX_BLUR_TAPS = 8;
 
+// Max characters depth-sorted against the y-sorted layer per frame.
+export const MAX_OCCLUDERS = 64;
+
+// Max tiles scanned down a column to find the bottom of a y-sorted object.
+const MAX_STACK_TILES = 16;
+
 // One quad per chunk layer. The quad covers the chunk's world rect; the layer
 // (texture array slice) comes from uSlices[gl_InstanceID].
 export const TILE_VS = `#version 300 es
@@ -56,11 +62,54 @@ uniform vec4 uClip;          // world rect: minX, minY, maxX, maxY
 uniform float uAlpha;
 uniform int uSilhouette;     // 1 = output alpha only (shadow silhouettes)
 
+// Y-sorting against characters (the PLAYER_Z_INDEX layer). A tile's object is
+// the unbroken vertical stack of tiles it belongs to on its layer; its base is
+// the stack's bottom edge. A character whose sprite box overlaps the pixel and
+// whose feet are above that base is behind the object.
+//   uYSort 0: off
+//   uYSort 1: draw only pixels with no character behind them (under characters)
+//   uYSort 2: draw only pixels with a character behind them (over characters)
+uniform int uYSort;
+uniform int uOccluderCount;
+uniform vec4 uOccluders[${MAX_OCCLUDERS}];      // sprite box: minX, minY, maxX, maxY (world px)
+uniform float uOccluderFeet[${MAX_OCCLUDERS}];  // feet line, world y
+uniform usampler2DArray uChunkBelow;       // chunk below, for stacks crossing its edge
+uniform int uHasBelow;
+uniform int uBelowSlice;
+
 in vec2 vLocal;
 in vec2 vWorld;
 flat in int vSlice;
 
 out vec4 outColor;
+
+float objectBase(ivec2 t) {
+  int by = t.y;
+  for (int i = 0; i < ${MAX_STACK_TILES}; i++) {
+    int ny = by + 1;
+    uint v;
+    if (ny < uChunkTiles.y) {
+      v = texelFetch(uChunk, ivec3(t.x, ny, vSlice), 0).r;
+    } else if (uHasBelow == 1 && ny - uChunkTiles.y < uChunkTiles.y) {
+      v = texelFetch(uChunkBelow, ivec3(t.x, ny - uChunkTiles.y, uBelowSlice), 0).r;
+    } else {
+      break;
+    }
+    if (v == 0u) break;
+    by = ny;
+  }
+  vec2 origin = vWorld - vLocal;
+  return origin.y + float(by + 1) * uTile.y;
+}
+
+bool characterBehind(float baseY) {
+  for (int i = 0; i < ${MAX_OCCLUDERS}; i++) {
+    if (i >= uOccluderCount) break;
+    vec4 o = uOccluders[i];
+    if (vWorld.x >= o.x && vWorld.x < o.z && vWorld.y >= o.y && vWorld.y < o.w && uOccluderFeet[i] < baseY) return true;
+  }
+  return false;
+}
 
 void main() {
   if (vWorld.x < uClip.x || vWorld.y < uClip.y || vWorld.x >= uClip.z || vWorld.y >= uClip.w) discard;
@@ -71,6 +120,11 @@ void main() {
 
   uint raw = texelFetch(uChunk, ivec3(t, vSlice), 0).r;
   if (raw == 0u) discard;
+
+  if (uYSort != 0) {
+    bool behind = characterBehind(objectBase(t));
+    if ((uYSort == 2) != behind) discard;
+  }
 
   int gid = int(raw & 0x0FFFFFFFu);
   if (gid >= uRemapSize) discard;

@@ -3,7 +3,7 @@ import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.
 import Cache from "./cache.ts";
 import { getParticleSprite, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
 import { getNearestNpcId } from "./quest.js";
-import { renderCreatures, creaturePositionFor } from "./creature.js";
+import { renderCreatures, creaturePositionFor, creatures, FEET_FRACTION } from "./creature.js";
 import { updateUnitFrames } from "./targetframe.js";
 import { dropDistantTarget } from "./creatureinput.js";
 import { updateSourceParticle } from "./sourceparticles.js";
@@ -663,6 +663,74 @@ function renderInfiniteZone() {
 
 setShadowMaxOffset(SHADOW_MAX_OFFSET);
 
+// A character sprite drawn centred on (cx, cy), for y-sorting: its world-space
+// box (the union of its visible animation frames, else its static image, else
+// a default 64px frame) and its feet line. Sprite frames have empty space below
+// the feet, so the feet sit FEET_FRACTION of the frame height below the anchor
+// (+16 on a 64px frame) - the same rule the ground shadows use - rather than at
+// the box's bottom edge.
+function spriteOccluder(anim: any, staticImage: HTMLImageElement | null | undefined, cx: number, cy: number,
+  scale: number): [number, number, number, number, number] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let frameHeight = 0;
+  const add = (width: number, height: number, ox: number, oy: number) => {
+    const x = cx - (width * scale) / 2 + ox * scale;
+    const y = cy - (height * scale) / 2 + oy * scale;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + width * scale);
+    maxY = Math.max(maxY, y + height * scale);
+    frameHeight = Math.max(frameHeight, height * scale);
+  };
+  if (anim?.layers) {
+    for (const layer of Object.values(anim.layers) as any[]) {
+      if (!layer?.visible || !layer.frames?.length) continue;
+      const frame = layer.frames[layer.currentFrame];
+      if (frame?.width && frame?.height) add(frame.width, frame.height, frame.offset?.x || 0, frame.offset?.y || 0);
+    }
+  }
+  if (minX === Infinity && staticImage?.naturalWidth) add(staticImage.width, staticImage.height, 0, 0);
+  if (minX === Infinity) add(64, 64, 0, 0);
+  return [minX, minY, maxX, maxY, cy + frameHeight * FEET_FRACTION];
+}
+
+// Boxes of the characters near the camera (players, NPCs, creatures), nearest
+// first, for y-sorting the PLAYER_Z_INDEX layer against them. Characters that
+// end up not drawn (stealth, hidden) are harmless: lifting a tile over an empty
+// spot doesn't change the picture.
+function collectOccluders(): Array<[number, number, number, number, number]> {
+  const margin = 256;
+  const halfW = window.innerWidth / 2 + margin;
+  const halfH = window.innerHeight / 2 + margin;
+  const inView = (x: number, y: number) => Math.abs(x - cameraX) <= halfW && Math.abs(y - cameraY) <= halfH;
+  const found: Array<{ box: [number, number, number, number, number]; d: number }> = [];
+  const push = (box: [number, number, number, number, number], x: number, y: number) => {
+    found.push({ box, d: (x - cameraX) ** 2 + (y - cameraY) ** 2 });
+  };
+
+  const players = cache.players instanceof Map ? cache.players.values() : cache.players;
+  for (const p of players as Iterable<any>) {
+    const x = p.renderPosition?.x ?? p.position?.x;
+    const y = p.renderPosition?.y ?? p.position?.y;
+    if (x === undefined || y === undefined || !inView(x, y)) continue;
+    push(spriteOccluder(p.layeredAnimation, null, x, y, 1), x, y);
+  }
+  for (const npc of cache.npcs as any[]) {
+    const x = npc.position?.x;
+    const y = npc.position?.y;
+    if (npc.hidden || x === undefined || y === undefined || !inView(x, y)) continue;
+    push(spriteOccluder(npc.layeredAnimation, npc.staticImage, x, y, 1), x, y);
+  }
+  for (const c of creatures.values()) {
+    // Corpses lie flat on the ground.
+    if (c.state === "dead" || !inView(c.renderX, c.renderY)) continue;
+    push(spriteOccluder(c.anim, c.staticImage, c.renderX, c.renderY, c.scale > 0 ? c.scale : 1), c.renderX, c.renderY);
+  }
+
+  found.sort((a, b) => a.d - b.d);
+  return found.map((f) => f.box);
+}
+
 // Renders the map's tile layers in zIndex order on the GPU (glmap), with each
 // shadow layer's silhouette at its own zIndex. The 'below' phase draws every
 // layer up to the player cut (zIndex < PLAYER_Z_INDEX); the 'above' phase draws
@@ -720,6 +788,7 @@ function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderin
       return Math.min((nowSeconds - loadTime) / CHUNK_FADE_DURATION, 1);
     },
     isLayerVisible: isEditorActive ? (name: string) => tileEditor.isLayerVisible(name) : null,
+    occluders: collectOccluders(),
     now: performance.now(),
   });
 }

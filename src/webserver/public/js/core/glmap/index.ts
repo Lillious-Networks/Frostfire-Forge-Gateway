@@ -6,7 +6,7 @@
 
 import { getGL, beginCanvasPass, type GLState } from "./context.js";
 import { getMapResources, getChunkTexture, sweepChunks, updateAnimations, type MapResources } from "./resources.js";
-import { MAX_SLICES_PER_DRAW, MAX_BLUR_TAPS } from "./shaders.js";
+import { MAX_SLICES_PER_DRAW, MAX_BLUR_TAPS, MAX_OCCLUDERS } from "./shaders.js";
 
 export { setMap, invalidateChunk } from "./resources.js";
 
@@ -30,7 +30,26 @@ export interface MapPassOptions {
   chunkAlpha: (key: string) => number;
   // Editor layer visibility; null outside the editor.
   isLayerVisible: ((name: string) => boolean) | null;
+  // On-screen characters for y-sorting, nearest first, in world px: sprite box
+  // minX, minY, maxX, maxY, then the feet line.
+  occluders: Array<[number, number, number, number, number]>;
   now: number;
+}
+
+// Pack up to MAX_OCCLUDERS character boxes and feet lines for the tile shader.
+const occluderBuffer = new Float32Array(MAX_OCCLUDERS * 4);
+const occluderFeetBuffer = new Float32Array(MAX_OCCLUDERS);
+function packOccluders(occluders: MapPassOptions["occluders"]): number {
+  const count = Math.min(MAX_OCCLUDERS, occluders.length);
+  for (let i = 0; i < count; i++) {
+    const o = occluders[i];
+    occluderBuffer[i * 4] = o[0];
+    occluderBuffer[i * 4 + 1] = o[1];
+    occluderBuffer[i * 4 + 2] = o[2];
+    occluderBuffer[i * 4 + 3] = o[3];
+    occluderFeetBuffer[i] = o[4];
+  }
+  return count;
 }
 
 // Shadow silhouettes are eroded by this much at their base (see TRIM_FS).
@@ -93,6 +112,9 @@ function useTileProgram(s: GLState, res: MapResources, t: Transform, clip: MapPa
   gl.uniform1i(p.u("uChunk"), 0);
   gl.uniform1i(p.u("uRemap"), 1);
   gl.uniform1i(p.u("uAtlas"), 2);
+  gl.uniform1i(p.u("uChunkBelow"), 3);
+  gl.uniform1i(p.u("uYSort"), 0);
+  gl.uniform1i(p.u("uHasBelow"), 0);
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, res.remap);
   gl.activeTexture(gl.TEXTURE2);
@@ -125,6 +147,39 @@ function drawChunkSlices(s: GLState, chunk: any, originX: number, originY: numbe
     gl.uniform1iv(p.u("uSlices"), sliceBuffer);
     gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
   }
+}
+
+// Draw one chunk's y-sorted layers (tile program bound, occluders set). mode 1
+// draws the pixels characters stand in front of (the 'below' pass), mode 2 the
+// pixels covering a character standing behind the object (the 'above' pass).
+function drawYSortLayers(s: GLState, res: MapResources, c: { data: any; x: number; y: number },
+  slices: number[], mode: 1 | 2, alpha: number): void {
+  const mapData = window.mapData;
+  const gl = s.gl;
+  const p = s.tile;
+  const chunkPixelSize = mapData.chunkSize * mapData.tilewidth;
+  // Objects can continue into the chunk below; bind it so the base search can
+  // follow the stack across the edge.
+  const below = mapData.loadedChunks.get(`${c.x}-${c.y + 1}`);
+  let belowGPU = null;
+  if (below) {
+    gl.activeTexture(gl.TEXTURE3);
+    belowGPU = getChunkTexture(s, below);
+    if (belowGPU) gl.bindTexture(gl.TEXTURE_2D_ARRAY, belowGPU.texture);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+  gl.uniform1i(p.u("uYSort"), mode);
+  for (const slice of slices) {
+    const name = c.data.layers[slice]?.name;
+    const belowSlice = belowGPU && below.width === c.data.width
+      ? below.layers.findIndex((l: any) => l?.name === name)
+      : -1;
+    gl.uniform1i(p.u("uHasBelow"), belowSlice >= 0 ? 1 : 0);
+    gl.uniform1i(p.u("uBelowSlice"), Math.max(0, belowSlice));
+    drawChunkSlices(s, c.data, c.x * chunkPixelSize, c.y * chunkPixelSize, res, [slice], alpha, false);
+  }
+  gl.uniform1i(p.u("uYSort"), 0);
+  gl.uniform1i(p.u("uHasBelow"), 0);
 }
 
 // ---- Shadow framebuffers ----
@@ -216,7 +271,13 @@ function renderShadowCut(s: GLState, res: MapResources, opts: MapPassOptions, ca
     any = true;
     drawChunkSlices(s, c.data, c.x * chunkPixelSize, c.y * chunkPixelSize, res, slices, 1, true);
   }
-  if (!any) return;
+  if (!any) {
+    // Nothing to shadow: leave the offscreen framebuffer and restore the canvas
+    // pass state, or every later draw in this pass would land offscreen.
+    beginCanvasRegion(s, canvasT.width, canvasT.height);
+    useTileProgram(s, res, canvasT, opts.clip);
+    return;
+  }
 
   gl.disable(gl.BLEND);
   gl.bindVertexArray(s.quad);
@@ -334,30 +395,64 @@ export function renderMapPass(opts: MapPassOptions): void {
     flipY: -1,
   };
 
-  // Per chunk: which layer slices fall into each segment of this pass.
-  const perChunkSegments = chunks.map((c) => {
+  // Layers at PLAYER_Z_INDEX (the player cut sits 0.5 below it) are y-sorted
+  // against characters: split per pixel between the end of the 'below' pass and
+  // the start of the 'above' pass instead of always covering characters.
+  const ySortZ = playerCutIndex < cuts.length ? cuts[playerCutIndex].key + 0.5 : null;
+
+  // Per chunk: which layer slices fall into each segment of this pass, and the
+  // y-sorted layer slices.
+  const perChunkSegments: Array<Map<number, number[]>> = [];
+  const perChunkYSort: number[][] = [];
+  for (const c of chunks) {
     const layers: any[] = c.data.layers || [];
     const bySegment = new Map<number, number[]>();
+    const ySorted: number[] = [];
     for (const i of sortedLayerIndices(layers)) {
       const layer = layers[i];
       if (!layer || isHiddenLayerName(layer.name)) continue;
       if (opts.isLayerVisible && !opts.isLayerVisible(layer.name)) continue;
-      const seg = segmentIndexForZ(Number(layer.zIndex), cuts);
+      const z = Number(layer.zIndex);
+      if (z === ySortZ) {
+        ySorted.push(i);
+        continue;
+      }
+      const seg = segmentIndexForZ(z, cuts);
       if (seg < startSegment || seg > endSegment) continue;
       let list = bySegment.get(seg);
       if (!list) bySegment.set(seg, list = []);
       list.push(i);
     }
-    return bySegment;
-  });
+    perChunkSegments.push(bySegment);
+    perChunkYSort.push(ySorted);
+  }
 
   beginCanvasPass(s, width, height);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   useTileProgram(s, res, canvasT, opts.clip);
+  gl.uniform1i(s.tile.u("uOccluderCount"), packOccluders(opts.occluders));
+  gl.uniform4fv(s.tile.u("uOccluders"), occluderBuffer);
+  gl.uniform1fv(s.tile.u("uOccluderFeet"), occluderFeetBuffer);
+
+  // Y-sorted layers, per chunk, at the given pass position.
+  const drawYSorted = (mode: 1 | 2): boolean => {
+    let any = false;
+    for (let ci = 0; ci < chunks.length; ci++) {
+      if (perChunkYSort[ci].length === 0) continue;
+      const alpha = opts.chunkAlpha(chunks[ci].key);
+      if (alpha <= 0) continue;
+      drawYSortLayers(s, res, chunks[ci], perChunkYSort[ci], mode, alpha);
+      any = true;
+    }
+    return any;
+  };
 
   let drew = false;
   for (let segment = startSegment; segment <= endSegment; segment++) {
+    // Over characters: the y-sorted layer is the lowest layer of the first
+    // 'above' segment.
+    if (opts.phase === "above" && segment === startSegment && drawYSorted(2)) drew = true;
     for (let ci = 0; ci < chunks.length; ci++) {
       const slices = perChunkSegments[ci].get(segment);
       if (!slices || slices.length === 0) continue;
@@ -372,6 +467,8 @@ export function renderMapPass(opts: MapPassOptions): void {
       drew = true;
     }
   }
+  // Under characters: on top of everything else in the 'below' pass.
+  if (opts.phase === "below" && drawYSorted(1)) drew = true;
 
   gl.disable(gl.SCISSOR_TEST);
   if (drew) copyToTarget(s, target, width, height, 0, 0, width, height, true);
