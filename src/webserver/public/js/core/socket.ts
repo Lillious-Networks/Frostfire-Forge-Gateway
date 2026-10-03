@@ -1360,7 +1360,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       setHasWeather(true);
       setWeatherType(data.weather);
       setStormAmbience(data.weather === "thunderstorm");
-      setDarknessAmbience(data.weather === "darkness");
+      setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
       if (data.weatherData) {
         setWeatherData(data.weatherData);
       }
@@ -1376,7 +1376,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setHasWeather(true);
           setWeatherType(data.weather);
           setStormAmbience(data.weather === "thunderstorm");
-          setDarknessAmbience(data.weather === "darkness");
+          setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
           if (data.weatherData) {
             setWeatherData(data.weatherData);
           }
@@ -1389,7 +1389,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         setHasWeather(true);
         setWeatherType(data.weather);
         setStormAmbience(data.weather === "thunderstorm");
-        setDarknessAmbience(data.weather === "darkness");
+        setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
         if (data.weatherData) {
           setWeatherData(data.weatherData);
         }
@@ -2172,7 +2172,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
               setStormAmbience(pendingWeather.weather === "thunderstorm");
-              setDarknessAmbience(pendingWeather.weather === "darkness");
+              setDarknessAmbience(pendingWeather.weather === "darkness", pendingWeather.weatherData?.ambience);
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
               }
@@ -2244,7 +2244,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
               setStormAmbience(pendingWeather.weather === "thunderstorm");
-              setDarknessAmbience(pendingWeather.weather === "darkness");
+              setDarknessAmbience(pendingWeather.weather === "darkness", pendingWeather.weatherData?.ambience);
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
               }

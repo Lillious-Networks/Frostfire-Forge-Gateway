@@ -8,6 +8,9 @@ let stormActive: boolean = false;
 // "darkness" weather: a near-black scene with no shadows (shadows.ts) and no sun; lights and glowing particles carry it
 let darknessActive: boolean = false;
 function isDarkness(): boolean { return darknessActive; }
+// The weather row's `ambience` (0..1) is the darkness overlay's opacity; DARKNESS_DEFAULT when the row has none
+const DARKNESS_DEFAULT = 0.86;
+let darknessOpacity: number = DARKNESS_DEFAULT;
 
 // 0 = full daylight, 1 = full night. Drives the additive light map so glowing
 // particles actually emit light once the ambience overlay darkens the scene.
@@ -221,13 +224,13 @@ function updateAmbience() {
 
   if (darknessActive) {
     ambience.style.background = "#05060d";
-    ambience.style.opacity = "0.86";
+    ambience.style.opacity = darknessOpacity.toFixed(2);
     ambience.style.setProperty("--ambience-warm-opacity", "0");
     ambienceCool.style.background = "radial-gradient(ellipse 120% 100% at 50% 40%, #1a1a60 0%, #120c30 100%)";
     ambienceCool.style.opacity = "0.06";
     hideSunFlare();
     nightFactor = 1; // full night: the light map lets lanterns, torches and windows glow
-    setAmbientLevel(["#05060d"], 0.86);
+    setAmbientLevel(["#05060d"], darknessOpacity);
     return;
   }
 
@@ -296,8 +299,10 @@ function setStormAmbience(active: boolean) {
   updateAmbience();
 }
 
-function setDarknessAmbience(active: boolean) {
+function setDarknessAmbience(active: boolean, strength?: unknown) {
   darknessActive = active;
+  const v = strength == null || strength === "" ? NaN : Number(strength);
+  darknessOpacity = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DARKNESS_DEFAULT;
   updateAmbience();
 }
 
