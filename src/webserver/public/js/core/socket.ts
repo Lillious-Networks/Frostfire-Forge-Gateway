@@ -4,7 +4,7 @@ import "./events.ts";
 import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
-import { updateTime, setHasWeather, setStormAmbience } from "./ambience.ts";
+import { updateTime, setHasWeather, setStormAmbience, setDarknessAmbience } from "./ambience.ts";
 import { setWeatherType, setWeatherData } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
@@ -44,7 +44,10 @@ function normalizeParticle(particle: any): any {
     affected_by_time: particle.affected_by_time || false,
     time_on: particle.time_on || null,
     time_off: particle.time_off || null,
-    glow_intensity: particle.glow_intensity !== undefined ? particle.glow_intensity : 0
+    glow_intensity: particle.glow_intensity !== undefined ? particle.glow_intensity : 0,
+    glow_radius: particle.glow_radius !== undefined ? Number(particle.glow_radius) || 0 : 0,
+    static_light: particle.static_light === true || particle.static_light === 1,
+    brightness: particle.brightness !== undefined && particle.brightness !== null && Number.isFinite(Number(particle.brightness)) ? Math.max(0, Number(particle.brightness)) : 1
   };
 }
 
@@ -1357,6 +1360,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       setHasWeather(true);
       setWeatherType(data.weather);
       setStormAmbience(data.weather === "thunderstorm");
+      setDarknessAmbience(data.weather === "darkness");
       if (data.weatherData) {
         setWeatherData(data.weatherData);
       }
@@ -1372,6 +1376,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setHasWeather(true);
           setWeatherType(data.weather);
           setStormAmbience(data.weather === "thunderstorm");
+          setDarknessAmbience(data.weather === "darkness");
           if (data.weatherData) {
             setWeatherData(data.weatherData);
           }
@@ -1384,6 +1389,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         setHasWeather(true);
         setWeatherType(data.weather);
         setStormAmbience(data.weather === "thunderstorm");
+        setDarknessAmbience(data.weather === "darkness");
         if (data.weatherData) {
           setWeatherData(data.weatherData);
         }
@@ -1598,6 +1604,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       // Update particle definitions in all NPCs that use this particle
       const updatedParticle = data as any;
       if (!updatedParticle.name) break;
+      // NPCs that arrive later (chunk streaming, map changes) resolve their particles from the registry: keep it current
+      particleRegistry.set(updatedParticle.name, updatedParticle);
 
       // Get NPCs from cache instead of window object
       const npcs = cache.npcs || [];
@@ -2164,6 +2172,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
               setStormAmbience(pendingWeather.weather === "thunderstorm");
+              setDarknessAmbience(pendingWeather.weather === "darkness");
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
               }
@@ -2235,6 +2244,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
               setStormAmbience(pendingWeather.weather === "thunderstorm");
+              setDarknessAmbience(pendingWeather.weather === "darkness");
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
               }
@@ -2686,11 +2696,16 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "CREATE_NPC": {
       await isLoaded();
       if (!data) return;
-      // Resolve particle names to full definitions with z-index
-      if (data.particles) {
-        data.particles = resolveParticles(data.particles);
+      addStreamedNpc(data);
+      break;
+    }
+    // NPCs whose map chunks left the player's range (server systems/npcStreaming.ts)
+    case "UNLOAD_NPCS": {
+      const ids: any[] = Array.isArray(data?.ids) ? data.ids : [];
+      if (ids.length && cache?.npcs) {
+        const drop = new Set(ids);
+        cache.npcs = cache.npcs.filter((n: any) => !drop.has(n.id));
       }
-      createNPC(data);
       break;
     }
     // Every NPC on the map at once, sent on login (map changes use CREATE_NPC
@@ -2699,17 +2714,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     case "LOAD_NPCS": {
       await isLoaded();
       const list = Array.isArray(data?.npcs) ? data.npcs : [];
-      for (const npcData of list) {
-        if (!npcData || cache.npcs.some((n: any) => n.id === npcData.id)) continue;
-        if (npcData.particles) {
-          npcData.particles = resolveParticles(npcData.particles);
-        }
-        createNPC(npcData);
-      }
+      for (const npcData of list) addStreamedNpc(npcData);
       break;
     }
     case "LOAD_MAP":
       {
+        // a different map: the world map view (worldmap.ts) closes and loads the new map's image next time
+        import("./worldmap.js").then((m) => m.closeWorldMap());
         const isTransition = loaded;
 
         loaded = false;
@@ -2792,6 +2803,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setWeatherData(null);
           setHasWeather(false);
           setStormAmbience(false);
+          setDarknessAmbience(false);
 
           if (cache?.pendingPlayers) cache.pendingPlayers.clear();
           clearCreatures();
@@ -2817,6 +2829,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         import("./skeletons.js").then((m) => m.clearSkeletons());
         hideReviveOfferPopup();
         loaded = await loadMap(data);
+        // NPCs sent ahead for this map while nearing its warp (held by addStreamedNpc)
+        if (loaded) applyPreloadedNpcs();
 
         if (loaded) {
           requestWakeLock();
@@ -5009,3 +5023,32 @@ window.addEventListener('beforeunload', () => {
 
 export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, itemsByName };
 (window as any).itemsByName = itemsByName;
+
+
+// ---------------------------------------------------------------- NPC streaming
+// The server streams NPCs by map chunk (server systems/npcStreaming.ts). NPCs of another map arrive ahead of a warp:
+// they are held here until that map is loaded. An NPC already present is not created twice.
+const preloadedNpcs = new Map<string, any[]>();
+const npcMapKey = (m: any) => String(m ?? "").replace(".json", "");
+
+function addStreamedNpc(npcData: any) {
+  if (!npcData) return;
+  const current = npcMapKey((window as any).mapData?.name);
+  if (npcData.map != null && current && npcMapKey(npcData.map) !== current) {
+    const key = npcMapKey(npcData.map), held = preloadedNpcs.get(key) ?? [];
+    if (!held.some((n: any) => n.id === npcData.id)) held.push(npcData);
+    preloadedNpcs.set(key, held);
+    return;
+  }
+  if (cache.npcs.some((n: any) => n.id === npcData.id)) return;
+  if (npcData.particles) {
+    npcData.particles = resolveParticles(npcData.particles);
+  }
+  createNPC(npcData);
+}
+
+function applyPreloadedNpcs() {
+  const key = npcMapKey((window as any).mapData?.name), held = preloadedNpcs.get(key);
+  preloadedNpcs.clear();
+  if (held) for (const npcData of held) addStreamedNpc(npcData);
+}

@@ -1,6 +1,7 @@
 // Particle emitter/renderer for sources drawn at their raw position (player
 // effect particles). NPCs have their own centred variant in npc.ts.
-import { particlePool, getParticleSprite } from "./npc.js";
+import { particlePool, getParticleSprite, particleBrightness } from "./npc.js";
+import { queueGlow } from "./glowqueue.js";
 import { windBurst, calculateWindSpeed, applyWindVelocity, getWindBias } from "./windphysics.ts";
 
 export function updateSourceParticle(particle: Particle, entity: any, context: CanvasRenderingContext2D, deltaTime: number): void {
@@ -102,7 +103,9 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
 
       // The gradient + glow are identical for every particle of this config, so
       // look the sprite up once per frame instead of per particle.
-      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity);
+      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle));
+      // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
+      let glowMatrix: DOMMatrix | null = null;
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
@@ -165,6 +168,7 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
           particleSprite.half * 2,
           particleSprite.half * 2
         );
+        if (glowIntensity > 0) queueGlow(glowMatrix ??= context.getTransform(), particleSprite.canvas, cx - particleSprite.half, cy - particleSprite.half, particleSprite.half * 2, particleSprite.half * 2, alpha);
       }
 
       // Reset blend mode

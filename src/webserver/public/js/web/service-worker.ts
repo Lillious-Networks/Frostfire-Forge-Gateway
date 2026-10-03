@@ -6,11 +6,17 @@
 
 declare const self: ServiceWorkerGlobalScope;
 
-const ASSET_CACHE = 'asset-cache-v2';
+// v3: drops the tileset entries v2 kept forever (activate deletes every other cache name).
+const ASSET_CACHE = 'asset-cache-v3';
 
 // Asset-server GET endpoints whose responses are safe to cache indefinitely.
 // Matched by exact pathname so e.g. "/sprite" doesn't also swallow
 // "/sprite-sheet-image".
+// "/tileset" is NOT here: tileset images get edited in place under the same
+// name, and a cache-first entry kept serving the old image on every normal
+// reload (only a hard reload, which bypasses the worker, showed the new one).
+// The asset server answers /tileset with an ETag and "Cache-Control: no-cache",
+// so the browser's HTTP cache revalidates it each load (a 304 when unchanged).
 const CACHEABLE_PATHS: ReadonlySet<string> = new Set([
   '/sprite',
   '/sprite-sheet-image',
@@ -18,7 +24,6 @@ const CACHEABLE_PATHS: ReadonlySet<string> = new Set([
   '/sprite-sheets',
   '/sprite-template',
   '/icon',
-  '/tileset',
 ]);
 
 // Soft cap on total cached bytes; oldest entries are evicted past this.

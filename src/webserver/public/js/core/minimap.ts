@@ -7,14 +7,32 @@ import { getSkeletonSpriteUrl } from "./skeletons.js";
 import { renderMinimapMap } from "./glmap/index.js";
 import { renderMinimapMap as renderMinimapMapMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
+import { bakedMap } from "./bakedmap.js";
 
 const cache = Cache.getInstance();
 
 const MINIMAP_SIZE = 250;
-let minimapZoom = 2;
-const MIN_ZOOM = 2;
-const MAX_ZOOM = 4;
-const ZOOM_STEP = 1.1;
+/**
+ * USER REQUEST 2026-10-03 ("minimap should use the baked image too and update the zoom mechanics"): the minimap draws
+ * the map's baked image (bakedmap.ts, one pixel per tile), so it can zoom far out. Zoom goes in fixed steps of minimap
+ * pixels per tile (whole or simple fractions, so the tile blocks stay even): 8 = ~31 tiles across, 0.5 = ~500. The
+ * wheel steps through them; the choice is remembered. While the tile editor is open (its edits are not baked yet) or
+ * when the map has no baked image, the live tile render of the loaded chunks is drawn instead, at most LIVE_MAX_ZOOM
+ * world px per minimap px (it can only show loaded chunks).
+ */
+const ZOOM_LEVELS = [8, 6, 4, 3, 2, 1.5, 1, 0.75, 0.5];
+const ZOOM_DEFAULT = 3;
+const ZOOM_STORE = "minimapZoomLevel";
+const LIVE_MAX_ZOOM = 4;
+let zoomIndex = (() => {
+  try {
+    const i = ZOOM_LEVELS.indexOf(Number(localStorage.getItem(ZOOM_STORE)));
+    if (i >= 0) return i;
+  } catch { /* storage unavailable: the default */ }
+  return ZOOM_LEVELS.indexOf(ZOOM_DEFAULT);
+})();
+/** World px per minimap px this frame (the overlays' scale), from the zoom level and the map's tile size. */
+let minimapZoom = 16 / ZOOM_DEFAULT;
 
 const BUFFER_SCALE = 4;
 const BUFFER_SIZE = MINIMAP_SIZE * BUFFER_SCALE;
@@ -67,11 +85,9 @@ function createMinimap() {
   minimapContainer.addEventListener("wheel", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.deltaY < 0) {
-      minimapZoom = Math.max(MIN_ZOOM, minimapZoom / ZOOM_STEP);
-    } else {
-      minimapZoom = Math.min(MAX_ZOOM, minimapZoom * ZOOM_STEP);
-    }
+    // wheel up zooms in (more pixels per tile), down zooms out, one step per notch
+    zoomIndex = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, zoomIndex + (e.deltaY < 0 ? -1 : 1)));
+    try { localStorage.setItem(ZOOM_STORE, String(ZOOM_LEVELS[zoomIndex])); } catch { /* not remembered */ }
   }, { passive: false });
 
   requestAnimationFrame(minimapLoop);
@@ -99,12 +115,21 @@ function renderMinimap() {
   const playerX = currentPlayer.renderPosition?.x ?? currentPlayer.position.x;
   const playerY = currentPlayer.renderPosition?.y ?? currentPlayer.position.y;
 
+  const tw = window.mapData.tilewidth || 16, th = window.mapData.tileheight || 16;
+  const pxPerTile = ZOOM_LEVELS[zoomIndex]!;
+  const editing = !!(window as any).tileEditor?.isActive;
+  const baked = editing ? null : bakedMap().image;
+  // the overlays' scale; the live render can only cover the loaded chunks, so it stops at LIVE_MAX_ZOOM
+  minimapZoom = baked ? tw / pxPerTile : Math.min(LIVE_MAX_ZOOM, tw / pxPerTile);
+
   const worldViewWidth = BUFFER_SIZE * minimapZoom / BUFFER_SCALE;
   const worldViewHeight = BUFFER_SIZE * minimapZoom / BUFFER_SCALE;
   const worldLeft = playerX - worldViewWidth / 2;
   const worldTop = playerY - worldViewHeight / 2;
 
-  if (MOBILE_RENDERER) {
+  if (baked) {
+    // the baked image is drawn straight onto the minimap below (no live render)
+  } else if (MOBILE_RENDERER) {
     // Mobile: glmap-mobile renders the map into #minimap-map, a WebGL canvas
     // placed under minimapCanvas; this canvas only draws the overlays.
     const tileEditor = (window as any).tileEditor;
@@ -153,7 +178,21 @@ function renderMinimap() {
   ctx.arc(halfSize, halfSize, radius, 0, Math.PI * 2);
   ctx.clip();
 
-  if (!MOBILE_RENDERER) {
+  if (baked) {
+    // the baked image (one pixel per tile) round the player: whole blocks when zoomed in, smoothed below 1 px per tile;
+    // beyond the map's edge the dark void
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
+    const span = MINIMAP_SIZE / pxPerTile;
+    ctx.imageSmoothingEnabled = pxPerTile < 1;
+    ctx.imageSmoothingQuality = "high";
+    const sx = playerX / tw - span / 2, sy = playerY / th - span / 2;
+    // the part of the view inside the image, drawn where it falls on the minimap
+    const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(baked.naturalWidth, sx + span), y1 = Math.min(baked.naturalHeight, sy + span);
+    if (x1 > x0 && y1 > y0) {
+      ctx.drawImage(baked, x0, y0, x1 - x0, y1 - y0, (x0 - sx) * pxPerTile, (y0 - sy) * pxPerTile, (x1 - x0) * pxPerTile, (y1 - y0) * pxPerTile);
+    }
+  } else if (!MOBILE_RENDERER) {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(bufferCanvas, 0, 0, BUFFER_SIZE, BUFFER_SIZE, 0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
@@ -165,22 +204,7 @@ function renderMinimap() {
   ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
   ctx.globalAlpha = 1;
 
-  // Subtle grid lines
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
-  ctx.lineWidth = 0.5;
-  const gridStep = 16;
-  for (let gx = gridStep; gx < MINIMAP_SIZE; gx += gridStep) {
-    ctx.beginPath();
-    ctx.moveTo(gx, 0);
-    ctx.lineTo(gx, MINIMAP_SIZE);
-    ctx.stroke();
-  }
-  for (let gy = gridStep; gy < MINIMAP_SIZE; gy += gridStep) {
-    ctx.beginPath();
-    ctx.moveTo(0, gy);
-    ctx.lineTo(MINIMAP_SIZE, gy);
-    ctx.stroke();
-  }
+  // (no grid lines over the map: USER REQUEST 2026-10-03 "Remove the borders in the map image")
 
   // Radial vignette
   const vignetteGradient = ctx.createRadialGradient(

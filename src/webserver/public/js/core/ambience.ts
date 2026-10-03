@@ -5,11 +5,28 @@ let lastMinute: number | null = null;
 let hasWeather: boolean = false;
 let overrideHour: number | null = null;
 let stormActive: boolean = false;
+// "darkness" weather: a near-black scene with no shadows (shadows.ts) and no sun; lights and glowing particles carry it
+let darknessActive: boolean = false;
+function isDarkness(): boolean { return darknessActive; }
 
 // 0 = full daylight, 1 = full night. Drives the additive light map so glowing
 // particles actually emit light once the ambience overlay darkens the scene.
 let nightFactor: number = 0;
 function getNightFactor(): number { return nightFactor; }
+
+// What the ambience overlay (a multiply layer) leaves of the scene, per channel (0..1): 1 - opacity + opacity * colour.
+// The light map divides by it to light a darkened tile back up to its own colour.
+let ambientLevel: [number, number, number] = [1, 1, 1];
+function getAmbientLevel(): [number, number, number] { return ambientLevel; }
+function setAmbientLevel(colors: string[], opacity: number) {
+  const c = colors.map((s) => {
+    if (s[0] === "#") return parseHex(s);
+    const [r = 0, g = 0, b = 0] = (s.match(/[\d.]+/g) ?? []).map(Number);
+    return { r, g, b };
+  });
+  const avg = (k: "r" | "g" | "b") => c.reduce((s, x) => s + x[k], 0) / c.length / 255;
+  ambientLevel = [1 - opacity + opacity * avg("r"), 1 - opacity + opacity * avg("g"), 1 - opacity + opacity * avg("b")];
+}
 
 timeOverrideSlider.addEventListener("input", () => {
   overrideHour = parseFloat(timeOverrideSlider.value);
@@ -198,6 +215,19 @@ function updateAmbience() {
     ambienceCool.style.opacity = "0";
     hideSunFlare();
     nightFactor = 0;
+    ambientLevel = [1, 1, 1];
+    return;
+  }
+
+  if (darknessActive) {
+    ambience.style.background = "#05060d";
+    ambience.style.opacity = "0.86";
+    ambience.style.setProperty("--ambience-warm-opacity", "0");
+    ambienceCool.style.background = "radial-gradient(ellipse 120% 100% at 50% 40%, #1a1a60 0%, #120c30 100%)";
+    ambienceCool.style.opacity = "0.06";
+    hideSunFlare();
+    nightFactor = 1; // full night: the light map lets lanterns, torches and windows glow
+    setAmbientLevel(["#05060d"], 0.86);
     return;
   }
 
@@ -208,6 +238,7 @@ function updateAmbience() {
     ambienceCool.style.opacity = "0";
     hideSunFlare();
     nightFactor = 0.5;
+    setAmbientLevel(["#2a3045"], 0.65);
     return;
   }
 
@@ -242,7 +273,8 @@ function updateAmbience() {
 
   ambience.style.background = `linear-gradient(to bottom, ${top} 0%, ${bottom} 100%)`;
   ambience.style.opacity = opacity.toFixed(2);
-  ambience.style.setProperty("--ambience-warm", `linear-gradient(to bottom, ${warm} 0%, transparent 70%)`);
+  setAmbientLevel([top, bottom], opacity);
+  ambience.style.setProperty("--ambience-warm",`linear-gradient(to bottom, ${warm} 0%, transparent 70%)`);
   ambience.style.setProperty("--ambience-warm-opacity", warmOpacity.toFixed(2));
 
   // Additive cool moonlight tint at night so the blue actually shows instead of
@@ -261,6 +293,11 @@ function setHasWeather(weather: boolean) {
 
 function setStormAmbience(active: boolean) {
   stormActive = active;
+  updateAmbience();
+}
+
+function setDarknessAmbience(active: boolean) {
+  darknessActive = active;
   updateAmbience();
 }
 
@@ -330,4 +367,4 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-export { updateTime, getServerTime, getEffectiveTime, setHasWeather, setStormAmbience, getNightFactor };
+export { updateTime, getServerTime, getEffectiveTime, setHasWeather, setStormAmbience, setDarknessAmbience, isDarkness, getNightFactor, getAmbientLevel };

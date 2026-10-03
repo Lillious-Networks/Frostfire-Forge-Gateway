@@ -6,7 +6,8 @@ import { getIsLoaded } from "./socket.js";
 import { getMarker as getQuestMarker, hasQuestBusiness, formatNpcText } from "./quest.js";
 import { getCachedImage } from "./images.js";
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
-import { getEffectiveTime } from "./ambience.js";
+import { getEffectiveTime, isDarkness } from "./ambience.js";
+import { queueGlow } from "./glowqueue.js";
 import {
   windBurst,
   calculateWindSpeed,
@@ -67,7 +68,7 @@ class ParticlePool {
 
 const particlePool = new ParticlePool();
 
-// Cache of pre-rendered particle sprites keyed by color|size|glow. Baking the
+// Cache of pre-rendered particle sprites keyed by color|size|glow intensity|glow radius. Baking the
 // radial gradient (and any glow) once and reusing it via drawImage avoids the
 // costly per-frame createRadialGradient / shadowBlur work that tanks FPS on iOS.
 const particleSpriteCache = new Map<string, { canvas: HTMLCanvasElement; half: number }>();
@@ -103,77 +104,82 @@ function addFeatheredStops(gradient: CanvasGradient, color: string): void {
   gradient.addColorStop(1, colorToRgba(color, 0));
 }
 
-function getParticleSprite(color: string, radius: number, glowIntensity: number): { canvas: HTMLCanvasElement; half: number } {
-  const key = `${color}|${radius}|${glowIntensity}`;
+/**
+ * Glow reach (px past the particle's edge): the particle's Radius setting (glow_radius), or, left at 0, twice the
+ * particle's own radius (at least 6 px). Intensity no longer changes it: intensity is brightness only.
+ */
+function glowReach(radius: number, glowRadius: number): number {
+  return glowRadius > 0 ? glowRadius : Math.max(6, radius * 2);
+}
+
+/** A particle's Brightness: how much light the whole particle (core and glow) gives off; 1 = as drawn, 0 = none. */
+function particleBrightness(particle: any): number {
+  const v = particle?.brightness, n = Number(v);
+  return v === null || v === undefined || v === "" || !Number.isFinite(n) ? 1 : Math.max(0, n);
+}
+
+function getParticleSprite(color: string, radius: number, glowIntensity: number, glowRadius: number = 0, brightness: number = 1): { canvas: HTMLCanvasElement; half: number } {
+  const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}`;
   const cached = particleSpriteCache.get(key);
   if (cached) return cached;
 
-  // Bake at a fixed 1x scale on every device. shadowBlur and additive clamping
-  // are resolution-dependent, so baking at the device dpr made iOS (2x) glow at a
-  // different brightness than PC (1x). A constant scale keeps the rasterization -
-  // and thus brightness - identical everywhere (matching the 1x PC/editor look).
-  const scale = 1;
-
-  let baseBlur = 0;
-  let glowLayers = 0;
-  let glowOpacity = 0;
-  let pad = 0;
-  if (glowIntensity > 0) {
-    baseBlur = Math.max(4, radius * 0.8);
-    glowLayers = Math.ceil(glowIntensity);
-    glowOpacity = glowIntensity - Math.floor(glowIntensity);
-    const maxBlur = baseBlur + (glowLayers - 1) * 8 * glowIntensity;
-    // Canvas shadowBlur is a Gaussian (std-dev ~ blur/2) whose alpha is below
-    // 1/255 (imperceptible) past ~1.66x the blur. Pad to 2x for a safety margin
-    // while keeping the additive fill area as small as possible for FPS.
-    pad = Math.ceil(maxBlur * 2) + 4;
-  }
-
-  const sizeCss = Math.ceil(2 * (radius + pad));
+  // Bake at a fixed 1x scale on every device so the additive result (and thus
+  // brightness) is identical everywhere (matching the 1x PC/editor look).
+  const reach = glowIntensity > 0 ? glowReach(radius, glowRadius) : 0;
+  const outer = radius + reach;
+  const sizeCss = Math.ceil(2 * outer) + 2;
   const half = sizeCss / 2;
 
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.ceil(sizeCss * scale));
-  canvas.height = Math.max(1, Math.ceil(sizeCss * scale));
+  canvas.width = Math.max(1, sizeCss);
+  canvas.height = Math.max(1, sizeCss);
   const sctx = canvas.getContext("2d")!;
-  sctx.scale(scale, scale);
-
-  const gradient = sctx.createRadialGradient(half, half, 0, half, half, radius);
-  addFeatheredStops(gradient, color);
-
-  // Accumulate exactly like the live draw so drawing the sprite with globalAlpha
-  // reproduces the same additive result.
   sctx.globalCompositeOperation = "lighter";
-  sctx.fillStyle = gradient;
 
+  // Glow: a soft halo out to `outer`, the same size whatever the intensity. Intensity stacks it additively, so a
+  // higher intensity is a brighter glow, not a bigger one (each whole unit one more halo, the fraction a partial one).
   if (glowIntensity > 0) {
-    sctx.shadowColor = color;
-    sctx.shadowOffsetX = 0;
-    sctx.shadowOffsetY = 0;
-
-    for (let g = 0; g < glowLayers; g++) {
-      sctx.shadowBlur = baseBlur + (g * 8 * glowIntensity);
-      sctx.globalAlpha = Math.max(0.3, 1 - (g * 0.2));
-      sctx.beginPath();
-      sctx.arc(half, half, radius, 0, Math.PI * 2);
-      sctx.fill();
+    const halo = sctx.createRadialGradient(half, half, 0, half, half, outer);
+    const edge = Math.min(0.95, radius / outer);
+    halo.addColorStop(0, colorToRgba(color, 0.5));
+    halo.addColorStop(edge, colorToRgba(color, 0.32));
+    halo.addColorStop(edge + (1 - edge) * 0.35, colorToRgba(color, 0.12));
+    halo.addColorStop(edge + (1 - edge) * 0.7, colorToRgba(color, 0.03));
+    halo.addColorStop(1, colorToRgba(color, 0));
+    sctx.fillStyle = halo;
+    const whole = Math.floor(glowIntensity), frac = glowIntensity - whole;
+    for (let g = 0; g < whole + (frac > 0 ? 1 : 0); g++) {
+      sctx.globalAlpha = g < whole ? 0.5 : frac * 0.5;
+      sctx.fillRect(0, 0, sizeCss, sizeCss);
     }
-
-    if (glowOpacity > 0) {
-      sctx.shadowBlur = baseBlur + ((glowLayers - 1) * 8 * glowIntensity);
-      sctx.globalAlpha = glowOpacity * 0.5;
-      sctx.beginPath();
-      sctx.arc(half, half, radius, 0, Math.PI * 2);
-      sctx.fill();
-    }
-  } else {
-    sctx.globalAlpha = 1;
-    sctx.beginPath();
-    sctx.arc(half, half, radius, 0, Math.PI * 2);
-    sctx.fill();
   }
 
-  const sprite = { canvas, half };
+  // The particle itself: the feathered core.
+  const gradient = sctx.createRadialGradient(half, half, 0, half, half, radius);
+  addFeatheredStops(gradient, color);
+  sctx.globalAlpha = 1;
+  sctx.fillStyle = gradient;
+  sctx.beginPath();
+  sctx.arc(half, half, radius, 0, Math.PI * 2);
+  sctx.fill();
+
+  // Brightness: the whole sprite (core and glow) stacked additively, each whole unit one more copy and the fraction a
+  // partial one (above 1 it burns towards white); below 1 it is drawn fainter.
+  let out = canvas;
+  if (brightness !== 1) {
+    out = document.createElement("canvas");
+    out.width = canvas.width;
+    out.height = canvas.height;
+    const bctx = out.getContext("2d")!;
+    bctx.globalCompositeOperation = "lighter";
+    const whole = Math.floor(brightness), frac = brightness - whole;
+    for (let b = 0; b < whole + (frac > 0 ? 1 : 0); b++) {
+      bctx.globalAlpha = b < whole ? 1 : frac;
+      bctx.drawImage(canvas, 0, 0);
+    }
+  }
+
+  const sprite = { canvas: out, half };
   particleSpriteCache.set(key, sprite);
   return sprite;
 }
@@ -465,8 +471,8 @@ function createNPC(data: any) {
         npc.lastEmitTime = {};
       }
 
-      // Check if particle should be visible based on time (using server time)
-      if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
+      // Check if particle should be visible based on time (using server time); in "darkness" weather it always is
+      if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off && !isDarkness()) {
         const serverTimeObj = getEffectiveTime();
         const currentTimeMinutes = serverTimeObj.hours * 60 + serverTimeObj.minutes;
 
@@ -488,6 +494,25 @@ function createNPC(data: any) {
         }
       } else if (!particle.visible) {
         // If not affected by time, check the visible flag
+        return;
+      }
+      // shown this frame (its time window or visible flag): lightmap.ts lets it light the ground round the npc
+      (npc.particlesLitAt ??= {})[particle.name || ''] = performance.now();
+
+      // Static light: one steady light at the particle's position (no emission, lifetime, movement or spread)
+      if ((particle as any).static_light) {
+        const key = particle.name || '';
+        const emitted = npc.particleArrays[key];
+        if (emitted?.length) { for (const p of emitted) particlePool.release(p); emitted.length = 0; }
+        const sprite = getParticleSprite(particle.color || "white", (particle.size || 5) / 2, particle.glow_intensity || 0, Number((particle as any).glow_radius) || 0, particleBrightness(particle));
+        const sx = npc.position.x + 16 + Number(particle.localposition?.x || 0);
+        const sy = npc.position.y + 24 + Number(particle.localposition?.y || 0);
+        context.globalCompositeOperation = 'lighter';
+        context.globalAlpha = particle.opacity ?? 1;
+        context.drawImage(sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2);
+        if ((particle.glow_intensity || 0) > 0) queueGlow(context.getTransform(), sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2, particle.opacity ?? 1);
+        context.globalCompositeOperation = 'source-over';
+        context.globalAlpha = 1;
         return;
       }
 
@@ -548,7 +573,7 @@ function createNPC(data: any) {
       }
 
       // Check if we should render particles based on time window (using server time)
-      if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off) {
+      if ((particle as any).affected_by_time && (particle as any).time_on && (particle as any).time_off && !isDarkness()) {
         const serverTimeObj = getEffectiveTime();
         const currentTimeMinutes = serverTimeObj.hours * 60 + serverTimeObj.minutes;
 
@@ -608,7 +633,9 @@ function createNPC(data: any) {
 
       // The gradient + glow are identical for every particle of this config, so
       // look the sprite up once per frame instead of per particle.
-      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity);
+      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle));
+      // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts)
+      const glowMatrix = glowIntensity > 0 ? context.getTransform() : null;
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
@@ -659,6 +686,8 @@ function createNPC(data: any) {
         }
 
         context.globalAlpha = alpha;
+        // the light map draws glowing particles again above the ambience overlay (lightmap.ts), at this fade
+        p.glowAlpha = alpha;
 
         // Draw the pre-rendered sprite (gradient + glow baked once). globalAlpha
         // above applies the fade; additive 'lighter' blending is unchanged, so the
@@ -672,6 +701,7 @@ function createNPC(data: any) {
           particleSprite.half * 2,
           particleSprite.half * 2
         );
+        if (glowMatrix) queueGlow(glowMatrix, particleSprite.canvas, cx - particleSprite.half, cy - particleSprite.half, particleSprite.half * 2, particleSprite.half * 2, alpha);
       }
 
       // Reset blend mode
@@ -754,4 +784,4 @@ export function renderNpcInteractBadge(
   ctx.restore();
 }
 
-export { createNPC, reinitNpcSprite, particlePool, getParticleSprite, deleteNPC };
+export { createNPC, reinitNpcSprite, particlePool, getParticleSprite, particleBrightness, glowReach, deleteNPC };

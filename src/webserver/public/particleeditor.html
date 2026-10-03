@@ -18,6 +18,8 @@
         <button type="button" id="btn-reset" title="Reset">Reset</button>
         <span class="tool-divider"></span>
         <button type="button" id="btn-new" title="New Particle">New</button>
+        <button type="button" id="btn-rename" title="Rename the selected particle (NPCs, spells and mounts using it follow)">Rename</button>
+        <button type="button" id="btn-duplicate" title="Duplicate the selected particle (with its current settings)">Duplicate</button>
         <button type="button" id="btn-delete" title="Delete Particle" class="editor-danger-btn">Delete</button>
       </div>
       <div id="editor-main">
@@ -37,11 +39,15 @@
             <div class="editor-tab-panel active" data-tab="appearance">
               <div class="editor-form-section">
                 <label class="editor-form-label">Size <span id="val-size">5</span></label>
-                <input type="range" id="inp-size" class="editor-form-input editor-range" min="1" max="50" value="5">
+                <input type="range" id="inp-size" class="editor-form-input editor-range" min="1" max="512" step="1" value="5">
               </div>
               <div class="editor-form-section">
                 <label class="editor-form-label">Opacity <span id="val-opacity">0.8</span></label>
                 <input type="range" id="inp-opacity" class="editor-form-input editor-range" min="0" max="1" step="0.01" value="0.8">
+              </div>
+              <div class="editor-form-section" title="How much light the whole particle (core and glow) gives off, day and night: 1 = as drawn, above 1 brighter">
+                <label class="editor-form-label">Brightness <span id="val-brightness">1</span></label>
+                <input type="range" id="inp-brightness" class="editor-form-input editor-range" min="0" max="5" step="0.05" value="1">
               </div>
               <div class="editor-form-section">
                 <label class="editor-form-label">Color</label>
@@ -55,7 +61,12 @@
                 <label class="editor-form-label">Glow Intensity <span id="val-glow">0</span></label>
                 <input type="range" id="inp-glow" class="editor-form-input editor-range" min="0" max="10" step="0.1" value="0">
               </div>
+              <div class="editor-form-section">
+                <label class="editor-form-label">Glow Radius <span id="val-glow-radius">0</span></label>
+                <input type="range" id="inp-glow-radius" class="editor-form-input editor-range" min="0" max="512" step="1" value="0">
+              </div>
               <div class="editor-form-check"><input type="checkbox" id="inp-visible"><label>Visible</label></div>
+              <div class="editor-form-check" title="One steady light at the particle's position: no emission, lifetime, movement or spread"><input type="checkbox" id="inp-static"><label>Static Light</label></div>
             </div>
             <div class="editor-tab-panel" data-tab="physics">
               <div class="editor-form-section">

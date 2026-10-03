@@ -3480,6 +3480,22 @@ input[type=range]:disabled {
   mix-blend-mode: screen;
 }
 
+/* Light falling on the scene round emissive tiles: a colour-dodge gain over the darkened scene (same z-index as the
+   ambience overlay and after it in the page, so it brightens what the ambience darkened), so lit tiles show their own
+   texture instead of a coloured haze. */
+#light-dodge {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+  z-index: 50;
+  mix-blend-mode: color-dodge;
+}
+
 .te-floating-panel {
   position: fixed;
   background: rgba(30, 41, 59, 0.95);

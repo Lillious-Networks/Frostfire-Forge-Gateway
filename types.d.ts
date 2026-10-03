@@ -170,7 +170,14 @@ declare interface Particle {
   weather: WeatherData | 'none';
   affected_by_weather?: boolean;
   zIndex?: number;
+  /** Brightness of the glow (0 = none). */
   glow_intensity?: number;
+  /** How far the glow reaches past the particle, px (0 = twice the particle's radius). */
+  glow_radius?: number;
+  /** One steady light at the particle's position instead of an emitted stream. */
+  static_light?: boolean;
+  /** How much light the whole particle (core and glow) gives off, day and night: 1 = as drawn, 0 = none, above 1 brighter. */
+  brightness?: number;
 }
 
 declare interface AnimationFrame {

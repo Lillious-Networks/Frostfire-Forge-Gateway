@@ -63,6 +63,8 @@ const weatherCanvas = document.getElementById("weather") as HTMLCanvasElement;
 const weatherCtx = weatherCanvas.getContext("2d");
 const lightCanvas = document.getElementById("light-overlay") as HTMLCanvasElement;
 const lightCtx = lightCanvas.getContext("2d");
+const lightDodgeCanvas = document.getElementById("light-dodge") as HTMLCanvasElement;
+const lightDodgeCtx = lightDodgeCanvas ? lightDodgeCanvas.getContext("2d") : null;
 const ghostCanvas = document.getElementById("ghost-layer") as HTMLCanvasElement;
 const ghostCtx = ghostCanvas ? ghostCanvas.getContext("2d") : null;
 const aboveCanvas = document.getElementById("game-above") as HTMLCanvasElement;
@@ -2316,7 +2318,7 @@ export {
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
     inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
-    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, guildContainer, guildName, guildRank, guildMembersList,
+    serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,

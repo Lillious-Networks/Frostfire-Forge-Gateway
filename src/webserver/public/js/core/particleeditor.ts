@@ -7,6 +7,9 @@ interface Particle {
   color?: string;
   zIndex?: number;
   glow_intensity?: number;
+  glow_radius?: number;
+  static_light?: boolean;
+  brightness?: number;
   visible?: boolean;
   velocity?: { x: number; y: number };
   gravity?: { x: number; y: number };
@@ -137,6 +140,22 @@ class ParticleEditor {
         this.saveParticle(msg.particle);
         break;
 
+      // a rename (the server updates the NPCs, spells and mounts that use it), then the list again
+      case 'renameParticle':
+        if (msg.from && msg.to) {
+          sendRequest({ type: 'RENAME_PARTICLE', data: { from: msg.from, to: msg.to } });
+          setTimeout(() => this.loadParticles(), 400);
+        }
+        break;
+
+      // a copy of a particle under a new name (the editor sends the full settings), then the list again
+      case 'duplicateParticle':
+        if (msg.particle?.name) {
+          this.saveParticle(msg.particle);
+          setTimeout(() => this.loadParticles(), 300);
+        }
+        break;
+
       case 'requestParticles':
         this.loadParticles();
         break;
@@ -168,6 +187,9 @@ class ParticleEditor {
       color: '#ffffff',
       zIndex: 0,
       glow_intensity: 0,
+      glow_radius: 0,
+      static_light: false,
+      brightness: 1,
       visible: true,
       velocity: { x: 0, y: 0 },
       gravity: { x: 0, y: 0 },

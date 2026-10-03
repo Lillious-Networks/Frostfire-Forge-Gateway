@@ -8,7 +8,8 @@ import { updateXp } from "./xp.js";
 import { getLines } from "./chat.js";
 import { getCachedImage } from "./images.js";
 import { config } from "../web/global.js";
-import { particlePool, getParticleSprite } from "./npc.js";
+import { particlePool, getParticleSprite, particleBrightness } from "./npc.js";
+import { queueGlow } from "./glowqueue.js";
 import { initializeLayeredAnimation } from "./layeredAnimation.js";
 import { getVisibleLayersSorted } from "./layeredAnimation.js";
 import { formatDuration } from "./tooltip.js";
@@ -209,7 +210,9 @@ async function createPlayer(data: any) {
         const baseColor = particleDef.color || '#ffffff';
         const baseOpacity = Number(particleDef.opacity) || 1;
         const glowIntensity = Number(particleDef.glow_intensity) || 0;
-        const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity);
+        const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity, Number(particleDef.glow_radius) || 0, particleBrightness(particleDef));
+        // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
+        let glowMatrix: DOMMatrix | null = null;
 
         context.save();
         context.globalCompositeOperation = 'lighter';
@@ -253,6 +256,7 @@ async function createPlayer(data: any) {
             particleSprite.half * 2,
             particleSprite.half * 2
           );
+          if (glowIntensity > 0) queueGlow(glowMatrix ??= context.getTransform(), particleSprite.canvas, cx - particleSprite.half, cy - particleSprite.half, particleSprite.half * 2, particleSprite.half * 2, alpha);
         }
 
         context.restore();

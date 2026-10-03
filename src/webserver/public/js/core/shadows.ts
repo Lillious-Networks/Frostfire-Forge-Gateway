@@ -1,4 +1,4 @@
-import { getEffectiveTime } from "./ambience.js";
+import { getEffectiveTime, isDarkness } from "./ambience.js";
 
 export const SHADOW_MAX_OFFSET = 14;
 
@@ -33,7 +33,8 @@ export function getShadowParams(): ShadowParams {
   const sunAng = (hour24 - 12) * Math.PI / 12;
   const len = smoothstep(Math.abs(Math.sin(sunAng)));
 
-  const fade = smoothWindow(hour24);
+  // "darkness" weather: no sun, no shadows
+  const fade = isDarkness() ? 0 : smoothWindow(hour24);
 
   return {
     offsetX: -SHADOW_MAX_OFFSET * Math.sin(sunAng),

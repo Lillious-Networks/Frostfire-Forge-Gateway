@@ -1,7 +1,8 @@
 import { getIsLoaded, getMovementAllowed, cachedPlayerId, sendRequest } from "./socket.js";
 import { getIsKeyPressed, pressedKeys, setIsMoving, getIsMoving } from "./input.js";
 import Cache from "./cache.ts";
-import { getParticleSprite, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
+import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
+import { queueGlow } from "./glowqueue.js";
 import { getNearestNpcId } from "./quest.js";
 import { renderCreatures, creaturePositionFor, creatures, FEET_FRACTION } from "./creature.js";
 import { updateUnitFrames } from "./targetframe.js";
@@ -778,7 +779,7 @@ function renderMap(phase: 'below' | 'above' = 'below', targetCtx: CanvasRenderin
   const clipMinY = (window.mapData.minTileY ?? 0) * window.mapData.tileheight;
 
   let shadow: { offsetX: number; offsetY: number; alpha: number } | null = null;
-  if (getWeatherType() !== "thunderstorm") {
+  if (getWeatherType() !== "thunderstorm" && getWeatherType() !== "darkness") {
     const params = getShadowParams();
     if (params.alpha >= 0.005) shadow = params;
   }
@@ -1260,6 +1261,8 @@ function animationLoop() {
 
   const offsetX = Math.round(window.innerWidth / 2 - smoothMapX + mapCenterOffsetX);
   const offsetY = Math.round(window.innerHeight / 2 - smoothMapY + mapCenterOffsetY);
+  // the canvas's base transform (dpr, and on touch devices the 0.85 zoom: events.ts resizeGameCanvas), for the light map
+  const baseTransform = ctx.getTransform();
   ctx.save();
   ctx.translate(offsetX, offsetY);
 
@@ -1496,7 +1499,9 @@ function animationLoop() {
   const baseColor = particleDef.color || 'white';
           const baseOpacity = Number(particleDef.opacity) || 1;
           const glowIntensity = Number(particleDef.glow_intensity) || 0;
-          const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity);
+          const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity, Number(particleDef.glow_radius) || 0, particleBrightness(particleDef));
+          // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
+          let glowMatrix: DOMMatrix | null = null;
 
           ctx.save();
           ctx.globalCompositeOperation = 'lighter';
@@ -1542,6 +1547,7 @@ function animationLoop() {
               particleSprite.half * 2,
               particleSprite.half * 2
             );
+            if (glowIntensity > 0) queueGlow(glowMatrix ??= ctx.getTransform(), particleSprite.canvas, cx - particleSprite.half, cy - particleSprite.half, particleSprite.half * 2, particleSprite.half * 2, alpha);
           }
 
           ctx.restore();
@@ -2213,7 +2219,7 @@ function animationLoop() {
   }
 
   // Additive light map: glowing emitters brighten the darkened night scene.
-  renderLightMap(smoothMapX, smoothMapY);
+  renderLightMap(canvas, baseTransform, offsetX, offsetY);
 
   if (times.length > 60) times.shift();
   times.push(now);

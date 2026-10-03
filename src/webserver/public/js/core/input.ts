@@ -2,6 +2,7 @@ import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 import { parseCreatureTarget } from "./creature.js";
+import { toggleWorldMap, isWorldMapOpen, closeWorldMap } from "./worldmap.js";
 const cache = Cache.getInstance();
 import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns, questLogUI, questFrameUI } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
@@ -102,6 +103,10 @@ export const keyHandlers = {
   KeyL: () => {
     closeOtherPanels("questlog");
     import("./questlog.js").then((m) => m.toggleQuestLog());
+  },
+  // the full world map (worldmap.ts): the whole map from its baked image
+  KeyM: () => {
+    toggleWorldMap();
   },
   KeyG: () => {
     closeOtherPanels("guild");
@@ -306,6 +311,11 @@ function clearKeyCooldown(key: string) {
 function handleEscapeKey() {
   stopMovement();
   chatInput.blur();
+
+  if (isWorldMapOpen()) {
+    closeWorldMap();
+    return;
+  }
 
   if (cache.groundTargetingSpell) {
     cache.groundTargetingSpell = null;
