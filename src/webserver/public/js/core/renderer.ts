@@ -53,6 +53,9 @@ let rafInterval = 1000 / 60;
 let lastRafTime = 0;
 let rafsSinceRender = 0;
 
+// Typing-indicator <img> elements on document.body, mapped to their player.
+const typingBubbles = new Map<HTMLImageElement, any>();
+
 function updateRemotePlayerInterpolation(player: any, deltaSeconds: number) {
   if (!player || !player.lastServerUpdate) return;
   if (player.id === cachedPlayerId) return;
@@ -2130,6 +2133,7 @@ function animationLoop() {
       p.showChat(ctx, currentPlayer);
     }
 
+    const typingShown = new Set<HTMLImageElement>();
     for (const p of visiblePlayers) {
       if (p.typing) {
         if (!p._typingEl) {
@@ -2139,15 +2143,24 @@ function animationLoop() {
           p._typingEl.style.pointerEvents = "none";
           p._typingEl.style.imageRendering = "pixelated";
           document.body.appendChild(p._typingEl);
+          typingBubbles.set(p._typingEl, p);
         }
         const sx = p.renderPosition.x + offsetX - 5;
         const sy = p.renderPosition.y + offsetY - 58;
         p._typingEl.style.left = sx + "px";
         p._typingEl.style.top = sy + "px";
         p._typingEl.style.display = "block";
-      } else if (p._typingEl) {
-        p._typingEl.style.display = "none";
+        typingShown.add(p._typingEl);
       }
+    }
+    // Remove bubbles not drawn this frame: the player stopped typing, left view,
+    // or was dropped from the cache (summon, map change, despawn) with the
+    // bubble still attached to document.body.
+    for (const [el, owner] of typingBubbles) {
+      if (typingShown.has(el)) continue;
+      el.remove();
+      typingBubbles.delete(el);
+      if (owner._typingEl === el) owner._typingEl = null;
     }
 
     for (const p of visiblePlayers) {
