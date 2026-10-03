@@ -1359,7 +1359,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
       setHasWeather(true);
       setWeatherType(data.weather);
-      setStormAmbience(data.weather === "thunderstorm");
+      setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
       setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
       if (data.weatherData) {
         setWeatherData(data.weatherData);
@@ -1375,7 +1375,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         setTimeout(() => {
           setHasWeather(true);
           setWeatherType(data.weather);
-          setStormAmbience(data.weather === "thunderstorm");
+          setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
           setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
           if (data.weatherData) {
             setWeatherData(data.weatherData);
@@ -1388,7 +1388,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       } else {
         setHasWeather(true);
         setWeatherType(data.weather);
-        setStormAmbience(data.weather === "thunderstorm");
+        setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
         setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
         if (data.weatherData) {
           setWeatherData(data.weatherData);
@@ -2171,7 +2171,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             if (pendingWeather) {
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
-              setStormAmbience(pendingWeather.weather === "thunderstorm");
+              setStormAmbience(pendingWeather.weather === "thunderstorm", pendingWeather.weatherData?.ambience);
               setDarknessAmbience(pendingWeather.weather === "darkness", pendingWeather.weatherData?.ambience);
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);
@@ -2243,7 +2243,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             if (pendingWeather) {
               setHasWeather(true);
               setWeatherType(pendingWeather.weather);
-              setStormAmbience(pendingWeather.weather === "thunderstorm");
+              setStormAmbience(pendingWeather.weather === "thunderstorm", pendingWeather.weatherData?.ambience);
               setDarknessAmbience(pendingWeather.weather === "darkness", pendingWeather.weatherData?.ambience);
               if (pendingWeather.weatherData) {
                 setWeatherData(pendingWeather.weatherData);

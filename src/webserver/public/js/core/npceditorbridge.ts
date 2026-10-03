@@ -4,6 +4,12 @@ const TRASH_ICON =
   '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
   '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
 
+/** Listings under an `animations` folder are animations, not sprite sheets an NPC can wear. */
+function inAnimationsFolder(option: AssetOption): boolean {
+  const inFolder = (path: unknown) => typeof path === "string" && /(^|[\\/])animations[\\/]/i.test(path);
+  return inFolder(option.value) || inFolder(option.image);
+}
+
 class NpcEditorBridge {
   private npcs: any[] = [];
   private availableParticles: string[] = [];
@@ -11,7 +17,7 @@ class NpcEditorBridge {
   private spriteData: { spriteSheets: Record<string, Array<{ name: string; image: string | null }>>; icons: AssetOption[] } = { spriteSheets: {}, icons: [] };
   private appearance = new FieldRenderer({
     assetOptions: (field, value) => field.type === "sheet"
-      ? sheetOptions(this.spriteData.spriteSheets, field.slot || "other", String(value ?? ""))
+      ? sheetOptions(this.spriteData.spriteSheets, field.slot || "other", String(value ?? "")).filter((option) => !inAnimationsFolder(option))
       : field.assets?.() ?? [],
     rerender: () => this.renderAppearance(),
   });

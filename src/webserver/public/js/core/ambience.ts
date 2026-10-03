@@ -8,9 +8,16 @@ let stormActive: boolean = false;
 // "darkness" weather: a near-black scene with no shadows (shadows.ts) and no sun; lights and glowing particles carry it
 let darknessActive: boolean = false;
 function isDarkness(): boolean { return darknessActive; }
-// The weather row's `ambience` (0..1) is the darkness overlay's opacity; DARKNESS_DEFAULT when the row has none
+// The weather row's `ambience` (0..1) is the overlay's opacity in "darkness" and "thunderstorm" weather; the default
+// when the row has none
 const DARKNESS_DEFAULT = 0.86;
+const STORM_DEFAULT = 0.65;
 let darknessOpacity: number = DARKNESS_DEFAULT;
+let stormOpacity: number = STORM_DEFAULT;
+function weatherOpacity(strength: unknown, fallback: number): number {
+  const v = strength == null || strength === "" ? NaN : Number(strength);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
+}
 
 // 0 = full daylight, 1 = full night. Drives the additive light map so glowing
 // particles actually emit light once the ambience overlay darkens the scene.
@@ -236,12 +243,12 @@ function updateAmbience() {
 
   if (stormActive) {
     ambience.style.background = "#2a3045";
-    ambience.style.opacity = "0.65";
+    ambience.style.opacity = stormOpacity.toFixed(2);
     ambience.style.setProperty("--ambience-warm-opacity", "0");
     ambienceCool.style.opacity = "0";
     hideSunFlare();
     nightFactor = 0.5;
-    setAmbientLevel(["#2a3045"], 0.65);
+    setAmbientLevel(["#2a3045"], stormOpacity);
     return;
   }
 
@@ -294,15 +301,15 @@ function setHasWeather(weather: boolean) {
   updateAmbience();
 }
 
-function setStormAmbience(active: boolean) {
+function setStormAmbience(active: boolean, strength?: unknown) {
   stormActive = active;
+  stormOpacity = weatherOpacity(strength, STORM_DEFAULT);
   updateAmbience();
 }
 
 function setDarknessAmbience(active: boolean, strength?: unknown) {
   darknessActive = active;
-  const v = strength == null || strength === "" ? NaN : Number(strength);
-  darknessOpacity = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : DARKNESS_DEFAULT;
+  darknessOpacity = weatherOpacity(strength, DARKNESS_DEFAULT);
   updateAmbience();
 }
 

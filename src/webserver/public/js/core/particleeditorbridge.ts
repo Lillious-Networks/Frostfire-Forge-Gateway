@@ -36,6 +36,16 @@ function getWindBias(windSpeed: number, windDirection: string | null): { x: numb
   return bias;
 }
 
+const TRASH_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+const COPY_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const RENAME_ICON =
+  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+
 class ParticleEditorBridge {
   private particles: any[] = [];
   private selectedParticleName: string | null = null;
@@ -47,11 +57,10 @@ class ParticleEditorBridge {
 
   private saveBtn: HTMLElement;
   private resetBtn: HTMLElement;
-  private newBtn: HTMLElement;
-  private deleteBtn: HTMLElement;
-  private duplicateBtn: HTMLElement | null;
-  /** A particle to select once the list (re)arrives: the copy just made by Duplicate. */
+  /** A particle to select once the list (re)arrives: one just created, renamed or duplicated. */
   private pendingSelect: string | null = null;
+  /** The form holds edits that have not been saved. */
+  private dirty: boolean = false;
   private searchInput: HTMLInputElement;
   private particleListEl: HTMLElement;
   private previewCanvas: HTMLCanvasElement;
@@ -61,10 +70,6 @@ class ParticleEditorBridge {
   constructor() {
     this.saveBtn = document.getElementById("btn-save")!;
     this.resetBtn = document.getElementById("btn-reset")!;
-    this.newBtn = document.getElementById("btn-new")!;
-    this.deleteBtn = document.getElementById("btn-delete")!;
-    this.duplicateBtn = document.getElementById("btn-duplicate");
-    document.getElementById("btn-rename")?.addEventListener("click", () => this.showRenameModal());
     this.searchInput = document.getElementById("particle-search") as HTMLInputElement;
     this.particleListEl = document.getElementById("particle-list")!;
     this.previewCanvas = document.getElementById("particle-preview-canvas") as HTMLCanvasElement;
@@ -78,9 +83,6 @@ class ParticleEditorBridge {
 
     this.saveBtn.addEventListener("click", () => this.saveParticle());
     this.resetBtn.addEventListener("click", () => this.resetForm());
-    this.newBtn.addEventListener("click", () => this.showNewModal());
-    this.deleteBtn.addEventListener("click", () => this.showDeleteModal());
-    this.duplicateBtn?.addEventListener("click", () => this.showDuplicateModal());
     this.searchInput.addEventListener("input", () => { this.searchQuery = this.searchInput.value; this.renderParticleList(); });
 
     document.querySelectorAll(".editor-tab-btn").forEach((btn) => {
@@ -91,81 +93,194 @@ class ParticleEditorBridge {
     window.addEventListener("beforeunload", () => { if (window.opener) window.opener.postMessage({ type: "editorClosed" }, "*"); });
     window.addEventListener("keydown", (e) => this.onKeyDown(e));
 
+    // Backup for the game page closing us on unload: if the game tab is gone,
+    // this editor has nothing to talk to, so close.
+    if (window.opener) {
+      setInterval(() => {
+        if (!window.opener || window.opener.closed) window.close();
+      }, 1000);
+    }
+
+    this.updateChrome();
     this.startPreviewLoop();
     if (window.opener) window.opener.postMessage({ type: "bridgeReady" }, "*");
   }
 
   private send(msg: any): void { if (window.opener) window.opener.postMessage(msg, "*"); }
   private onKeyDown(e: KeyboardEvent): void {
-    const target = e.target as HTMLElement;
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
-    if (e.ctrlKey && e.key === "s") { e.preventDefault(); this.saveParticle(); }
+    // Ctrl+S saves from anywhere, including while typing in a field.
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.saveParticle(); }
+  }
+
+  private status(text: string): void {
+    const el = document.getElementById("pe-status");
+    if (el) el.textContent = text;
   }
 
   private onMessage(e: MessageEvent): void {
     if (e.source !== window.opener) return;
     const msg = e.data;
     switch (msg.type) {
-      case "init": this.particles = msg.particles || []; this.renderParticleList(); if (this.particles.length > 0 && !this.selectedParticleName) this.selectParticle(this.particles[0].name); if (this.particles.length === 0) this.send({ type: "requestParticles" });
-        if (this.pendingSelect && this.particles.some((p) => p.name === this.pendingSelect)) { this.selectParticle(this.pendingSelect); this.pendingSelect = null; }
-        break;
+      case "init": this.handleInit(msg.particles || []); break;
       case "particleData": this.loadParticle(msg.particle); break;
       case "close": window.close(); break;
     }
   }
 
+  /** The particle list (re)arrived: after opening, and after every create, rename, duplicate or delete. */
+  private handleInit(particles: any[]): void {
+    this.particles = particles;
+    if (this.particles.length === 0) this.send({ type: "requestParticles" });
+    if (this.pendingSelect && this.findParticle(this.pendingSelect)) {
+      this.selectedParticleName = this.pendingSelect;
+      this.pendingSelect = null;
+      this.loadParticle(this.findParticle(this.selectedParticleName));
+    } else if (this.selectedParticleName && !this.findParticle(this.selectedParticleName) && !this.pendingSelect) {
+      // The open particle is gone (deleted here or elsewhere): close it.
+      this.selectedParticleName = null;
+      this.dirty = false;
+    }
+    if (!this.selectedParticleName && !this.pendingSelect && this.particles.length > 0) {
+      this.selectedParticleName = this.particles[0].name;
+      this.loadParticle(this.particles[0]);
+    }
+    this.renderParticleList();
+    this.updateChrome();
+  }
+
   private renderParticleList(): void {
     this.particleListEl.innerHTML = "";
     const q = this.searchQuery.toLowerCase();
+    // New particles start from a pinned row at the top of the list.
+    const newRow = document.createElement("div");
+    newRow.className = "editor-item ce-new-row";
+    newRow.title = "New particle";
+    const newLabel = document.createElement("span");
+    newLabel.className = "editor-item-label";
+    newLabel.textContent = "+ New particle";
+    newRow.appendChild(newLabel);
+    newRow.addEventListener("click", () => this.showNewModal());
+    this.particleListEl.appendChild(newRow);
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
       if (q && p.name.toLowerCase().indexOf(q) === -1) continue;
       const item = document.createElement("div");
       item.className = "editor-item" + (p.name === this.selectedParticleName ? " active" : "");
-      item.textContent = p.name;
+      item.title = p.name;
+      const label = document.createElement("span");
+      label.className = "editor-item-label";
+      label.textContent = p.name;
+      item.appendChild(label);
+      item.appendChild(this.rowAction("ce-row-copy", RENAME_ICON, `Rename ${p.name}`, () => this.showRenameModal(p.name)));
+      item.appendChild(this.rowAction("ce-row-copy", COPY_ICON, `Duplicate ${p.name}`, () => this.showDuplicateModal(p)));
+      item.appendChild(this.rowAction("ce-row-delete", TRASH_ICON, `Delete ${p.name}`, () => this.showDeleteModal(p.name)));
       item.addEventListener("click", () => this.selectParticle(p.name));
       this.particleListEl.appendChild(item);
     }
   }
 
+  /** Icon button on a list row; acts on that row's particle without selecting it. */
+  private rowAction(className: string, icon: string, title: string, onClick: () => void): HTMLElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = className;
+    btn.title = title;
+    btn.setAttribute("aria-label", title);
+    btn.innerHTML = icon;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return btn;
+  }
+
   private selectParticle(name: string): void {
-    this.selectedParticleName = name;
-    this.renderParticleList();
+    if (name === this.selectedParticleName) return;
+    if (this.dirty && !confirm("Discard unsaved changes?")) return;
     const p = this.findParticle(name);
-    if (p) this.loadParticle(p);
+    if (!p) return;
+    this.selectedParticleName = name;
+    this.loadParticle(p);
+    this.renderParticleList();
+    this.updateChrome();
+    this.status("");
   }
 
   private findParticle(name: string): any { for (const p of this.particles) { if (p.name === name) return p; } return null; }
 
-  private loadParticle(p: any): void {
-    this.updatePreview();
+  /** A stored particle in the shape getFormData() gives, with the defaults filled in. */
+  private normalize(p: any): any {
     const toBool = (val: any) => val === true || val === 1 || val === "true" || val === "1";
-    const v = (key: string, val: any) => { const el = this.inputs[key] as HTMLInputElement | null; if (el) { if (el.type === "checkbox") el.checked = toBool(val); else el.value = val != null ? String(val) : ""; } };
-    v("inp-size", p.size != null ? p.size : 5);
-    v("inp-opacity", p.opacity != null ? p.opacity : 0.8);
-    v("inp-brightness", p.brightness != null ? p.brightness : 1);
-    v("inp-color", p.color || "#ffffff");
-    v("inp-zindex", p.zIndex != null ? p.zIndex : (p.zindex != null ? p.zindex : 0));
-    v("inp-glow", p.glow_intensity != null ? p.glow_intensity : 0);
-    v("inp-glow-radius", p.glow_radius != null ? p.glow_radius : 0);
-    v("inp-static", !!p.static_light);
-    v("inp-visible", p.visible != null ? p.visible : true);
-    v("inp-vel-x", p.velocity ? p.velocity.x : 0); v("inp-vel-y", p.velocity ? p.velocity.y : 0);
-    v("inp-grav-x", p.gravity ? p.gravity.x : 0); v("inp-grav-y", p.gravity ? p.gravity.y : 0);
-    v("inp-spread-x", p.spread ? p.spread.x : 0); v("inp-spread-y", p.spread ? p.spread.y : 0);
-    v("inp-lpos-x", p.localposition ? p.localposition.x : 0); v("inp-lpos-y", p.localposition ? p.localposition.y : 0);
-    v("inp-weather", p.affected_by_weather || false);
-    v("inp-lifetime", p.lifetime != null ? p.lifetime : 1000);
-    v("inp-interval", p.interval != null ? p.interval : 100);
-    v("inp-amount", p.amount != null ? p.amount : 10);
-    v("inp-stagger", p.staggertime != null ? p.staggertime : 0);
-    v("inp-time", p.affected_by_time || false);
-    v("inp-timeon", p.time_on || ""); v("inp-timeoff", p.time_off || "");
+    const xy = (val: any) => {
+      if (typeof val === "string") { const parts = val.split(","); return { x: Number(parts[0]) || 0, y: Number(parts[1]) || 0 }; }
+      return { x: Number(val?.x) || 0, y: Number(val?.y) || 0 };
+    };
+    return {
+      name: p.name, size: p.size ?? 5, opacity: p.opacity ?? 0.8, brightness: p.brightness ?? 1, color: p.color || "#ffffff",
+      zIndex: p.zIndex ?? p.zindex ?? 0, glow_intensity: p.glow_intensity ?? 0, glow_radius: p.glow_radius ?? 0,
+      static_light: toBool(p.static_light), visible: p.visible != null ? toBool(p.visible) : true,
+      velocity: xy(p.velocity), gravity: xy(p.gravity), spread: xy(p.spread), localposition: xy(p.localposition),
+      affected_by_weather: toBool(p.affected_by_weather),
+      lifetime: p.lifetime ?? 1000, interval: p.interval ?? 100, amount: p.amount ?? 10, staggertime: p.staggertime ?? 0,
+      affected_by_time: toBool(p.affected_by_time), time_on: p.time_on || "", time_off: p.time_off || "",
+    };
+  }
+
+  private loadParticle(p: any): void {
+    if (!p) return;
+    this.updatePreview();
+    const d = this.normalize(p);
+    const v = (key: string, val: any) => { const el = this.inputs[key] as HTMLInputElement | null; if (el) { if (el.type === "checkbox") el.checked = !!val; else el.value = val != null ? String(val) : ""; } };
+    v("inp-size", d.size);
+    v("inp-opacity", d.opacity);
+    v("inp-brightness", d.brightness);
+    v("inp-color", d.color);
+    v("inp-zindex", d.zIndex);
+    v("inp-glow", d.glow_intensity);
+    v("inp-glow-radius", d.glow_radius);
+    v("inp-static", d.static_light);
+    v("inp-visible", d.visible);
+    v("inp-vel-x", d.velocity.x); v("inp-vel-y", d.velocity.y);
+    v("inp-grav-x", d.gravity.x); v("inp-grav-y", d.gravity.y);
+    v("inp-spread-x", d.spread.x); v("inp-spread-y", d.spread.y);
+    v("inp-lpos-x", d.localposition.x); v("inp-lpos-y", d.localposition.y);
+    v("inp-weather", d.affected_by_weather);
+    v("inp-lifetime", d.lifetime);
+    v("inp-interval", d.interval);
+    v("inp-amount", d.amount);
+    v("inp-stagger", d.staggertime);
+    v("inp-time", d.affected_by_time);
+    v("inp-timeon", d.time_on); v("inp-timeoff", d.time_off);
     this.syncValueLabel("inp-size");
     this.syncValueLabel("inp-opacity");
     this.syncValueLabel("inp-brightness");
     this.syncValueLabel("inp-glow");
     this.syncValueLabel("inp-glow-radius");
+    this.dirty = false;
+    this.updateChrome();
+  }
+
+  /**
+   * Form, preview and save icon only show while a particle is open; with none
+   * (e.g. it was deleted) an empty-state message takes their place.
+   */
+  private updateChrome(): void {
+    const has = !!this.selectedParticleName;
+    const body = document.getElementById("pe-body");
+    const empty = document.getElementById("pe-empty");
+    if (body) body.hidden = !has;
+    if (empty) empty.hidden = has;
+    this.saveBtn.hidden = !has;
+    this.resetBtn.hidden = !has || !this.dirty;
+    this.saveBtn.classList.toggle("has-changes", has && this.dirty);
+    this.saveBtn.title = has && this.dirty ? "Save changes (Ctrl+S)" : "No unsaved changes";
+    const title = document.getElementById("pe-display-name");
+    if (title) title.textContent = this.selectedParticleName || "—";
+    const sub = document.getElementById("pe-display-sub");
+    if (sub) {
+      const isStatic = (this.inputs["inp-static"] as HTMLInputElement | undefined)?.checked;
+      sub.textContent = (isStatic ? "static light" : "emitter") + (this.dirty ? " · unsaved changes" : "");
+    }
   }
 
   private getFormData(): any {
@@ -190,34 +305,53 @@ class ParticleEditorBridge {
     this.syncValueLabel("inp-glow");
     this.syncValueLabel("inp-glow-radius");
     this.updatePreview();
+    if (this.selectedParticleName) { this.dirty = true; this.updateChrome(); }
   }
   private syncValueLabel(id: string): void {
     const el = this.inputs[id] as HTMLInputElement | null; if (!el || el.type !== "range") return;
     const label = document.getElementById("val-" + id.replace("inp-", "")); if (label) label.textContent = parseFloat(el.value).toString();
   }
-  private resetForm(): void { const p = this.findParticle(this.selectedParticleName!); if (p) this.loadParticle(p); else this.updatePreview(); }
+  private resetForm(): void { const p = this.findParticle(this.selectedParticleName!); if (p) this.loadParticle(p); else this.updatePreview(); this.status("Reverted"); }
   private saveParticle(): void {
     if (!this.selectedParticleName) return; const data = this.getFormData();
     this.send({ type: "saveParticle", particle: data }); const idx = this.particles.findIndex((p) => p.name === data.name);
     if (idx >= 0) this.particles[idx] = data;
+    this.dirty = false;
+    this.updateChrome();
+    this.status("Saved");
   }
 
   private showNewModal(): void {
+    if (this.dirty && !confirm("Discard unsaved changes?")) return;
+    const taken = (n: string) => this.particles.some((p) => p.name.toLowerCase() === n.toLowerCase());
     const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
     const box = document.createElement("div"); box.className = "editor-modal-box";
-    box.innerHTML = '<h3>Create New Particle</h3><input type="text" id="modal-name" placeholder="Particle name"><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-confirm">Create</button></div>';
+    box.innerHTML = '<h3>New Particle</h3><input type="text" id="modal-name" placeholder="Particle name"><p id="modal-error" style="color:#e74c3c;font-size:12px;margin:6px 0 0 0;min-height:14px"></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-confirm btn-primary">Create</button></div>';
     overlay.appendChild(box); document.body.appendChild(overlay);
-    const input = box.querySelector("#modal-name") as HTMLInputElement;
-    box.querySelector(".btn-confirm")!.addEventListener("click", () => { const name = input.value.trim(); if (name) { overlay.remove(); this.send({ type: "createParticle", name }); } });
+    const input = box.querySelector("#modal-name") as HTMLInputElement, error = box.querySelector("#modal-error") as HTMLElement;
+    const confirmNew = () => {
+      const name = input.value.trim();
+      if (!name) return;
+      if (name.includes(",")) { error.textContent = "Names cannot contain commas."; return; }
+      if (taken(name)) { error.textContent = "A particle with that name already exists."; return; }
+      overlay.remove();
+      this.dirty = false;
+      this.pendingSelect = name;
+      this.send({ type: "createParticle", name });
+      this.status("Created");
+    };
+    box.querySelector(".btn-confirm")!.addEventListener("click", confirmNew);
     box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { const name = input.value.trim(); if (name) { overlay.remove(); this.send({ type: "createParticle", name }); } } if (e.key === "Escape") { overlay.remove(); } });
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") confirmNew(); if (e.key === "Escape") overlay.remove(); });
     input.focus();
   }
 
   /** Rename: the server renames the particle and the NPCs, spells and mounts that use it. */
-  private showRenameModal(): void {
-    const from = this.selectedParticleName;
+  private showRenameModal(from: string): void {
     if (!from) return;
+    const open = from === this.selectedParticleName;
+    // The renamed particle is reloaded from the server, which drops unsaved edits.
+    if (open && this.dirty && !window.confirm("Renaming discards unsaved changes. Continue?")) return;
     const taken = (n: string) => this.particles.some((p) => p.name.toLowerCase() === n.toLowerCase() && p.name !== from);
     const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
     const box = document.createElement("div"); box.className = "editor-modal-box";
@@ -231,9 +365,9 @@ class ParticleEditorBridge {
       if (to.includes(",")) { error.textContent = "Names cannot contain commas."; return; }
       if (taken(to)) { error.textContent = "A particle with that name already exists."; return; }
       overlay.remove();
-      this.pendingSelect = to;
-      this.selectedParticleName = null;
+      if (open) { this.pendingSelect = to; this.dirty = false; }
       this.send({ type: "renameParticle", from, to });
+      this.status("Renamed");
     };
     box.querySelector(".btn-confirm")!.addEventListener("click", confirm);
     box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
@@ -241,12 +375,14 @@ class ParticleEditorBridge {
     input.focus(); input.select();
   }
 
-  /** Duplicate: a copy of the selected particle, with the settings currently in the form, under a new name. */
-  private showDuplicateModal(): void {
-    if (!this.selectedParticleName) return;
+  /** Duplicate: a copy of a list row's particle under a new name; the open one is copied with the settings currently in the form. */
+  private showDuplicateModal(source: any): void {
+    if (!source?.name) return;
+    const open = source.name === this.selectedParticleName;
+    if (!open && this.dirty && !window.confirm("Discard unsaved changes?")) return;
     const taken = (n: string) => this.particles.some((p) => p.name.toLowerCase() === n.toLowerCase());
-    let suggestion = `${this.selectedParticleName} Copy`;
-    for (let k = 2; taken(suggestion); k++) suggestion = `${this.selectedParticleName} Copy ${k}`;
+    let suggestion = `${source.name} Copy`;
+    for (let k = 2; taken(suggestion); k++) suggestion = `${source.name} Copy ${k}`;
     const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
     const box = document.createElement("div"); box.className = "editor-modal-box";
     box.innerHTML = '<h3>Duplicate Particle</h3><input type="text" id="modal-name" placeholder="New particle name"><p id="modal-error" style="color:#e74c3c;font-size:12px;margin:6px 0 0 0;min-height:14px"></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-confirm">Duplicate</button></div>';
@@ -256,10 +392,13 @@ class ParticleEditorBridge {
     const confirm = () => {
       const name = input.value.trim();
       if (!name) return;
+      if (name.includes(",")) { error.textContent = "Names cannot contain commas."; return; }
       if (taken(name)) { error.textContent = "A particle with that name already exists."; return; }
       overlay.remove();
       this.pendingSelect = name;
-      this.send({ type: "duplicateParticle", particle: { ...this.getFormData(), name } });
+      this.dirty = false;
+      this.send({ type: "duplicateParticle", particle: { ...(open ? this.getFormData() : this.normalize(source)), name } });
+      this.status("Copy made");
     };
     box.querySelector(".btn-confirm")!.addEventListener("click", confirm);
     box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
@@ -267,15 +406,26 @@ class ParticleEditorBridge {
     input.focus(); input.select();
   }
 
-  private showDeleteModal(): void {
-    if (!this.selectedParticleName) return;
+  /** Delete a particle from its list row. Closes it if it is the open one. */
+  private showDeleteModal(name: string): void {
+    if (!name) return;
     const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
     const box = document.createElement("div"); box.className = "editor-modal-box";
-    box.innerHTML = '<h3>Delete Particle</h3><p style="color:rgba(255,255,255,0.7);font-size:12px;margin:0 0 14px 0">Delete <strong>' + this.selectedParticleName + '</strong>?</p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger">Delete</button></div>';
+    box.innerHTML = '<h3>Delete Particle</h3><p></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger">Delete</button></div>';
+    box.querySelector("p")!.textContent = `Delete ${name}? NPCs, spells and mounts using it lose the effect.`;
     overlay.appendChild(box); document.body.appendChild(overlay);
-    box.querySelector(".btn-danger")!.addEventListener("click", () => { overlay.remove(); this.send({ type: "deleteParticle", name: this.selectedParticleName }); });
-    box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
-    document.addEventListener("keydown", function handler(e) { if (e.key === "Escape") { overlay.remove(); document.removeEventListener("keydown", handler); } });
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
+    document.addEventListener("keydown", onKey);
+    box.querySelector(".btn-danger")!.addEventListener("click", () => {
+      close();
+      if (name === this.selectedParticleName) { this.selectedParticleName = null; this.dirty = false; this.updateChrome(); }
+      this.particles = this.particles.filter((p) => p.name !== name);
+      this.renderParticleList();
+      this.send({ type: "deleteParticle", name });
+      this.status("Deleted");
+    });
+    box.querySelector(".btn-cancel")!.addEventListener("click", close);
   }
 
   private switchTab(tabName: string): void {
@@ -306,89 +456,112 @@ class ParticleEditorBridge {
 
   private startPreviewLoop(): void {
     if (this.animFrameId) return;
-    let lastTime = 0; const frameMs = 33;
-    const loop = (time: number) => { if (time - lastTime >= frameMs) { lastTime = time; this.renderPreview(); } this.animFrameId = requestAnimationFrame(loop); };
+    // Every frame, like the game: the particle clock below is capped at one 60 FPS frame.
+    const loop = () => { this.renderPreview(); this.animFrameId = requestAnimationFrame(loop); };
     this.animFrameId = requestAnimationFrame(loop);
   }
 
-  /** One particle as the game draws it (npc.ts getParticleSprite), Brightness included: the whole particle stacked
-   * once per unit of brightness, the fraction a partial copy. */
-  private drawGlowDot(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, color: string, intensity: number, glowRadius: number, alpha: number, brightness: number = 1): void {
-    const whole = Math.floor(brightness), frac = brightness - whole;
-    for (let b = 0; b < whole + (frac > 0 ? 1 : 0); b++) this.drawGlowDotOnce(ctx, x, y, radius, color, intensity, glowRadius, alpha * (b < whole ? 1 : frac));
-  }
+  /** The last sprite baked, and the settings it was baked from. */
+  private sprite: { key: string; canvas: HTMLCanvasElement; half: number } | null = null;
 
-  /** The particle once: the glow halo out to its radius, stacked once per unit of intensity, then the feathered core. */
-  private drawGlowDotOnce(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, color: string, intensity: number, glowRadius: number, alpha: number): void {
-    if (intensity > 0) {
-      const outer = radius + (glowRadius > 0 ? glowRadius : Math.max(6, radius * 2)), edge = Math.min(0.95, radius / outer);
-      const halo = ctx.createRadialGradient(x, y, 0, x, y, outer);
+  /**
+   * The particle's sprite, baked exactly as the game bakes it (npc.ts getParticleSprite): the glow halo out to its
+   * reach stacked once per unit of Intensity, the feathered core, then the whole stacked once per unit of Brightness.
+   * Keep the two in step: the preview is only right while this matches.
+   */
+  private getSprite(color: string, radius: number, glowIntensity: number, glowRadius: number, brightness: number): { canvas: HTMLCanvasElement; half: number } {
+    const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}`;
+    if (this.sprite?.key === key) return this.sprite;
+    const reach = glowIntensity > 0 ? (glowRadius > 0 ? glowRadius : Math.max(6, radius * 2)) : 0;
+    const outer = radius + reach, sizeCss = Math.ceil(2 * outer) + 2, half = sizeCss / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, sizeCss); canvas.height = Math.max(1, sizeCss);
+    const sctx = canvas.getContext("2d")!;
+    sctx.globalCompositeOperation = "lighter";
+    if (glowIntensity > 0) {
+      const halo = sctx.createRadialGradient(half, half, 0, half, half, outer), edge = Math.min(0.95, radius / outer);
       halo.addColorStop(0, this.colorToRgba(color, 0.5)); halo.addColorStop(edge, this.colorToRgba(color, 0.32));
       halo.addColorStop(edge + (1 - edge) * 0.35, this.colorToRgba(color, 0.12)); halo.addColorStop(edge + (1 - edge) * 0.7, this.colorToRgba(color, 0.03));
-      halo.addColorStop(1, this.colorToRgba(color, 0)); ctx.fillStyle = halo;
-      const whole = Math.floor(intensity), frac = intensity - whole;
-      for (let g = 0; g < whole + (frac > 0 ? 1 : 0); g++) { ctx.globalAlpha = alpha * (g < whole ? 0.5 : frac * 0.5); ctx.fillRect(x - outer, y - outer, outer * 2, outer * 2); }
+      halo.addColorStop(1, this.colorToRgba(color, 0)); sctx.fillStyle = halo;
+      const whole = Math.floor(glowIntensity), frac = glowIntensity - whole;
+      for (let g = 0; g < whole + (frac > 0 ? 1 : 0); g++) { sctx.globalAlpha = g < whole ? 0.5 : frac * 0.5; sctx.fillRect(0, 0, sizeCss, sizeCss); }
     }
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, radius); this.addFeatheredStops(grad, color);
-    ctx.globalAlpha = alpha; ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+    const grad = sctx.createRadialGradient(half, half, 0, half, half, radius); this.addFeatheredStops(grad, color);
+    sctx.globalAlpha = 1; sctx.fillStyle = grad; sctx.beginPath(); sctx.arc(half, half, radius, 0, Math.PI * 2); sctx.fill();
+    let out = canvas;
+    if (brightness !== 1) {
+      out = document.createElement("canvas"); out.width = canvas.width; out.height = canvas.height;
+      const bctx = out.getContext("2d")!;
+      bctx.globalCompositeOperation = "lighter";
+      const whole = Math.floor(brightness), frac = brightness - whole;
+      for (let b = 0; b < whole + (frac > 0 ? 1 : 0); b++) { bctx.globalAlpha = b < whole ? 1 : frac; bctx.drawImage(canvas, 0, 0); }
+    }
+    this.sprite = { key, canvas: out, half };
+    return this.sprite;
   }
 
+  /**
+   * The particle as the game runs it (npc.ts updateParticle, the same in sourceparticles.ts): same clock, emission,
+   * spread, physics, fade and sprite. The crosshair is the point it is attached to; +X is right and +Y is down.
+   */
   private renderPreview(): void {
     if (!this.previewCtx) return;
     const ctx = this.previewCtx, canvas = this.previewCanvas, pData = this.getFormData();
     ctx.fillStyle = "#222"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save(); ctx.translate(canvas.width, canvas.height); ctx.scale(-1, -1);
+    if (!this.selectedParticleName) return;
+    const radius = (pData.size || 5) / 2, glowIntensity = pData.glow_intensity || 0;
+    const brightness = Number.isFinite(pData.brightness) ? Math.max(0, pData.brightness) : 1;
+    ctx.save();
     // big particles (size and glow radius go to 512) are shown zoomed out to fit the preview
     {
-      const r = (pData.size || 5) / 2, reach = pData.glow_intensity > 0 ? (pData.glow_radius > 0 ? pData.glow_radius : Math.max(6, r * 2)) : 0;
-      const extent = r + reach + Math.max(Math.abs(pData.localposition?.x || 0), Math.abs(pData.localposition?.y || 0)) + Math.max(Math.abs(pData.spread?.x || 0), Math.abs(pData.spread?.y || 0));
+      const reach = glowIntensity > 0 ? (pData.glow_radius > 0 ? pData.glow_radius : Math.max(6, radius * 2)) : 0;
+      const extent = radius + reach + Math.max(Math.abs(pData.localposition.x), Math.abs(pData.localposition.y)) + Math.max(Math.abs(pData.spread.x), Math.abs(pData.spread.y)) * 0.5;
       const k = Math.min(1, (Math.min(canvas.width, canvas.height) / 2 - 4) / Math.max(1, extent));
       if (k < 1) { ctx.translate(canvas.width / 2, canvas.height / 2); ctx.scale(k, k); ctx.translate(-canvas.width / 2, -canvas.height / 2); }
     }
 
-    const now = performance.now(); let dt = (now - this.lastFrameTime) / 1000; dt = Math.min(dt, 0.05); const dtMs = dt * 1000; this.lastFrameTime = now;
-    windBurst.update(dtMs);
+    // the game's clock: the frame delta capped at one 60 FPS frame, driving emission, aging and physics alike
+    const now = performance.now(), dt = Math.min((now - this.lastFrameTime) / 1000, 0.01667); this.lastFrameTime = now;
+    const originX = canvas.width / 2, originY = canvas.height / 2;
+    const sprite = this.getSprite(pData.color || "white", radius, glowIntensity, pData.glow_radius || 0, brightness);
+    ctx.globalCompositeOperation = 'lighter';
 
-    // a static light: one steady light at the particle's position (the game's npc.ts static_light), nothing emitted
+    // a static light: one steady light at the particle's position, nothing emitted
     if (pData.static_light) {
       this.previewParticles.length = 0; this.lastEmitInterval = 0;
-      ctx.globalCompositeOperation = 'lighter';
-      this.drawGlowDot(ctx, canvas.width / 2 + (pData.localposition ? pData.localposition.x : 0), canvas.height / 2 - (pData.localposition ? pData.localposition.y : 0),
-        (pData.size || 5) / 2, pData.color || "white", pData.glow_intensity || 0, pData.glow_radius || 0, pData.opacity ?? 1, pData.brightness ?? 1);
-    }
-
-    if (!pData.static_light && pData.interval && pData.interval > 0) {
-      const emitInt = pData.interval / 60 * 1000; this.lastEmitInterval += dt * 1000;
-      while (this.lastEmitInterval >= emitInt && this.previewParticles.length < pData.amount) {
+      ctx.globalAlpha = pData.opacity ?? 1;
+      ctx.drawImage(sprite.canvas, originX + pData.localposition.x - sprite.half, originY + pData.localposition.y - sprite.half, sprite.half * 2, sprite.half * 2);
+    } else {
+      const emitInt = (pData.interval || 1) / 60 * 1000; this.lastEmitInterval += dt * 1000;
+      while (this.lastEmitInterval >= emitInt && this.previewParticles.length < (pData.amount || 1)) {
         const randExt = Math.random() * (pData.staggertime || 0), baseLife = pData.lifetime || 1000;
         const wd = (typeof pData.weather === 'object' ? pData.weather : null) as any;
-        const wDir = wd?.wind_direction || null, wSpd = wd?.wind_speed || 0, wBias = getWindBias(wSpd, wDir);
-        const spX = (Math.random() < 0.5 ? -1 : 1) * Math.random() * pData.spread.x, spY = (Math.random() < 0.5 ? -1 : 1) * Math.random() * pData.spread.y;
+        const wBias = getWindBias(wd?.wind_speed || 0, wd?.wind_direction || null);
         this.previewParticles.push({
-          x: canvas.width / 2 + (pData.localposition ? pData.localposition.x : 0) + spX,
-          y: canvas.height / 2 - (pData.localposition ? pData.localposition.y : 0) + spY,
-          vx: -(pData.velocity.x + wBias.x), vy: -(pData.velocity.y + wBias.y),
-          lifetime: baseLife + randExt, currentLife: baseLife + randExt, size: pData.size || 5, color: pData.color || "white", glow_intensity: pData.glow_intensity || 0, glow_radius: pData.glow_radius || 0, brightness: pData.brightness ?? 1,
+          x: pData.localposition.x + (Math.random() < 0.5 ? -1 : 1) * Math.random() * pData.spread.x * 0.5,
+          y: pData.localposition.y + (Math.random() < 0.5 ? -1 : 1) * Math.random() * pData.spread.y * 0.5,
+          vx: pData.velocity.x + wBias.x, vy: pData.velocity.y + wBias.y,
+          lifetime: baseLife + randExt, currentLife: baseLife + randExt,
         });
         this.lastEmitInterval -= emitInt;
       }
-    }
 
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = this.previewParticles.length - 1; i >= 0; i--) {
-      const pp = this.previewParticles[i]; pp.currentLife -= dt * 1000;
-      if (pp.currentLife <= 0) { this.previewParticles.splice(i, 1); continue; }
+      windBurst.update(dt * 1000);
       let wSpd = 0, wDir: string | null = null;
       if (pData.affected_by_weather) { const wd = (typeof pData.weather === 'object' ? pData.weather : null) as any; wSpd = calculateWindSpeed(wd?.wind_speed || 0, windBurst.getIntensity()); wDir = wd?.wind_direction || null; }
-      pp.vy -= pData.gravity.y * dt; pp.vx -= pData.gravity.x * dt;
-      const nv = applyWindVelocity(pp.vx, pp.vy, wSpd, wDir, Math.abs(pData.velocity.x) || 1, Math.abs(pData.velocity.y) || 1); pp.vx = nv.vx; pp.vy = nv.vy;
-      pp.x += pp.vx * dt; pp.y += pp.vy * dt;
-      const fIn = pp.lifetime * 0.4, fOut = pp.lifetime * 0.4; let alpha: number;
-      if (pp.lifetime - pp.currentLife < fIn) alpha = ((pp.lifetime - pp.currentLife) / fIn) * pData.opacity;
-      else if (pp.currentLife < fOut) alpha = (pp.currentLife / fOut) * pData.opacity; else alpha = pData.opacity;
-      // the game's particle (npc.ts getParticleSprite): halo out to the Radius setting stacked per unit of Intensity, the
-      // core, and the whole stacked per unit of Brightness
-      this.drawGlowDot(ctx, pp.x, pp.y, pp.size / 2, pp.color, pp.glow_intensity, pp.glow_radius, alpha, pp.brightness);
+      const maxVelX = Math.abs(pData.velocity.x) || 1, maxVelY = Math.abs(pData.velocity.y) || 1;
+      for (let i = this.previewParticles.length - 1; i >= 0; i--) {
+        const pp = this.previewParticles[i]; pp.currentLife -= dt * 1000;
+        if (pp.currentLife <= 0) { this.previewParticles.splice(i, 1); continue; }
+        pp.vy += pData.gravity.y * dt; pp.vx += pData.gravity.x * dt;
+        const nv = applyWindVelocity(pp.vx, pp.vy, wSpd, wDir, maxVelX, maxVelY); pp.vx = nv.vx; pp.vy = nv.vy;
+        pp.x += pp.vx * dt; pp.y += pp.vy * dt;
+        const fIn = pp.lifetime * 0.4, fOut = pp.lifetime * 0.4; let alpha: number;
+        if (pp.lifetime - pp.currentLife < fIn) alpha = ((pp.lifetime - pp.currentLife) / fIn) * pData.opacity;
+        else if (pp.currentLife < fOut) alpha = (pp.currentLife / fOut) * pData.opacity; else alpha = pData.opacity;
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(sprite.canvas, originX + pp.x - sprite.half, originY + pp.y - sprite.half, sprite.half * 2, sprite.half * 2);
+      }
     }
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.restore();
     ctx.strokeStyle = "rgba(255, 255, 255, 0.2)"; ctx.setLineDash([5, 5]);

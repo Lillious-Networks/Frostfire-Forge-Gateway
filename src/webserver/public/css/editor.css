@@ -771,13 +771,6 @@ input[type="range"].editor-range::-moz-range-thumb {
 }
 .editor-modal-actions .btn-danger:hover { background: rgba(255, 80, 80, 0.35); }
 
-.editor-preview-area {
-  position: fixed;
-  bottom: 8px;
-  right: 8px;
-  z-index: 10;
-}
-
 #editor-layers-list { padding: 4px; flex: 1; overflow-y: auto; min-height: 0; }
 #editor-layers-list::-webkit-scrollbar { width: 4px; }
 #editor-layers-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
@@ -812,8 +805,36 @@ input[type="range"].editor-range::-moz-range-thumb {
 #particle-list { padding: 4px; flex: 1; overflow-y: auto; min-height: 0; }
 #particle-list::-webkit-scrollbar { width: 4px; }
 #particle-list::-webkit-scrollbar-thumb { background: rgba(100, 180, 255, 0.2); border-radius: 2px; }
-#particle-preview-canvas { width: 200px; height: 200px; display: block; background: #222; image-rendering: pixelated; border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 6px; margin-bottom: 15px; transition: border-color 0.2s; }
+#particle-preview-canvas { width: 200px; height: 200px; display: block; background: #222; image-rendering: pixelated; border: 1px solid rgba(46, 204, 113, 0.3); border-radius: 6px; transition: border-color 0.2s; }
 #particle-preview-canvas:hover { border-color: rgba(46, 204, 113, 0.5); }
+/* Particle editor: static tab panels as a column of cards, the live preview
+   in its own card beside them. */
+#pe-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 1240px;
+  padding: 6px 4px 16px;
+}
+#pe-body[hidden], #pe-empty[hidden], #btn-reset[hidden] { display: none; }
+#pe-panels {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#pe-panels .editor-tab-panel.active { display: flex; flex-direction: column; gap: 14px; }
+/* Stays in view while the cards scroll. */
+.pe-preview { position: sticky; top: 6px; flex-shrink: 0; }
+/* Sliders fill their field; the colour swatch keeps its own size. */
+#pe-panels input[type="range"].editor-range { width: 100% !important; min-height: 0; }
+#pe-panels .editor-form-label span { margin-left: 6px; color: #fff; font-family: 'Space Mono', monospace; }
+#pe-panels .editor-form-input[type="color"] { width: 48px; height: 34px; min-height: 0; padding: 0; }
+@media (max-width: 720px) {
+  #pe-body { flex-direction: column; }
+  .pe-preview { position: static; order: -1; align-self: center; }
+}
 #editor-form {
   padding: 6px 8px;
   flex: 1;

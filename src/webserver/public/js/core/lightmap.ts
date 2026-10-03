@@ -3,6 +3,7 @@ import { getNightFactor, getAmbientLevel } from "./ambience.js";
 import Cache from "./cache.js";
 import { particleBrightness } from "./npc.js";
 import { takeGlows } from "./glowqueue.js";
+import { spillPixels, exactGain } from "./spilllight.js";
 
 const cache = Cache.getInstance();
 
@@ -62,8 +63,8 @@ function parseColor(color: string): { r: number; gr: number; b: number } {
 // ---------------------------------------------------------------- emissive tiles
 // Tiles that give off light: Tiled custom tile properties on the map's tilesets (emissive_color, emissive_intensity,
 // emissive_radius = how far past the tile the light reaches, in px), e.g. the underworld's lava and glow pools.
-// One continuous light field over the darkened scene (light-dodge canvas, colour-dodge: a gain on what the ambience
-// darkened): full on the emissive tiles, which show at their own daylight colours, then fading with the distance past
+// One continuous light field over the darkened scene (light-dodge canvas, colour-dodge at alpha 1: a gain on what the
+// ambience darkened, 1 where no light reaches): full on the emissive tiles, which show at their own daylight colours, then fading with the distance past
 // their edge, white at the edge and turning to the light's colour further out. One field, so the light has no step
 // anywhere (USER FEEDBACK 2026-10-03, "Still seeing a hard edge": measured across a lava edge, the emissive tiles,
 // redrawn apart from the floor light, were lit 1.12 against 0.85 on the floor pixel next to them, a dark line where the
@@ -91,6 +92,8 @@ const SPILL_TINT_TILES = 2;
  * too (USER FEEDBACK 2026-10-03: at full daylight "they are too bright"; at 0.65 "little bit brighter"; at 0.75
  * "brighter"; pools, then capped at intensity 3, "brighter" again). */
 const EMISSIVE_PEAK = 0.85;
+/** the light on an emissive tile itself, 0..1 */
+const ownLight = (e: Emissive) => Math.min(1, EMISSIVE_PEAK * e.intensity / 3);
 
 /** Tiled colours are #AARRGGBB (or #RRGGBB); the light wants #RRGGBB. */
 function tiledColor(v: unknown): string {
@@ -192,7 +195,7 @@ function spillField(chunk: any, neighbours: unknown[], table: Map<number, Emissi
     // distance from the emissive tile's edge to this tile's middle (the field is sampled at tile middles)
     const d = Math.max(0, dist[gi]! - 0.5), f = dist[gi] === 0 ? 1 : Math.max(0, 1 - d / Math.max(1, e.radius / tw));
     if (f <= 0) continue;
-    amount[fi] = f * f * Math.min(1, EMISSIVE_PEAK * e.intensity / 3);
+    amount[fi] = f * f * ownLight(e);
     tint[fi] = dist[gi] === 0 ? 0 : Math.min(1, d / SPILL_TINT_TILES);
     from[fi] = e;
     lit = true;
@@ -203,32 +206,36 @@ function spillField(chunk: any, neighbours: unknown[], table: Map<number, Emissi
 /** The light canvas of a spill field for the current ambience level A (what the ambience overlay leaves of the scene):
  * per tile a colour-dodge colour at alpha = the light's amount, lifting the darkened scene to A + amount x (1 - A) x
  * tint, i.e. back to its daylight colours on emissive tiles (amount 1, white), less and more coloured further out.
- * Scaled up smoothly (1 px per tile, then two bilinear steps, fewer diamonds). */
+ * Scaled up smoothly in floats and written as opaque pixels (spilllight.ts: a canvas scaling it loses the faint end). */
 function spillCanvas(field: SpillField, level: [number, number, number], tw: number, th: number): HTMLCanvasElement {
-  const { w, h } = field, px = new ImageData(w, h);
+  const { w, h } = field, texels = new Float32Array(w * h * 4);
+  const A = level.map((v) => Math.max(0.05, Math.min(0.95, v)));
+  // Per kind of emissive tile and channel: a factor on its light (within half an 8-bit step: 2.5 % at gain 12) that
+  // makes the gain on the tile itself, 1 + its own amount x G, one a pixel holds exactly, so the emissive tiles are lit
+  // evenly, without the dither their light past them gets (spilllight.ts).
+  const exact = new Map<Emissive, number[]>();
   for (let i = 0; i < w * h; i++) {
-    const e = field.from[i];
-    if (!e || field.amount[i]! <= 0) continue;
+    const e = field.from[i], amount = field.amount[i]!;
+    if (!e || amount <= 0) continue;
+    let fit = exact.get(e);
+    if (!fit) {
+      fit = A.map((a) => { const own = ownLight(e) * (1 - a) / a; return (exactGain(1 + own) - 1) / own; });
+      exact.set(e, fit);
+    }
     const n = parseInt(e.color.slice(1), 16), col = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     for (let k = 0; k < 3; k++) {
       const full = SPILL_WHITE + (1 - SPILL_WHITE) * (col[k]! / 255), tint = 1 + (full - 1) * field.tint[i]!;
       // colour-dodge: backdrop / (1 - c); blended at alpha a the gain is 1 + a * c / (1 - c), so c / (1 - c) = G
-      const a = Math.max(0.05, Math.min(0.95, level[k]!)), G = (1 - a) * tint / a;
-      px.data[i * 4 + k] = Math.round(255 * G / (1 + G));
+      const G = (1 - A[k]!) * tint / A[k]! * fit[k]!;
+      texels[i * 4 + k] = amount * G / (1 + G);
     }
-    px.data[i * 4 + 3] = Math.round(255 * field.amount[i]!);
+    texels[i * 4 + 3] = amount;
   }
-  const small = document.createElement("canvas");
-  small.width = w; small.height = h;
-  small.getContext("2d")!.putImageData(px, 0, 0);
-  const mid = document.createElement("canvas");
-  mid.width = w * 4; mid.height = h * 4;
-  const mg = mid.getContext("2d")!;
-  mg.imageSmoothingEnabled = true; mg.drawImage(small, 0, 0, mid.width, mid.height);
   const s = SPILL_SCALE, out = document.createElement("canvas");
   out.width = Math.ceil(w * tw * s); out.height = Math.ceil(h * th * s);
-  const og = out.getContext("2d")!;
-  og.imageSmoothingEnabled = true; og.drawImage(mid, 0, 0, out.width, out.height);
+  const px = new ImageData(out.width, out.height);
+  px.data.set(spillPixels(texels, w, h, out.width, out.height));
+  out.getContext("2d")!.putImageData(px, 0, 0);
   return out;
 }
 
