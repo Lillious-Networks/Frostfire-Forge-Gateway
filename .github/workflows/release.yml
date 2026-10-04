@@ -138,3 +138,35 @@ jobs:
           build-args: |
             VERSION=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+  deploy:
+    name: Octopus Deployment
+    runs-on: ubuntu-latest
+    env:
+      OCTOPUS_SPACE: 'Default'
+      OCTOPUS_API_KEY: ${{ secrets.OCTOPUS_API_KEY }}
+      OCTOPUS_URL: ${{ secrets.OCTOPUS_URL }}
+    permissions:
+      id-token: write
+    needs: [publish-docker]
+    if: success()
+    steps:
+    - name: Create a release in Octopus Deploy 🐙
+      uses: OctopusDeploy/create-release-action@v3
+      with:
+        project: 'Frostfire Forge Gateway'
+        release_number: '1.0.${{ github.run_number }}'
+
+    - name: Deploy a release in Octopus Deploy 🐙
+      id: deploy_release
+      uses: OctopusDeploy/deploy-release-action@v3
+      with:
+        project: 'Frostfire Forge Gateway'
+        release_number: '1.0.${{ github.run_number }}'
+        environments: |
+            Production
+    - name: Await task in Octopus Deploy 🐙
+      id: await_task_in_octopus_deploy
+      uses: OctopusDeploy/await-task-action@v4
+      with:
+        server_task_id: ${{ fromJson(steps.deploy_release.outputs.server_tasks)[0].serverTaskId }}
