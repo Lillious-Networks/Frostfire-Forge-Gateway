@@ -26,6 +26,7 @@ import { renderLoot, renderLootInteractionHint } from './loot.js';
 import { renderSkeletons } from './skeletons.js';
 import { isSelfDead, isReleaseHidden, tickDeathOffer, tickReleaseCinematic, tickCorpseMarker, tickDeathWisps, tickGraveyardOffer } from './death.js';
 import { renderLightMap } from './lightmap.js';
+import { updateTileSounds } from './tilesounds.js';
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
 import { animationManager } from "./animationStateManager.js";
@@ -1042,6 +1043,8 @@ function animationLoop() {
   (window as any).updateChestInteraction?.(px, py, playerMap);
   (window as any).updateNpcInteraction?.(px, py, playerMap);
   (window as any).updateQuestFrameProximity?.(px, py);
+  // footsteps: the sound of the tile under the player's feet, a step at a time while walking
+  updateTileSounds(currentPlayer);
 
   for (const npc of cache.npcs) {
     if ((npc as any).layeredAnimation) {
