@@ -4,7 +4,8 @@ import Cache from "./cache.ts";
 import { getParticleSprite, particleBrightness, particlePool, renderNpcInteractBadge, tickNpcGossip } from "./npc.js";
 import { queueGlow } from "./glowqueue.js";
 import { getNearestNpcId } from "./quest.js";
-import { renderCreatures, creaturePositionFor, creatures, FEET_FRACTION } from "./creature.js";
+import { stepCreatures, drawCreature, drawFloatingTexts, creatureFeetY, parseCreatureTarget, creaturePositionFor, creatures, FEET_FRACTION } from "./creature.js";
+import { backToFront, PLAYER_FEET, type Standing } from "./depthorder.js";
 import { updateUnitFrames } from "./targetframe.js";
 import { dropDistantTarget } from "./creatureinput.js";
 import { updateSourceParticle } from "./sourceparticles.js";
@@ -1357,18 +1358,36 @@ function animationLoop() {
       ghostCtx.imageSmoothingEnabled = false;
     }
 
-    // NPCs render below players so quest givers never cover the player sprite.
+    // NPCs, players and creatures go on back to front, so whoever stands
+    // further south covers those behind. Corpses lie on the ground, under all.
+    const playerLevel = currentPlayer?.stats?.level ?? 1;
+    const targetedCreature = parseCreatureTarget(cache.targetId);
+    const standing: Standing[] = [];
+    const scene = ctx;
     for (const npc of visibleNpcs) {
-      npc.show(ctx);
-      npc.dialogue(ctx);
+      standing.push({
+        feet: spriteOccluder((npc as any).layeredAnimation, (npc as any).staticImage, npc.position.x, npc.position.y, 1)[4],
+        draw: () => {
+          npc.show(scene);
+          npc.dialogue(scene);
+        },
+      });
     }
-
     for (const p of visiblePlayers) {
-      if (p.isGhost && ghostCtx) p.show(ghostCtx, currentPlayer);
-      else p.show(ctx, currentPlayer);
+      const context = p.isGhost && ghostCtx ? ghostCtx : scene;
+      standing.push({
+        feet: p.renderPosition.y + PLAYER_FEET,
+        own: p.id === cachedPlayerId,
+        draw: () => p.show(context, currentPlayer),
+      });
     }
+    for (const c of stepCreatures(isInView)) {
+      if (c.state === "dead") drawCreature(scene, c, playerLevel, false);
+      else standing.push({ feet: creatureFeetY(c), draw: () => drawCreature(scene, c, playerLevel, c.id === targetedCreature) });
+    }
+    for (const character of backToFront(standing)) character.draw();
 
-    renderCreatures(ctx, isInView, currentPlayer?.stats?.level ?? 1, cache.targetId, (playerId) => {
+    drawFloatingTexts(ctx, (playerId) => {
       const p = playersArray.find((pl: any) => pl.id === playerId);
       return p ? { x: p.renderPosition?.x ?? p.position.x, y: (p.renderPosition?.y ?? p.position.y) - 10 } : null;
     });
@@ -1502,12 +1521,12 @@ function animationLoop() {
   const baseColor = particleDef.color || 'white';
           const baseOpacity = Number(particleDef.opacity) || 1;
           const glowIntensity = Number(particleDef.glow_intensity) || 0;
-          const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity, Number(particleDef.glow_radius) || 0, particleBrightness(particleDef));
+          const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity, Number(particleDef.glow_radius) || 0, particleBrightness(particleDef), particleDef.image);
           // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
           let glowMatrix: DOMMatrix | null = null;
 
           ctx.save();
-          ctx.globalCompositeOperation = 'lighter';
+          ctx.globalCompositeOperation = particleSprite.blend; // the dot adds its light; an image is drawn as it is
           ctx.shadowColor = 'transparent';
           ctx.shadowBlur = 0;
 

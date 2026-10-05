@@ -1,0 +1,88 @@
+/* Creature editor: what it has that no other tool window does. The look itself
+   (colours, space, type, the workbench, cards, forms, buttons, tables, toasts,
+   dialogs) is css/tools.css, which every tool loads; its classes start with
+   tl-, and the window with its kinds of record over the list is the workbench
+   of js/core/tooleditor.ts. What is left here, under ce-, is what this editor
+   alone has: the switch for the overlay drawn in the game, the tools that act
+   in the game window, its tables (the spawn points with the open one under
+   them, the points of a path), and the creature and the path at a glance. */
+
+/* ---------------------------------------------------------------- side pane */
+
+/* Under the list (the workbench's .tl-side-foot): the overlay drawn in the game. */
+.ce-overlay { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--s-3); }
+.ce-overlay-title { display: flex; align-items: center; gap: var(--s-2); color: var(--text-strong); font-weight: 500; cursor: pointer; }
+.ce-overlay-title .tl-icon { color: var(--text-faint); }
+.ce-overlay-note { grid-column: 1 / -1; color: var(--text-muted); font-size: var(--t-sm); }
+
+/* ------------------------------------------------------------------ pages */
+
+/* The parts of one long form inside a card, ruled off and named. */
+.ce-groups { display: grid; gap: var(--s-4); }
+.ce-groups > .tl-group:first-child { padding-top: 0; border-top: 0; }
+.ce-groups .tl-group-title { margin-bottom: var(--s-3); }
+
+/* What is done in the game window, not in this one: set apart from the fields,
+   each with what it will do there and its button. */
+.ce-world { grid-column: 1 / -1; padding: 10px var(--s-3); border: 1px solid rgba(100, 180, 255, 0.24); border-radius: 8px; background: rgba(100, 180, 255, 0.05); }
+.ce-world-title { display: flex; align-items: center; gap: 6px; margin-bottom: var(--s-1); color: var(--info-text); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.ce-world .tl-row { gap: var(--s-3); }
+.ce-world .tl-row + .tl-row { border-top-color: rgba(100, 180, 255, 0.14); }
+.ce-world .tl-row-note { max-width: 78ch; }
+.ce-world .tl-btn { min-width: 132px; }
+.tl-card-flush .ce-world { margin: 0 var(--s-4) var(--s-3); }
+
+/* ---------------------------------------------------- records in a record */
+
+/* An ability is a .tl-subcard of tools.css that folds: one line that says what it does, opened to its fields. */
+
+/* Tables inside a card: the spawn points of a creature, the points of a path, what uses a group. */
+.ce-table td, .ce-table th { padding-left: var(--s-3); padding-right: var(--s-3); }
+.ce-table td:first-child, .ce-table th:first-child { padding-left: var(--s-4); }
+.ce-table th.tl-num { text-align: right; }
+.ce-table .ce-cell-name { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.ce-table .ce-cell-main { color: var(--text-strong); font-weight: 500; }
+.ce-table .ce-cell-act { width: 1%; padding: 4px var(--s-2) 4px 0; text-align: right; }
+.ce-table .ce-cell-act .tl-icon-btn { width: 28px; height: 28px; }
+.ce-table .tl-affix { width: 132px; }
+.ce-table .tl-input { height: 30px; }
+.ce-table tr.has-error td { background: rgba(248, 113, 113, 0.07); }
+.ce-table tr.has-error td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.ce-table-wrap { overflow-x: auto; }
+
+/* -------------------------------------------------------------- at a glance */
+
+/* What an animated creature wears, slot by slot. */
+.ce-layers { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 3px; }
+.ce-layers .tl-thumb { width: 30px; height: 30px; }
+.ce-glance-title { overflow-wrap: anywhere; }
+.tl-preview-kind.ce-subname { color: #f1d9a0; overflow-wrap: anywhere; }
+
+/* A patrol path as it lies on its map: the points in walking order. */
+.ce-plot { display: block; width: 100%; height: auto; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--slate-950); }
+.ce-plot-line { fill: none; stroke: var(--data-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.ce-plot-back { stroke-dasharray: 5 5; opacity: 0.7; }
+.ce-plot-point { fill: var(--slate-950); stroke: var(--slate-200); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ce-plot-point.is-first { fill: var(--accent); stroke: var(--accent); }
+.ce-plot-point.is-waiting { fill: var(--warning); stroke: var(--warning); }
+.ce-plot-label { fill: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ce-plot-empty { display: grid; place-items: center; aspect-ratio: 4 / 3; border: 1px dashed var(--border-strong); border-radius: 8px; color: var(--text-faint); font-size: var(--t-sm); text-align: center; }
+.ce-legend { display: flex; flex-wrap: wrap; gap: 4px var(--s-3); color: var(--text-muted); font-size: var(--t-sm); }
+.ce-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ce-legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--slate-200); }
+.ce-legend i.is-first { background: var(--accent); }
+.ce-legend i.is-waiting { background: var(--warning); }
+
+/* ----------------------------------------------------------- narrow window */
+
+@media (max-width: 1199px) {
+  .ce-world .tl-btn { min-width: 0; }
+  /* The tables keep all their columns in a narrow window: less air between them, and a long name gives way sooner. */
+  .ce-table td, .ce-table th { padding-left: var(--s-2); padding-right: var(--s-2); }
+  .ce-table .ce-cell-name { max-width: 136px; }
+}
+
+/* A short window keeps the room for the list: the overlay's switch stays, and its words are left to its tooltip. */
+@media (max-height: 760px) {
+  .ce-overlay-note { display: none; }
+}

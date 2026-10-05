@@ -210,12 +210,12 @@ async function createPlayer(data: any) {
         const baseColor = particleDef.color || '#ffffff';
         const baseOpacity = Number(particleDef.opacity) || 1;
         const glowIntensity = Number(particleDef.glow_intensity) || 0;
-        const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity, Number(particleDef.glow_radius) || 0, particleBrightness(particleDef));
+        const particleSprite = getParticleSprite(baseColor, (Number(particleDef.size) || 5) / 2, glowIntensity, Number(particleDef.glow_radius) || 0, particleBrightness(particleDef), particleDef.image);
         // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
         let glowMatrix: DOMMatrix | null = null;
 
         context.save();
-        context.globalCompositeOperation = 'lighter';
+        context.globalCompositeOperation = particleSprite.blend; // the dot adds its light; an image is drawn as it is
         context.shadowColor = 'transparent';
         context.shadowBlur = 0;
 

@@ -1,4 +1,10 @@
-
+// The animation editor: a sprite sheet is cut into frames, the frames are put
+// in order on a timeline for each direction of each animation, and the result
+// is exported as the metadata the game reads. The page (animator.html) is its
+// own markup, styled by css/tools.css and css/animator.css; this script finds
+// its parts by their ids. It talks to no server: what it keeps is the autosave
+// in the browser's own storage, and what it writes is the exported file.
+import { icon, num, toast, tooltip, type IconName } from "../core/toolkit";
 
 declare global {
   interface Window {
@@ -131,6 +137,8 @@ class AnimatorTool {
   constructor() {
     this.metadata = this.createEmptyMetadata();
 
+    this.dress();
+
     this.previewCanvas = document.getElementById('spritesheet-preview-canvas') as HTMLCanvasElement;
     this.previewCtx = this.previewCanvas.getContext('2d')!;
     this.gridCanvas = document.getElementById('timeline-grid-canvas') as HTMLCanvasElement;
@@ -157,6 +165,24 @@ class AnimatorTool {
     this.initializeUI();
     this.restoreAutosave();
     this.clampAllFrameDurations();
+  }
+
+  /** Puts the icons and tooltips on the page's own markup, which names them in data-icon and data-tip. */
+  private dress(): void {
+    document.querySelectorAll<HTMLElement>('[data-icon]').forEach((node) => {
+      node.prepend(icon(node.dataset.icon as IconName, Number(node.dataset.iconSize) || 16));
+    });
+    document.querySelectorAll<HTMLElement>('[data-tip]').forEach((node) => tooltip(node, node.dataset.tip!));
+  }
+
+  /** A line of words in place of a strip's frames while it has none. */
+  private noneNote(text: string, iconName: IconName): HTMLElement {
+    const note = document.createElement('div');
+    note.className = 'an-none';
+    const words = document.createElement('span');
+    words.textContent = text;
+    note.append(icon(iconName, 15), words);
+    return note;
   }
 
   private initializeUI(): void {
@@ -416,7 +442,7 @@ class AnimatorTool {
       });
     }
 
-    document.querySelectorAll('.modal-close').forEach((btn) => {
+    document.querySelectorAll('.an-modal-close').forEach((btn) => {
       btn.addEventListener('click', () => this.closeAllModals());
     });
 
@@ -1184,8 +1210,9 @@ class AnimatorTool {
         this.updateExportButtonState();
 
         const shouldLoadImage = await this.showConfirm(
-          'Spritesheet Lookup',
-          `Import complete! Locate the spritesheet image${this.metadata.imageSource ? ` (${this.metadata.imageSource})` : ''} to continue.`
+          'Spritesheet lookup',
+          `Import complete! Locate the spritesheet image${this.metadata.imageSource ? ` (${this.metadata.imageSource})` : ''} to continue.`,
+          'Choose image'
         );
 
         if (shouldLoadImage) {
@@ -1323,8 +1350,10 @@ class AnimatorTool {
 
   private async newMetadata(): Promise<void> {
     const shouldContinue = await this.showConfirm(
-      'Create New Metadata',
-      'Are you sure? Current work will be lost if not saved.'
+      'Create new metadata',
+      'Are you sure? Current work will be lost if not saved.',
+      'Start new',
+      true
     );
 
     if (!shouldContinue) return;
@@ -1401,8 +1430,9 @@ class AnimatorTool {
 
             if (autoDetected) {
               const shouldSplit = await this.showConfirm(
-                'Auto-Split Frames?',
-                `Detected ${this.metadata.columns}x${this.metadata.rows} grid. Would you like to automatically split frames?`
+                'Auto-split frames?',
+                `Detected ${this.metadata.columns}x${this.metadata.rows} grid. Would you like to automatically split frames?`,
+                'Split frames'
               );
               if (shouldSplit) {
                 this.splitFramesFromImage();
@@ -1518,13 +1548,13 @@ class AnimatorTool {
     container.innerHTML = '';
 
     if (!this.currentImage || this.splitFrames.length === 0) {
-      container.innerHTML = '<div class="empty-message" style="color: #4b5563; font-size: 0.85em; text-align: center; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">Load a spritesheet and click "Split Frames" to get started.</div>';
+      container.appendChild(this.noneNote('Load a sprite sheet and click "Split frames" to get started.', 'image'));
       return;
     }
 
     this.splitFrames.forEach((frame) => {
       const frameEl = document.createElement('div');
-      frameEl.className = 'frame-item';
+      frameEl.className = 'an-frame';
       frameEl.draggable = true;
       frameEl.dataset.frameIndex = frame.index.toString();
 
@@ -1541,7 +1571,7 @@ class AnimatorTool {
 
       const label = document.createElement('span');
       label.textContent = frame.index.toString();
-      label.className = 'frame-label';
+      label.className = 'an-frame-index';
 
       frameEl.appendChild(canvas);
       frameEl.appendChild(label);
@@ -1644,7 +1674,8 @@ class AnimatorTool {
 
     const direction = this.getCurrentDirection();
     if (!direction || direction.frames.length === 0) {
-      container.innerHTML = '<div class="empty-message" style="color: #4b5563; font-size: 0.85em; text-align: left; width: 100%; padding: 0 12px; display: flex; align-items: center;">No frames in timeline. Drag frames here.</div>';
+      // With no direction open a dropped frame is turned away, so the line says what to do first.
+      container.appendChild(this.noneNote(direction ? 'No frames in timeline. Drag frames here.' : 'No frames in timeline. Add an animation and a direction first.', 'layers'));
       (document.getElementById('timeline-frame-offset-x') as HTMLInputElement).value = '0';
       (document.getElementById('timeline-frame-offset-y') as HTMLInputElement).value = '0';
       return;
@@ -1652,27 +1683,17 @@ class AnimatorTool {
 
     direction.frames.forEach((timelineFrame, index) => {
       const frameEl = document.createElement('div');
-      frameEl.className = 'timeline-frame-item';
+      frameEl.className = 'an-step';
       frameEl.dataset.timelineIndex = index.toString();
       frameEl.draggable = true;
-      frameEl.style.cssText = `
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        background: transparent;
-        border: 1px solid #444;
-        border-radius: 4px;
-        margin-right: 8px;
-        cursor: grab;
-      `;
 
       if (this.selectedTimelineFrame === index) {
-        frameEl.style.borderColor = '#22c55e';
+        frameEl.classList.add('is-selected');
       }
 
       const frameNumber = document.createElement('span');
       frameNumber.textContent = timelineFrame.frameIndex.toString();
-      frameNumber.style.cssText = 'color: #fff; font-weight: 500; min-width: 20px;';
+      frameNumber.className = 'an-step-index';
       frameEl.appendChild(frameNumber);
 
       const durationInput = document.createElement('input');
@@ -1680,15 +1701,8 @@ class AnimatorTool {
       durationInput.value = timelineFrame.duration.toString();
       durationInput.min = '10';
       durationInput.max = '10000';
-      durationInput.style.cssText = `
-        width: 60px;
-        padding: 4px 6px;
-        background: #1a1a2e;
-        border: 1px solid #555;
-        border-radius: 3px;
-        color: #fff;
-        font-size: 13px;
-      `;
+      durationInput.className = 'tl-input tl-input-number an-step-ms';
+      durationInput.setAttribute('aria-label', `How long frame ${timelineFrame.frameIndex} is shown, in milliseconds`);
       durationInput.addEventListener('focus', (e) => {
 
         this.pushUndoState('duration', timelineFrame.duration, index);
@@ -1725,7 +1739,7 @@ class AnimatorTool {
 
       const msLabel = document.createElement('span');
       msLabel.textContent = 'ms';
-      msLabel.style.cssText = 'color: #888; font-size: 12px;';
+      msLabel.className = 'an-step-unit';
       frameEl.appendChild(msLabel);
 
       frameEl.addEventListener('click', () => {
@@ -1741,25 +1755,10 @@ class AnimatorTool {
       });
 
       const deleteBtn = document.createElement('button');
-      deleteBtn.textContent = '×';
-      deleteBtn.style.cssText = `
-        position: absolute;
-        top: -6px;
-        right: -6px;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: #ff4444;
-        border: none;
-        color: #fff;
-        font-size: 14px;
-        line-height: 1;
-        cursor: pointer;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      `;
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'tl-icon-btn tl-icon-btn-danger an-step-remove';
+      deleteBtn.setAttribute('aria-label', `Take frame ${timelineFrame.frameIndex} off the timeline`);
+      deleteBtn.appendChild(icon('close', 13));
       deleteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
 
@@ -1789,7 +1788,7 @@ class AnimatorTool {
       frameEl.addEventListener('dragstart', (e) => {
         this.draggedTimelineElement = frameEl;
         this.draggedTimelineIndex = index;
-        frameEl.classList.add('dragging');
+        frameEl.classList.add('is-dragging');
         e.dataTransfer!.effectAllowed = 'move';
         e.dataTransfer!.setData('timeline-reorder', index.toString());
 
@@ -1805,15 +1804,15 @@ class AnimatorTool {
         if (this.draggedTimelineElement) {
           this.draggedTimelineElement.style.opacity = '';
           this.draggedTimelineElement.style.pointerEvents = '';
-          this.draggedTimelineElement.classList.remove('dragging');
+          this.draggedTimelineElement.classList.remove('is-dragging');
         }
         this.draggedTimelineElement = null;
         this.draggedTimelineIndex = -1;
         this.dragOverTargetIndex = -1;
         this.dragOverMouseSide = 'before';
 
-        document.querySelectorAll('.timeline-frame-item').forEach(el => {
-          el.classList.remove('drag-over', 'drop-before', 'drop-after');
+        document.querySelectorAll('.an-step').forEach(el => {
+          el.classList.remove('is-drop-before', 'is-drop-after');
         });
       });
 
@@ -1824,8 +1823,8 @@ class AnimatorTool {
 
         if (frameEl === this.draggedTimelineElement) return;
 
-        document.querySelectorAll('.timeline-frame-item').forEach(el => {
-          el.classList.remove('drop-before', 'drop-after');
+        document.querySelectorAll('.an-step').forEach(el => {
+          el.classList.remove('is-drop-before', 'is-drop-after');
         });
 
         const rect = frameEl.getBoundingClientRect();
@@ -1836,9 +1835,9 @@ class AnimatorTool {
         this.dragOverMouseSide = mouseX < midpoint ? 'before' : 'after';
 
         if (mouseX < midpoint) {
-          frameEl.classList.add('drop-before');
+          frameEl.classList.add('is-drop-before');
         } else {
-          frameEl.classList.add('drop-after');
+          frameEl.classList.add('is-drop-after');
         }
       });
 
@@ -1855,7 +1854,7 @@ class AnimatorTool {
     const track = document.getElementById('timeline-track');
     if (!track) return;
 
-    const existingPlayhead = track.querySelector('.timeline-playhead');
+    const existingPlayhead = track.querySelector('.an-playhead');
     track.innerHTML = '';
     if (existingPlayhead) {
       track.appendChild(existingPlayhead);
@@ -1874,14 +1873,14 @@ class AnimatorTool {
       const position = (accumulatedTime / totalDuration) * 100;
 
       const dotContainer = document.createElement('div');
-      dotContainer.className = 'timeline-frame-dot-container';
+      dotContainer.className = 'an-dot-wrap';
       dotContainer.style.left = `${position}%`;
       dotContainer.dataset.frameIndex = index.toString();
 
       const dot = document.createElement('div');
-      dot.className = 'timeline-frame-dot';
+      dot.className = 'an-dot';
       if (index === this.selectedTimelineFrame) {
-        dot.classList.add('active');
+        dot.classList.add('is-active');
       }
 
       dot.addEventListener('click', (e) => {
@@ -1896,8 +1895,8 @@ class AnimatorTool {
       });
 
       const timeLabel = document.createElement('span');
-      timeLabel.className = 'timeline-frame-time';
-      timeLabel.textContent = `${accumulatedTime}ms`;
+      timeLabel.className = 'an-dot-time';
+      timeLabel.textContent = `${num(accumulatedTime)} ms`;
 
       dotContainer.appendChild(dot);
       dotContainer.appendChild(timeLabel);
@@ -2003,11 +2002,11 @@ class AnimatorTool {
     if (!modal || !nameInput) return;
 
     if (editMode && this.selectedAnimation) {
-      if (titleEl) titleEl.textContent = 'Edit Animation';
+      if (titleEl) titleEl.textContent = 'Rename animation';
       nameInput.value = this.selectedAnimation;
       this.editingAnimationName = this.selectedAnimation;
     } else {
-      if (titleEl) titleEl.textContent = 'Add Animation';
+      if (titleEl) titleEl.textContent = 'Add animation';
       nameInput.value = '';
       this.editingAnimationName = null;
     }
@@ -2096,8 +2095,10 @@ class AnimatorTool {
     }
 
     const confirmed = await this.showConfirm(
-      'Delete Animation',
-      `Are you sure you want to delete the animation "${this.selectedAnimation}"? This cannot be undone.`
+      'Delete animation',
+      `Are you sure you want to delete the animation "${this.selectedAnimation}"? This cannot be undone.`,
+      'Delete animation',
+      true
     );
 
     if (!confirmed) return;
@@ -2291,8 +2292,10 @@ class AnimatorTool {
     }
 
     const confirmed = await this.showConfirm(
-      'Delete Direction',
-      `Are you sure you want to delete the direction "${this.selectedDirection}"? This cannot be undone.`
+      'Delete direction',
+      `Are you sure you want to delete the direction "${this.selectedDirection}"? This cannot be undone.`,
+      'Delete direction',
+      true
     );
 
     if (!confirmed) return;
@@ -2447,29 +2450,34 @@ class AnimatorTool {
     }
   }
 
+  /** The play button says what pressing it will do: play, or pause while the preview is playing. */
+  private showPlayButton(playing: boolean): void {
+    const playPauseBtn = document.getElementById('play-pause-btn');
+    if (!playPauseBtn) return;
+    const label = document.createElement('span');
+    label.textContent = playing ? 'Pause' : 'Play';
+    playPauseBtn.replaceChildren(icon(playing ? 'pause' : 'play', 15), label);
+  }
+
   private startPlayback(): void {
     this.isPlaying = true;
     this.playbackFrame = 0;
     this.playbackStartTime = Date.now();
 
-    const playPauseBtn = document.getElementById('play-pause-btn');
-    if (playPauseBtn) {
-      playPauseBtn.textContent = '⏸';
-      playPauseBtn.className = 'btn btn-pause';
-    }
+    this.showPlayButton(true);
 
     const track = document.getElementById('timeline-track');
     if (track) {
-      let playhead = track.querySelector('.timeline-playhead') as HTMLElement;
+      let playhead = track.querySelector('.an-playhead') as HTMLElement;
       if (!playhead) {
         playhead = document.createElement('div');
-        playhead.className = 'timeline-playhead';
+        playhead.className = 'an-playhead';
         track.appendChild(playhead);
       }
       playhead.style.left = '0%';
       playhead.style.display = 'block';
 
-      const dots = track.querySelectorAll('.timeline-frame-dot');
+      const dots = track.querySelectorAll('.an-dot');
       dots.forEach((dot) => {
         (dot as HTMLElement).style.transform = 'scale(1)';
         (dot as HTMLElement).style.transition = 'none';
@@ -2511,11 +2519,7 @@ class AnimatorTool {
       this.selectedTimelineFrame = this.playbackFrame;
     }
 
-    const playPauseBtn = document.getElementById('play-pause-btn');
-    if (playPauseBtn) {
-      playPauseBtn.textContent = '▶';
-      playPauseBtn.className = 'btn btn-play';
-    }
+    this.showPlayButton(false);
 
     if (this.playbackAnimationId !== null) {
       cancelAnimationFrame(this.playbackAnimationId);
@@ -2538,17 +2542,17 @@ class AnimatorTool {
 
     if (!track || !direction || direction.frames.length === 0) {
 
-      const playhead = track?.querySelector('.timeline-playhead') as HTMLElement;
+      const playhead = track?.querySelector('.an-playhead') as HTMLElement;
       if (playhead) {
         playhead.style.display = 'none';
       }
       return;
     }
 
-    let playhead = track.querySelector('.timeline-playhead') as HTMLElement;
+    let playhead = track.querySelector('.an-playhead') as HTMLElement;
     if (!playhead) {
       playhead = document.createElement('div');
-      playhead.className = 'timeline-playhead';
+      playhead.className = 'an-playhead';
       track.appendChild(playhead);
     }
 
@@ -2577,18 +2581,14 @@ class AnimatorTool {
 
     this.selectedTimelineFrame = 0;
 
-    const playPauseBtn = document.getElementById('play-pause-btn');
-    if (playPauseBtn) {
-      playPauseBtn.textContent = '▶';
-      playPauseBtn.className = 'btn btn-play';
-    }
+    this.showPlayButton(false);
 
     if (this.playbackAnimationId !== null) {
       cancelAnimationFrame(this.playbackAnimationId);
       this.playbackAnimationId = null;
     }
 
-    const dots = document.querySelectorAll('.timeline-frame-dot');
+    const dots = document.querySelectorAll('.an-dot');
     dots.forEach((dot) => {
       (dot as HTMLElement).style.transform = '';
     });
@@ -2641,15 +2641,15 @@ class AnimatorTool {
 
     const track = document.getElementById('timeline-track');
     if (track) {
-      const playhead = track.querySelector('.timeline-playhead') as HTMLElement;
+      const playhead = track.querySelector('.an-playhead') as HTMLElement;
       if (playhead) {
         const progress = Math.min((currentTime / totalDuration) * 100, 100);
         playhead.style.left = `${progress}%`;
       }
 
-      const dots = track.querySelectorAll('.timeline-frame-dot-container');
+      const dots = track.querySelectorAll('.an-dot-wrap');
       dots.forEach((container, index) => {
-        const dot = container.querySelector('.timeline-frame-dot') as HTMLElement;
+        const dot = container.querySelector('.an-dot') as HTMLElement;
         if (dot) {
           if (index === currentFrame) {
 
@@ -2772,11 +2772,11 @@ class AnimatorTool {
     if (frameDisplay) {
       if (this.isPlaying) {
         frameDisplay.style.display = 'block';
-        frameDisplay.textContent = `Frame: ${this.playbackFrame + 1}/${direction.frames.length}`;
+        frameDisplay.textContent = `Frame ${this.playbackFrame + 1} of ${direction.frames.length}`;
       } else if (this.selectedTimelineFrame !== null) {
 
         frameDisplay.style.display = 'block';
-        frameDisplay.textContent = `Frame: ${this.selectedTimelineFrame + 1}/${direction.frames.length}`;
+        frameDisplay.textContent = `Frame ${this.selectedTimelineFrame + 1} of ${direction.frames.length}`;
       } else {
 
         frameDisplay.style.display = 'none';
@@ -2787,11 +2787,11 @@ class AnimatorTool {
       if (this.isPlaying && direction.frames[this.playbackFrame]) {
         timeDisplay.style.display = 'block';
         const elapsedTime = Date.now() - this.playbackStartTime;
-        timeDisplay.textContent = `Time: ${Math.round(elapsedTime)}ms`;
+        timeDisplay.textContent = `${num(elapsedTime)} ms`;
       } else if (!this.isPlaying && this.selectedTimelineFrame !== null) {
 
         timeDisplay.style.display = 'block';
-        timeDisplay.textContent = `Time: 0ms`;
+        timeDisplay.textContent = '0 ms';
       } else {
 
         timeDisplay.style.display = 'none';
@@ -2973,23 +2973,14 @@ class AnimatorTool {
     const input = document.createElement('input');
     input.id = 'coord-inline-input';
     input.type = 'text';
-    input.style.cssText = `
-      position: absolute;
-      left: ${this.gridCanvas.offsetLeft + labelX}px;
-      top: ${this.gridCanvas.offsetTop + labelY}px;
-      width: ${labelWidth}px;
-      height: ${labelHeight}px;
-      background: rgba(0, 0, 0, 0.9);
-      border: 1px solid #22c55e;
-      color: #fff;
-      font-size: 11px;
-      font-family: monospace;
-      text-align: center;
-      padding: 0;
-      margin: 0;
-      z-index: 1000;
-      outline: none;
-    `;
+    // Over the label it replaces, and wide enough for the longest pair that can be typed.
+    const fieldWidth = Math.max(labelWidth, 84);
+    input.className = 'an-coord';
+    input.placeholder = 'x, y';
+    input.setAttribute('aria-label', 'Where the frame is placed: x, y');
+    input.style.left = `${this.gridCanvas.offsetLeft + labelX - (fieldWidth - labelWidth) / 2}px`;
+    input.style.top = `${this.gridCanvas.offsetTop + labelY - (20 - labelHeight) / 2}px`;
+    input.style.width = `${fieldWidth}px`;
 
     let isClosing = false;
 
@@ -3095,14 +3086,18 @@ class AnimatorTool {
     }
   }
 
-  private async showConfirm(title: string, message: string): Promise<boolean> {
+  /**
+   * Asks before going on. `okLabel` is what the yes button says, which is the
+   * thing it does; `danger` is for a yes that loses work, and makes it red.
+   */
+  private async showConfirm(title: string, message: string, okLabel: string = 'Okay', danger: boolean = false): Promise<boolean> {
     return new Promise((resolve) => {
       const modal = document.getElementById('confirm-modal');
       const titleEl = document.getElementById('confirm-title');
       const messageEl = document.getElementById('confirm-message');
       const okBtn = document.getElementById('confirm-ok-btn');
       const cancelBtn = document.getElementById('confirm-cancel-btn');
-      const closeBtn = modal?.querySelector('.modal-close');
+      const closeBtn = modal?.querySelector('.an-modal-close');
 
       if (!modal || !titleEl || !messageEl || !okBtn || !cancelBtn) {
         resolve(false);
@@ -3111,6 +3106,13 @@ class AnimatorTool {
 
       titleEl.textContent = title;
       messageEl.textContent = message;
+      okBtn.textContent = okLabel;
+      okBtn.className = `tl-btn ${danger ? 'tl-btn-danger-solid' : 'tl-btn-primary'}`;
+      const badge = document.getElementById('confirm-badge');
+      if (badge) {
+        badge.className = `tl-dialog-badge${danger ? '' : ' tl-dialog-badge-plain'}`;
+        badge.replaceChildren(icon(danger ? 'alert' : 'info', 20));
+      }
       modal.style.display = 'flex';
 
       const cleanup = () => {
@@ -3148,19 +3150,13 @@ class AnimatorTool {
     });
   }
 
+  /**
+   * A note in the corner that leaves by itself. Something done, or something to
+   * know, is a plain note; something that was not done ('warning') or that went
+   * wrong ('error') is shown as the other tools show a refusal, and stays longer.
+   */
   private showNotification(message: string, type: 'success' | 'warning' | 'error' | 'info' = 'success'): void {
-    const container = document.getElementById('notification-container');
-    if (!container) return;
-
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    container.appendChild(notification);
-
-    setTimeout(() => {
-      notification.classList.add('notification-fade-out');
-      setTimeout(() => notification.remove(), 300);
-    }, 3000);
+    toast(message, type === 'warning' || type === 'error' ? 'error' : 'info');
   }
 }
 

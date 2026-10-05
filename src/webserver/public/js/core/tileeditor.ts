@@ -5,6 +5,7 @@ import { invalidateChunk } from "./glmap/index.js";
 import { invalidateChunk as invalidateChunkMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
 import { panEditorCamera } from "./renderer.js";
+import { TilePreviewCache } from "./tilepreviewcache.js";
 
 declare global {
   interface Window {
@@ -105,6 +106,7 @@ class TileEditor {
 
   private selectedTiles: number[][] = [];
   private selectedTilesFromMap: boolean = false;
+  private selectedTilesPreview: TilePreviewCache = new TilePreviewCache();
   private modifiedChunkKeys: Set<string> = new Set();
   private layerDataSnapshot: Map<string, Map<string, number[]>> | null = null;
 
@@ -164,10 +166,16 @@ class TileEditor {
     this.showSyncNotification();
     sendRequest({ type: 'EDITOR_OPEN', data: null });
 
-    // Open external editor window
+    // Open external editor window. The map is painted in the game window, so, like the NPC editor, this one
+    // opens against the right edge of the screen at the size it is laid out for, where the screen allows.
     const url = window.location.origin + '/map-editor';
+    const area = window.screen as Screen & { availLeft?: number; availTop?: number };
+    const width = Math.min(1350, area.availWidth - 40);
+    const height = Math.min(900, area.availHeight - 80);
+    const left = (area.availLeft ?? 0) + Math.max(0, area.availWidth - width - 24);
+    const top = (area.availTop ?? 0) + Math.max(0, Math.round((area.availHeight - height) / 2));
     this.editorWindow = window.open(url, 'MapEditor',
-      'width=1350,height=900,left=100,top=100,location=no,toolbar=no,menubar=no,status=no');
+      `width=${width},height=${height},left=${left},top=${top},location=no,toolbar=no,menubar=no,status=no`);
 
     if (!this.editorWindow) {
       this.showNotification('Popup blocked! Please allow popups for this site.', 'error', 5000);
@@ -192,6 +200,7 @@ class TileEditor {
 
   private async closeEditor() {
     this.isActive = false;
+    this.selectedTilesPreview.invalidate();
     this.hideSyncNotification();
 
     if (this.editorWindow && !this.editorWindow.closed) {
@@ -226,6 +235,7 @@ class TileEditor {
     this.editorWindow = null;
     this.bridgeReady = false;
     this.isActive = false;
+    this.selectedTilesPreview.invalidate();
     this.hideSyncNotification();
 
     sendRequest({ type: 'EDITOR_CLOSE', data: null });
@@ -1690,6 +1700,8 @@ class TileEditor {
 
     if (this.selectedTiles.length === 1 && this.selectedTiles[0].length === 1) {
       this.selectedTiles[0][0] = newTile;
+      // Same array, different tile: the baked preview would not notice.
+      this.selectedTilesPreview.invalidate();
     }
 
     if (this.copiedTile !== null) {
@@ -4049,6 +4061,43 @@ class TileEditor {
     nameInput.focus();
   }
 
+  // One tile of a multi-tile pick, with its outline. False while the tile's
+  // tileset image is still loading.
+  private drawSelectedTilePreview(target: CanvasRenderingContext2D, tileId: number, x: number, y: number): boolean {
+    const tw = window.mapData.tilewidth;
+    const th = window.mapData.tileheight;
+
+    if (tileId === 0) {
+      target.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+      target.lineWidth = 1;
+      target.strokeRect(x, y, tw, th);
+      return true;
+    }
+
+    const baseGID = getTileBaseGid(tileId);
+    const tileset = window.mapData.tilesets.find((t: any) =>
+      t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
+    );
+
+    if (!tileset) return true;
+
+    const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
+    if (!image) return true;
+    if (!image.complete) return false;
+
+    const localTileId = baseGID - tileset.firstgid;
+    const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
+    const srcX = (localTileId % tilesPerRow) * tileset.tilewidth;
+    const srcY = Math.floor(localTileId / tilesPerRow) * tileset.tileheight;
+
+    drawTileWithFlags(target, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, x, y, tw, th, tileId);
+
+    target.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    target.lineWidth = 2;
+    target.strokeRect(x, y, tw, th);
+    return true;
+  }
+
   public renderPreview() {
     if (!this.isActive || !window.mapData || !ctx) return;
 
@@ -4135,43 +4184,19 @@ class TileEditor {
 
     if (this.currentTool === 'paint' && this.selectedTiles.length > 0) {
       try {
-        for (let row = 0; row < this.selectedTiles.length; row++) {
-          for (let col = 0; col < this.selectedTiles[row].length; col++) {
-            const tileId = this.selectedTiles[row][col];
-            const worldX = (this.previewTilePos.x + col) * window.mapData.tilewidth;
-            const worldY = (this.previewTilePos.y + row) * window.mapData.tileheight;
-
-            if (tileId === 0) {
-              ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-              ctx.lineWidth = 1;
-              ctx.strokeRect(worldX, worldY, window.mapData.tilewidth, window.mapData.tileheight);
-              continue;
-            }
-
-            const baseGID = getTileBaseGid(tileId);
-            const tileset = window.mapData.tilesets.find((t: any) =>
-              t.firstgid <= baseGID && baseGID < t.firstgid + t.tilecount
-            );
-
-            if (!tileset) continue;
-
-            const image = window.mapData.images[window.mapData.tilesets.indexOf(tileset)];
-            if (!image || !image.complete) continue;
-
-            const localTileId = baseGID - tileset.firstgid;
-            const tilesPerRow = Math.floor(tileset.imagewidth / tileset.tilewidth);
-            const srcX = (localTileId % tilesPerRow) * tileset.tilewidth;
-            const srcY = Math.floor(localTileId / tilesPerRow) * tileset.tileheight;
-            const tw = window.mapData.tilewidth;
-            const th = window.mapData.tileheight;
-
-            drawTileWithFlags(ctx, image, srcX, srcY, tileset.tilewidth, tileset.tileheight, worldX, worldY, tw, th, tileId);
-
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(worldX, worldY, window.mapData.tilewidth, window.mapData.tileheight);
-          }
-        }
+        // Baked once per pick instead of drawn tile by tile every frame, which
+        // a large pick cannot afford (see tilepreviewcache.ts).
+        this.selectedTilesPreview.draw(
+          ctx,
+          this.selectedTiles,
+          window.mapData,
+          this.previewTilePos.x * window.mapData.tilewidth,
+          this.previewTilePos.y * window.mapData.tileheight,
+          window.mapData.tilewidth,
+          window.mapData.tileheight,
+          ctx.globalAlpha,
+          (target, tileId, x, y) => this.drawSelectedTilePreview(target, tileId, x, y)
+        );
       } catch (e) {
         console.error('Error drawing preview tile:', e);
       }

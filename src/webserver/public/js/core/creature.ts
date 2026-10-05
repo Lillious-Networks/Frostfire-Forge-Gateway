@@ -359,17 +359,16 @@ const STANCE_COLORS: Record<CreatureView["stance"], string> = {
 
 let lastRenderAt = 0;
 
-export function renderCreatures(
-  ctx: CanvasRenderingContext2D,
-  isInView: (x: number, y: number) => boolean,
-  playerLevel: number,
-  targetId: string | null,
-  playerPosition: (playerId: string) => { x: number; y: number } | null
-): void {
+/**
+ * Moves every creature along and steps its animation for this frame, and
+ * returns the ones in view. The renderer draws those with drawCreature, in
+ * depth order with the players.
+ */
+export function stepCreatures(isInView: (x: number, y: number) => boolean): CreatureView[] {
   const now = performance.now();
   const deltaSeconds = Math.min(0.1, lastRenderAt ? (now - lastRenderAt) / 1000 : 0);
   lastRenderAt = now;
-  const targeted = parseCreatureTarget(targetId);
+  const inView: CreatureView[] = [];
   for (const c of creatures.values()) {
     updateRenderPosition(c, now);
     if (c.anim) {
@@ -377,18 +376,18 @@ export function renderCreatures(
       if (c.anim.currentAnimationName !== wanted) void changeLayeredAnimation(c.anim, wanted);
       updateLayeredAnimation(c.anim, deltaSeconds);
     }
-    if (!isInView(c.renderX, c.renderY)) continue;
-    drawCreature(ctx, c, playerLevel, c.id === targeted);
+    if (isInView(c.renderX, c.renderY)) inView.push(c);
   }
-  drawFloatingTexts(ctx, now, playerPosition);
+  return inView;
 }
 
-function drawFloatingTexts(
+/** Combat text over creatures and players; drawn after every character so none of them covers it. */
+export function drawFloatingTexts(
   ctx: CanvasRenderingContext2D,
-  now: number,
   playerPosition: (playerId: string) => { x: number; y: number } | null
 ): void {
   if (floatingTexts.length === 0) return;
+  const now = performance.now();
   ctx.save();
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
@@ -525,12 +524,25 @@ function drawCreatureCorpse(ctx: CanvasRenderingContext2D, c: CreatureView): voi
   ctx.restore();
 }
 
-function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, playerLevel: number, targeted: boolean): void {
+/** Radius of the placeholder body drawn while a creature has no sprite. */
+const bodyRadius = (c: CreatureView): number => 14 * (c.scale || 1);
+
+/** Where a creature touches the ground: its sprite's feet, or the bottom of the placeholder body. */
+function groundLine(c: CreatureView, metrics: { feetY: number } | null): number {
+  return metrics ? metrics.feetY : c.renderY + 8 + bodyRadius(c) * 0.9;
+}
+
+/** The line a living creature is depth-sorted by against the other characters. */
+export function creatureFeetY(c: CreatureView): number {
+  return groundLine(c, spriteMetrics(c));
+}
+
+export function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, playerLevel: number, targeted: boolean): void {
   if (c.state === "dead") {
     drawCreatureCorpse(ctx, c);
     return;
   }
-  const radius = 14 * (c.scale || 1);
+  const radius = bodyRadius(c);
   // Server anchor matches players: horizontal centre, footprint below y.
   const cx = c.renderX;
   const cy = c.renderY + 8;
@@ -540,7 +552,7 @@ function drawCreature(ctx: CanvasRenderingContext2D, c: CreatureView, playerLeve
   // Ground markers go under the creature's feet and are drawn before the
   // sprite, so nothing is painted over the creature itself.
   const metrics = spriteMetrics(c);
-  const groundY = metrics ? metrics.feetY : cy + radius * 0.9;
+  const groundY = groundLine(c, metrics);
   const groundRx = metrics ? Math.max(radius, 10 * (c.scale || 1)) : radius;
 
   // Same as players (player.ts show()): a dark shadow, which a target swaps

@@ -1,0 +1,51 @@
+/* The NPC editor's own parts, for what no other tool window has. The page
+   loads css/tools.css (the look every tool shares), then css/questnpcparts.css
+   (the pick-several field it shares with the quest editor), then this. Every
+   class here starts with ne-; all of it is drawn from the tokens of tools.css.
+
+   .ne-place                 the facts of where the NPC stands (.tl-facts), above the fields of its card
+   .ne-code                  on a .tl-textarea: a script, in the fixed-width face
+   .ne-complete              the suggestions under a text box as it is typed in: .ne-complete-list
+                             (.ne-complete-row[aria-selected], -name, -hint), then .ne-complete-keys
+                             (.ne-complete-key), the keys that work it
+   .ne-summary               the NPC in plain words: .ne-quote (what it says), .ne-layers (what it wears) */
+
+/* Where it stands: read here, changed by dragging it in the game window. */
+.ne-place { margin-bottom: var(--s-4); padding-bottom: var(--s-4); border-bottom: 1px solid var(--border-soft); }
+.ne-place .tl-fact-value { font-size: var(--t-md); }
+
+/* A script is code: fixed-width, and a long line scrolls instead of wrapping. */
+.tl-textarea.ne-code { min-height: 132px; font: 400 var(--t-sm)/1.6 var(--font-mono); tab-size: 2; white-space: pre; overflow: auto; }
+
+/* What can be written at the caret, listed under the text box. */
+.ne-complete {
+  position: fixed;
+  z-index: 250;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  max-height: 264px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+/* The suggestions scroll; the keys under them stay where they are. */
+.ne-complete-list { flex: 1; min-height: 0; padding: var(--s-1); overflow-y: auto; }
+.ne-complete-row { display: flex; align-items: baseline; gap: var(--s-3); padding: 6px var(--s-2); border-radius: var(--r-sm); cursor: pointer; }
+.ne-complete-row:hover { background: var(--surface-hover); }
+.ne-complete-row[aria-selected="true"] { background: var(--accent-soft); }
+.ne-complete-name { flex: 1; min-width: 0; color: var(--text-strong); font: 500 var(--t-sm)/1.4 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ne-complete-row[aria-selected="true"] .ne-complete-name { color: var(--accent-text); }
+.ne-complete-hint { flex-shrink: 0; color: var(--text-muted); font-size: var(--t-sm); }
+.ne-complete-keys { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: var(--s-1) var(--s-3); padding: 7px var(--s-3); border-top: 1px solid var(--border-soft); color: var(--text-muted); font-size: var(--t-xs); }
+.ne-complete-key { display: inline-flex; align-items: center; gap: var(--s-1); white-space: nowrap; }
+
+/* The NPC as players find it. */
+.ne-summary > p { overflow-wrap: anywhere; }
+.ne-summary .tl-preview-head { margin-bottom: var(--s-1); }
+.ne-summary .tl-preview-name { font-size: var(--t-lg); }
+.ne-quote { max-height: 132px; padding: var(--s-2) var(--s-3); border-left: 2px solid var(--border-strong); border-radius: 0 var(--r-md) var(--r-md) 0; background: rgba(148, 163, 184, 0.06); color: #f1d9a0; overflow-wrap: anywhere; overflow-y: auto; white-space: pre-wrap; }
+.ne-layers { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -1,301 +1,319 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
+  <head>
+    <meta charset="utf-8" />
     <meta http-equiv="Cache-Control" content="no-cache">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/ico" href="./img/icons/favicon.ico">
-    <title>Frostfire Forge - Animation Metadata Tool</title>
-    <link rel="stylesheet" href="./css/frontend.css">
-    <link rel="stylesheet" href="./css/animator.css">
+    <title>Animation Editor</title>
+    <!-- The look every tool window shares, then what only the animation editor has: its strips of frames, its stage and its scrubber. -->
+    <link rel="stylesheet" href="./css/tools.css" />
+    <link rel="stylesheet" href="./css/animator.css" />
     <script defer src="./js/web/animator.js"></script>
-</head>
-<body>
-    <div class="home-button" onclick="location.href='/'"></div>
+  </head>
+  <body>
+    <!-- The frame of a tool window. Unlike the editors, this page is its own markup:
+         js/web/animator.ts finds every control by its id, and puts the kit's icons
+         where data-icon names one and its tooltips where data-tip gives the words. -->
+    <div class="tl-app an-app">
+      <!-- The sheet being cut into frames, then what the metadata is called and which animation and direction are open. -->
+      <aside class="tl-side an-side" aria-label="Sprite sheet and animations">
+        <div class="tl-brand">
+          <span class="tl-brand-mark" data-icon="flame" data-icon-size="18"></span>
+          <span class="tl-brand-words">
+            <span class="tl-brand-name">Frostfire Forge</span>
+            <span class="tl-brand-sub">Animation Editor</span>
+          </span>
+        </div>
 
-    <div class="header">
-        <h1>Animation Editor</h1>
-        <p>Create and edit sprite animations with frame-by-frame timeline control</p>
-    </div>
+        <div class="an-side-scroll">
+          <section class="an-part" aria-labelledby="an-sheet-title">
+            <div class="tl-list-head"><h2 id="an-sheet-title" class="tl-list-title">Sprite sheet</h2></div>
+            <div id="spritesheet-preview-container" class="an-sheet">
+              <div id="spritesheet-preview-placeholder" class="an-sheet-none">
+                <span class="an-sheet-none-mark" data-icon="image" data-icon-size="22"></span>
+                <span>No sprite sheet loaded</span>
+                <button id="load-image-btn-alt" type="button" class="tl-btn tl-btn-sm">Load sprite sheet</button>
+              </div>
+              <canvas id="spritesheet-preview-canvas"></canvas>
+            </div>
 
-    <div class="container">
-
-        <div id="animator">
-            <!-- Top Actions Bar -->
-            <div id="animator-toolbar">
-                <div class="toolbar-section">
-                    <button id="new-metadata-btn" class="btn btn-primary">New</button>
-                    <label for="import-json-input" class="btn btn-secondary">Import</label>
-                    <input type="file" id="import-json-input" accept=".json">
+            <div class="tl-fields tl-fields-2 an-fields">
+              <div class="tl-field">
+                <label class="tl-field-label" for="frame-width">Frame width</label>
+                <div class="tl-affix">
+                  <input class="tl-input tl-input-number" type="number" id="frame-width" min="1" value="64" autocomplete="off">
+                  <span class="tl-affix-unit">px</span>
                 </div>
-                <div class="toolbar-section">
-                    <label class="toolbar-check-label">
-                        <input type="checkbox" id="autosave-checkbox" autocomplete="off">
-                        Autosave
+              </div>
+              <div class="tl-field">
+                <label class="tl-field-label" for="frame-height">Frame height</label>
+                <div class="tl-affix">
+                  <input class="tl-input tl-input-number" type="number" id="frame-height" min="1" value="64" autocomplete="off">
+                  <span class="tl-affix-unit">px</span>
+                </div>
+              </div>
+              <div class="tl-field">
+                <label class="tl-field-label" for="columns">Columns</label>
+                <input class="tl-input tl-input-number" type="number" id="columns" min="1" placeholder="Auto" autocomplete="off">
+              </div>
+              <div class="tl-field">
+                <label class="tl-field-label" for="rows">Rows</label>
+                <input class="tl-input tl-input-number" type="number" id="rows" min="1" placeholder="Auto" autocomplete="off">
+              </div>
+            </div>
+            <button id="split-frames-btn" type="button" class="tl-btn tl-btn-block" data-icon="dashboard"><span>Split frames</span></button>
+            <!-- Shown by the stylesheet once the sheet is cut, which is when the four fields above are greyed out. -->
+            <p class="tl-why an-why" data-icon="lock" data-icon-size="13"><span>This sheet is cut into frames. To cut it another way, start a new one.</span></p>
+          </section>
+
+          <!-- Unseen until a sheet is loaded; the script shows it. -->
+          <section id="info-panel" class="an-part" aria-labelledby="an-info-title">
+            <div class="an-part-inner">
+              <div class="tl-list-head"><h2 id="an-info-title" class="tl-list-title">Metadata</h2></div>
+              <div class="tl-field">
+                <label class="tl-field-label" for="metadata-name">Name</label>
+                <input class="tl-input" type="text" id="metadata-name" placeholder="player_body_base" autocomplete="off">
+              </div>
+              <div class="tl-field">
+                <label class="tl-field-label" for="image-source">Image source</label>
+                <input class="tl-input" type="text" id="image-source" placeholder="player_body_base.png" autocomplete="off">
+              </div>
+
+              <div class="an-pick">
+                <div class="an-pick-head">
+                  <label class="tl-field-label" for="animation-select">Animation</label>
+                  <div class="an-pick-tools">
+                    <button id="add-animation-btn" type="button" class="tl-icon-btn" aria-label="Add an animation" data-tip="Add an animation" data-icon="plus"></button>
+                    <button id="edit-animation-btn" type="button" class="tl-icon-btn" aria-label="Rename this animation" data-tip="Rename this animation" data-icon="pencil"></button>
+                    <button id="delete-animation-btn" type="button" class="tl-icon-btn tl-icon-btn-danger" aria-label="Delete this animation" data-tip="Delete this animation" data-icon="trash"></button>
+                  </div>
+                </div>
+                <select id="animation-select" class="tl-input tl-select" autocomplete="off">
+                  <option value="">Select animation...</option>
+                </select>
+                <p class="an-pick-none">No animations yet. Add one to start a timeline.</p>
+              </div>
+
+              <div id="direction-select-container">
+                <div class="an-pick">
+                  <div class="an-pick-head">
+                    <label class="tl-field-label" for="direction-select">Direction</label>
+                    <div class="an-pick-tools">
+                      <button id="add-direction-btn" type="button" class="tl-icon-btn" aria-label="Add a direction" data-tip="Add a direction" data-icon="plus"></button>
+                      <button id="edit-direction-btn" type="button" class="tl-icon-btn" aria-label="Change this direction's offset and loop" data-tip="Change this direction's offset and loop" data-icon="pencil"></button>
+                      <button id="delete-direction-btn" type="button" class="tl-icon-btn tl-icon-btn-danger" aria-label="Delete this direction" data-tip="Delete this direction" data-icon="trash"></button>
+                    </div>
+                  </div>
+                  <select id="direction-select" class="tl-input tl-select" autocomplete="off">
+                    <option value="">Select direction...</option>
+                  </select>
+                  <p class="an-pick-none">This animation has no directions yet. Add one to give it frames.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <a class="an-home" href="/" data-icon="back" data-icon-size="14"><span>Back to the home page</span></a>
+      </aside>
+
+      <div class="tl-main">
+        <!-- What this is, then starting again, opening, autosave and saving. -->
+        <header class="tl-topbar">
+          <div class="tl-record">
+            <div class="tl-record-words">
+              <h1 class="tl-title">Animation Editor</h1>
+              <span class="tl-record-note">Cut a sprite sheet into frames and time them.</span>
+            </div>
+          </div>
+          <div class="tl-topbar-actions">
+            <button id="new-metadata-btn" type="button" class="tl-btn" data-icon="plus" data-tip="Start again with nothing loaded"><span>New</span></button>
+            <!-- The file field is inside its label so that the keyboard can reach it. -->
+            <label class="tl-btn an-file" data-icon="folder" data-tip="Open metadata exported earlier (a .json file)">
+              <span>Import</span>
+              <input type="file" id="import-json-input" accept=".json">
+            </label>
+            <span class="tl-topbar-rule"></span>
+            <label class="tl-check an-autosave" data-tip="Keep this work in the browser and bring it back the next time the page opens">
+              <input type="checkbox" id="autosave-checkbox" autocomplete="off">
+              <span>Autosave</span>
+            </label>
+            <button id="export-json-btn" type="button" class="tl-btn tl-btn-primary" data-icon="save"><span>Export</span></button>
+          </div>
+        </header>
+
+        <!-- The frames cut from the sheet, then the timeline they are dropped on. The page fills the window; the stage takes what is left. -->
+        <main class="tl-page tl-page-fill an-page">
+          <div class="tl-page-inner">
+            <section class="tl-card an-frames" aria-labelledby="an-frames-title">
+              <header class="tl-card-head">
+                <div class="tl-card-words">
+                  <h2 id="an-frames-title" class="tl-card-title">Frames</h2>
+                  <p class="tl-card-lead">Drag a frame onto the timeline or the stage to add it.</p>
+                </div>
+              </header>
+              <div class="tl-card-body">
+                <div id="frames-grid" class="an-strip"></div>
+              </div>
+            </section>
+
+            <section class="tl-card an-timeline" aria-labelledby="an-timeline-title">
+              <header class="tl-card-head">
+                <div class="tl-card-words">
+                  <h2 id="an-timeline-title" class="tl-card-title">Timeline</h2>
+                  <p class="tl-card-lead">The open direction's frames in the order they play. Drag one to move it.</p>
+                </div>
+                <div class="tl-card-tools">
+                  <button id="reset-position-btn" type="button" class="tl-btn tl-btn-sm" data-icon="target" data-icon-size="13" data-tip="Put the selected frame back at 0, 0"><span>Reset position</span></button>
+                  <button id="clear-timeline-btn" type="button" class="tl-btn tl-btn-sm tl-btn-danger" data-icon="trash" data-icon-size="13" data-tip="Take every frame off this timeline. This cannot be undone."><span>Clear</span></button>
+                </div>
+              </header>
+              <div class="tl-card-body an-timeline-body">
+                <!-- The frames in order: each with its number on the sheet, how long it shows, and its way out. -->
+                <div id="frame-sequence-container">
+                  <div id="frame-sequence-list" class="an-strip an-steps"></div>
+                </div>
+
+                <!-- The stage: the selected frame around the centre, 0, 0. -->
+                <div id="timeline-grid-container" class="an-stage">
+                  <canvas id="timeline-grid-canvas"></canvas>
+                  <div id="grid-frames-container"></div>
+                </div>
+
+                <div id="timeline-info" class="an-keys">
+                  <span>Drag to place</span>
+                  <span>Click <span class="an-keys-label">(x, y)</span> to type</span>
+                  <span><kbd class="tl-kbd">Arrows</kbd> move 1 px</span>
+                  <span><kbd class="tl-kbd">Tab</kbd> next frame</span>
+                  <span><kbd class="tl-kbd">Del</kbd> remove</span>
+                  <span><kbd class="tl-kbd">Scroll</kbd> zoom</span>
+                  <span><kbd class="tl-kbd">Shift</kbd> drag pans</span>
+                  <span><kbd class="tl-kbd">Ctrl</kbd><kbd class="tl-kbd">Z</kbd> undo, <kbd class="tl-kbd">Y</kbd> redo</span>
+                </div>
+
+                <div class="an-transport">
+                  <div id="playback-controls">
+                    <button id="play-pause-btn" type="button" class="tl-btn tl-btn-primary an-play" data-icon="play" data-icon-size="15"><span>Play</span></button>
+                    <button id="stop-btn" type="button" class="tl-btn" data-icon="stop" data-icon-size="15" data-tip="Stop and go back to the first frame"><span>Stop</span></button>
+                    <label class="tl-check an-loop" data-tip="For this preview only. Whether it loops in the game is set on the direction.">
+                      <input type="checkbox" id="preview-loop-checkbox" checked>
+                      <span>Loop preview</span>
                     </label>
-                    <button id="export-json-btn" class="btn btn-success">Export</button>
+                    <div id="playback-info" class="an-readout">
+                      <span id="current-frame-display">Frame 0 of 0</span>
+                      <span id="current-time-display">0 ms</span>
+                    </div>
+                  </div>
+
+                  <!-- When each frame starts, along the length of the animation. -->
+                  <div id="timeline-scrubber-container">
+                    <div id="timeline-scrubber">
+                      <div id="timeline-track"></div>
+                    </div>
+                  </div>
                 </div>
-            </div>
-
-            <!-- Main Content Area - 3 Column Layout -->
-            <div id="animator-content">
-                <!-- Left Column: Settings and Preview -->
-                <div id="left-section">
-                    <!-- Grid Settings and Preview -->
-                    <div class="panel-section">
-                        <h3>Spritesheet</h3>
-                        <div id="spritesheet-preview-container">
-                            <div id="spritesheet-preview-placeholder">
-                                <span>No spritesheet loaded</span>
-                                <button id="load-image-btn-alt" class="btn btn-secondary">Load Spritesheet</button>
-                            </div>
-                            <canvas id="spritesheet-preview-canvas"></canvas>
-                        </div>
-
-                        <h3 class="panel-heading-gap">Settings</h3>
-                        <div class="settings-grid">
-                            <div class="form-group">
-                                <label for="frame-width">Frame Width:</label>
-                                <input type="number" id="frame-width" min="1" value="64" autocomplete="off">
-                            </div>
-                            <div class="form-group">
-                                <label for="frame-height">Frame Height:</label>
-                                <input type="number" id="frame-height" min="1" value="64" autocomplete="off">
-                            </div>
-                            <div class="form-group">
-                                <label for="columns">Columns:</label>
-                                <input type="number" id="columns" min="1" placeholder="Auto" autocomplete="off">
-                            </div>
-                            <div class="form-group">
-                                <label for="rows">Rows:</label>
-                                <input type="number" id="rows" min="1" placeholder="Auto" autocomplete="off">
-                            </div>
-                        </div>
-                        <button id="split-frames-btn" class="btn btn-primary">Split Frames</button>
-                    </div>
-
-                    <!-- Metadata Info -->
-                    <div id="info-panel" class="panel-section">
-                        <h3>Info</h3>
-                        <div class="form-group">
-                            <label for="metadata-name">Name:</label>
-                            <input type="text" id="metadata-name" placeholder="e.g., player_body_base" autocomplete="off">
-                        </div>
-                        <div class="form-group">
-                            <label for="image-source">Image Source:</label>
-                            <input type="text" id="image-source" placeholder="e.g., player_body_base.png" autocomplete="off">
-                        </div>
-                        <div class="section-header panel-heading-gap">
-                            <h4>Animation</h4>
-                            <div class="btn-icon-group">
-                                <button id="add-animation-btn" class="btn btn-icon btn-secondary" title="Add Animation">+</button>
-                                <button id="edit-animation-btn" class="btn btn-icon btn-secondary" title="Edit Animation">✎</button>
-                                <button id="delete-animation-btn" class="btn btn-icon btn-danger" title="Delete Animation">×</button>
-                            </div>
-                        </div>
-                        <select id="animation-select" class="form-control" autocomplete="off">
-                            <option value="">Select animation...</option>
-                        </select>
-                        <div id="direction-select-container">
-                            <div class="section-header section-header-tight">
-                                <h4>Direction</h4>
-                                <div class="btn-icon-group">
-                                    <button id="add-direction-btn" class="btn btn-icon btn-secondary" title="Add Direction">+</button>
-                                    <button id="edit-direction-btn" class="btn btn-icon btn-secondary" title="Edit Direction">✎</button>
-                                    <button id="delete-direction-btn" class="btn btn-icon btn-danger" title="Delete Direction">×</button>
-                                </div>
-                            </div>
-                            <div class="btn-icon-group-center">
-                                <select id="direction-select" class="form-control" autocomplete="off">
-                                    <option value="">Select direction...</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Right Section: Frames and Timeline -->
-                <div id="right-section">
-                    <!-- Available Frames Grid -->
-                    <div class="panel-section frames-panel">
-                        <h3>Frames</h3>
-                        <div id="frames-grid"></div>
-                    </div>
-
-                    <!-- Timeline -->
-                    <div class="panel-section timeline-panel">
-                        <div class="section-header">
-                            <h3>Timeline</h3>
-                            <div class="timeline-controls">
-                                <button id="reset-position-btn" class="btn btn-small btn-secondary">Reset Position</button>
-                                <button id="clear-timeline-btn" class="btn btn-small btn-danger">Clear</button>
-                            </div>
-                        </div>
-
-                        <!-- Frame Sequence List -->
-                        <div id="frame-sequence-container">
-                            <div id="frame-sequence-list"></div>
-                        </div>
-
-                        <!-- Grid Editor -->
-                        <div id="timeline-grid-container">
-                            <canvas id="timeline-grid-canvas"></canvas>
-                            <div id="grid-frames-container"></div>
-                        </div>
-
-                        <div id="timeline-info">
-                            <span>Drop frames onto grid • Drag frames to adjust offset (centered at 0,0) • Click to select and edit</span>
-                        </div>
-
-                        <!-- Playback Controls -->
-                        <div id="playback-controls">
-                            <button id="play-pause-btn" class="btn btn-play">▶</button>
-                            <button id="stop-btn" class="btn btn-stop">⏹</button>
-                            <label class="playback-loop-label">
-                                <input type="checkbox" id="preview-loop-checkbox" checked>
-                                Loop
-                            </label>
-                            <div id="playback-info">
-                                <span id="current-frame-display">Frame: 0/0</span>
-                                <span id="current-time-display">Time: 0ms</span>
-                            </div>
-                        </div>
-
-                        <!-- Timeline Scrubber -->
-                        <div id="timeline-scrubber-container">
-                            <div id="timeline-scrubber">
-                                <div id="timeline-track"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
     </div>
 
-    <!-- Animation Modal Template -->
-    <div id="animation-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modal-title">Add Animation</h2>
-                <span class="modal-close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="animation-name">Animation Name:</label>
-                    <input type="text" id="animation-name" placeholder="e.g., idle, walk, attack" autocomplete="off">
-                </div>
-                <button id="save-animation-btn" class="btn btn-primary">Save</button>
-            </div>
+    <!-- The boxes below are shown and hidden by the script (display: flex or none), as they always were. -->
+
+    <!-- Naming a new animation, or renaming the open one. -->
+    <div id="animation-modal" class="an-modal">
+      <div class="tl-dialog an-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 id="modal-title" class="tl-dialog-title">Add animation</h2>
+        <div class="tl-field">
+          <label class="tl-field-label" for="animation-name">Name</label>
+          <input class="tl-input" type="text" id="animation-name" placeholder="idle, walk, attack" autocomplete="off">
         </div>
+        <div class="tl-dialog-actions">
+          <button type="button" class="tl-btn an-modal-close">Cancel</button>
+          <button id="save-animation-btn" type="button" class="tl-btn tl-btn-primary">Save</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Direction Modal Template -->
-    <div id="direction-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Add Direction</h2>
-                <span class="modal-close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="direction-name">Direction:</label>
-                    <select id="direction-name" autocomplete="off">
-                        <option value="down">Down</option>
-                        <option value="up">Up</option>
-                        <option value="left">Left</option>
-                        <option value="right">Right</option>
-                        <option value="downleft">Down Left</option>
-                        <option value="downright">Down Right</option>
-                        <option value="upleft">Up Left</option>
-                        <option value="upright">Up Right</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Offset:</label>
-                    <div class="offset-inputs">
-                        <div>
-                            <label for="direction-offset-x">X:</label>
-                            <input type="number" id="direction-offset-x" value="0" autocomplete="off">
-                        </div>
-                        <div>
-                            <label for="direction-offset-y">Y:</label>
-                            <input type="number" id="direction-offset-y" value="0" autocomplete="off">
-                        </div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="toolbar-check-label-plain">
-                        <input type="checkbox" id="loop-checkbox" autocomplete="off">
-                        Loop Animation
-                    </label>
-                </div>
-                <button id="save-direction-btn" class="btn btn-primary">Save Direction</button>
-            </div>
+    <!-- A direction of the open animation: which way, where its frames start from, and whether it loops. -->
+    <div id="direction-modal" class="an-modal">
+      <div class="tl-dialog an-dialog" role="dialog" aria-modal="true" aria-labelledby="an-direction-title">
+        <h2 id="an-direction-title" class="tl-dialog-title">Direction</h2>
+        <div class="tl-field">
+          <label class="tl-field-label" for="direction-name">Direction</label>
+          <select id="direction-name" class="tl-input tl-select" autocomplete="off">
+            <option value="down">Down</option>
+            <option value="up">Up</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+            <option value="downleft">Down left</option>
+            <option value="downright">Down right</option>
+            <option value="upleft">Up left</option>
+            <option value="upright">Up right</option>
+          </select>
         </div>
+        <div class="tl-fields tl-fields-2">
+          <div class="tl-field">
+            <label class="tl-field-label" for="direction-offset-x">Offset X</label>
+            <div class="tl-affix">
+              <input class="tl-input tl-input-number" type="number" id="direction-offset-x" value="0" autocomplete="off">
+              <span class="tl-affix-unit">px</span>
+            </div>
+          </div>
+          <div class="tl-field">
+            <label class="tl-field-label" for="direction-offset-y">Offset Y</label>
+            <div class="tl-affix">
+              <input class="tl-input tl-input-number" type="number" id="direction-offset-y" value="0" autocomplete="off">
+              <span class="tl-affix-unit">px</span>
+            </div>
+          </div>
+        </div>
+        <label class="tl-check">
+          <input type="checkbox" id="loop-checkbox" autocomplete="off">
+          <span>Loop animation</span>
+        </label>
+        <div class="tl-dialog-actions">
+          <button type="button" class="tl-btn an-modal-close">Cancel</button>
+          <button id="save-direction-btn" type="button" class="tl-btn tl-btn-primary">Save direction</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Timeline Frame Properties Modal -->
-    <div id="frame-duration-modal" class="modal">
-        <div class="modal-content modal-small">
-            <div class="modal-header">
-                <h2>Frame Properties</h2>
-                <span class="modal-close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="timeline-frame-duration">Duration (ms):</label>
-                    <input type="number" id="timeline-frame-duration" min="1" value="150" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label>Position (X, Y):</label>
-                    <div class="offset-inputs">
-                        <div>
-                            <label for="timeline-frame-x">X:</label>
-                            <input type="number" id="timeline-frame-x" value="0" autocomplete="off">
-                        </div>
-                        <div>
-                            <label for="timeline-frame-y">Y:</label>
-                            <input type="number" id="timeline-frame-y" value="0" autocomplete="off">
-                        </div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Offset (X, Y):</label>
-                    <div class="offset-inputs">
-                        <div>
-                            <label for="timeline-frame-offset-x">X:</label>
-                            <input type="number" id="timeline-frame-offset-x" value="0" autocomplete="off">
-                        </div>
-                        <div>
-                            <label for="timeline-frame-offset-y">Y:</label>
-                            <input type="number" id="timeline-frame-offset-y" value="0" autocomplete="off">
-                        </div>
-                    </div>
-                </div>
-                <button id="save-frame-duration-btn" class="btn btn-primary">Save</button>
-            </div>
-        </div>
+    <!-- The properties of one frame. Nothing opens this box, and nothing ever did; the script
+         still writes the selected frame's offset into its two offset fields, so they stay. -->
+    <div id="frame-duration-modal" class="an-modal" hidden>
+      <div class="tl-dialog an-dialog">
+        <h2 class="tl-dialog-title">Frame properties</h2>
+        <input type="number" id="timeline-frame-duration" min="1" value="150" autocomplete="off">
+        <input type="number" id="timeline-frame-x" value="0" autocomplete="off">
+        <input type="number" id="timeline-frame-y" value="0" autocomplete="off">
+        <input type="number" id="timeline-frame-offset-x" value="0" autocomplete="off">
+        <input type="number" id="timeline-frame-offset-y" value="0" autocomplete="off">
+        <button id="save-frame-duration-btn" type="button" class="tl-btn tl-btn-primary">Save</button>
+      </div>
     </div>
 
-    <!-- Confirmation Modal -->
-    <div id="confirm-modal" class="modal">
-        <div class="modal-content modal-small">
-            <div class="modal-header">
-                <h2 id="confirm-title">Confirm</h2>
-                <span class="modal-close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <p id="confirm-message"></p>
-                <div class="confirm-actions">
-                    <button id="confirm-cancel-btn" class="btn btn-secondary">Cancel</button>
-                    <button id="confirm-ok-btn" class="btn btn-primary">Okay</button>
-                </div>
-            </div>
+    <!-- A question before something is lost or begun. Enter agrees and Escape does not. -->
+    <div id="confirm-modal" class="an-modal">
+      <div class="tl-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <div class="tl-dialog-top">
+          <div id="confirm-badge" class="tl-dialog-badge tl-dialog-badge-plain"></div>
+          <div class="tl-dialog-words">
+            <h2 id="confirm-title" class="tl-dialog-title">Confirm</h2>
+            <p id="confirm-message" class="tl-dialog-body"></p>
+          </div>
         </div>
+        <div class="tl-dialog-actions">
+          <button id="confirm-cancel-btn" type="button" class="tl-btn">Cancel</button>
+          <button id="confirm-ok-btn" type="button" class="tl-btn tl-btn-primary">Okay</button>
+        </div>
+      </div>
     </div>
 
-    <!-- Notification Container -->
-    <div id="notification-container"></div>
-</body>
+    <!-- What came of what was asked for, shown for a few seconds. -->
+    <div id="tl-toasts" class="tl-toasts"></div>
+    <noscript>The animation editor needs JavaScript.</noscript>
+  </body>
 </html>

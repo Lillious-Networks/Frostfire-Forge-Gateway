@@ -63,6 +63,9 @@ import particleeditor_html from "./public/particleeditor.html";
 import npceditor_html from "./public/npceditor.html";
 import creatureeditor_html from "./public/creatureeditor.html";
 import itemeditor_html from "./public/itemeditor.html";
+import spelleditor_html from "./public/spelleditor.html";
+import playereditor_html from "./public/playereditor.html";
+import controlpanel_html from "./public/controlpanel.html";
 import questeditor_html from "./public/questeditor.html";
 import looteditor_html from "./public/looteditor.html";
 import forgotpassword_html from "./public/forgot-password.html";
@@ -195,6 +198,9 @@ const routes = {
   "/npc-editor": npceditor_html,
   "/creature-editor": creatureeditor_html,
   "/item-editor": itemeditor_html,
+  "/spell-editor": spelleditor_html,
+  "/player-editor": playereditor_html,
+  "/control-panel": controlpanel_html,
   "/quest-editor": questeditor_html,
   "/loot-editor": looteditor_html,
   "/animator": animator_html,
@@ -405,6 +411,9 @@ Bun.serve({
       "/npc-editor": routes["/npc-editor"],
       "/creature-editor": routes["/creature-editor"],
       "/item-editor": routes["/item-editor"],
+      "/spell-editor": routes["/spell-editor"],
+      "/player-editor": routes["/player-editor"],
+      "/control-panel": routes["/control-panel"],
       "/quest-editor": routes["/quest-editor"],
       "/loot-editor": routes["/loot-editor"],
       "/animator": routes["/animator"],

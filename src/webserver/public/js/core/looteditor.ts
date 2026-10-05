@@ -1,3 +1,6 @@
+const EDITOR_WIDTH = 1280;
+const EDITOR_HEIGHT = 820;
+
 class LootEditor {
   public isActive: boolean = false;
   private tables: any[] = [];
@@ -11,7 +14,13 @@ class LootEditor {
 
   private openEditor() {
     this.isActive = true;
-    this.editorWindow = window.open(window.location.origin + "/loot-editor", "LootEditor", "width=900,height=650,left=120,top=80,location=no,toolbar=no,menubar=no,status=no");
+    // The size the editor's workbench is laid out for, where the screen allows, in the middle of the screen.
+    const area = window.screen as Screen & { availLeft?: number; availTop?: number };
+    const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
+    const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
+    const left = (area.availLeft ?? 0) + Math.max(0, Math.round((area.availWidth - width) / 2));
+    const top = (area.availTop ?? 0) + Math.max(0, Math.round((area.availHeight - height) / 2));
+    this.editorWindow = window.open(window.location.origin + "/loot-editor", "LootEditor", `width=${width},height=${height},left=${left},top=${top},location=no,toolbar=no,menubar=no,status=no`);
     if (!this.editorWindow) { this.isActive = false; return; }
     this.windowCloseInterval = setInterval(() => { if (this.editorWindow && this.editorWindow.closed) this.onWindowClosed(); }, 500);
     window.addEventListener("message", this.onBridgeMessage);
@@ -59,25 +68,32 @@ class LootEditor {
     this.markBridgeReady();
     const msg = e.data;
     if (msg.type === "bridgeReady") { this.syncToBridge(); return; }
-    const sr = (window as any).sendRequest;
     switch (msg.type) {
       case "selectTable": { const t = this.tables.find((x: any) => x.id === msg.id); if (t) { this.selectedTableId = t.id; this.sendToEditor({ type: "tableSelectUpdate", table: t }); } break; }
-      case "createTable": { if (sr && msg.name) sr({ type: "COMMAND", data: { command: `loottable create "${msg.name}"` } }); setTimeout(() => this.loadTables(), 300); break; }
-      case "deleteTable": { if (sr && msg.id) sr({ type: "COMMAND", data: { command: `loottable delete ${msg.id}` } }); this.selectedTableId = null; setTimeout(() => this.loadTables(), 300); break; }
+      // A change to the tables: the server checks it, makes it, and answers with LOOT_EDITOR_RESULT.
+      case "request": { this.sendToServer(msg.packet, msg.data); break; }
       case "refresh": { this.loadTables(); break; }
-      case "addItem": { if (sr && msg.tableId && msg.itemName) sr({ type: "COMMAND", data: { command: `loottable additem ${msg.tableId} "${msg.itemName}" ${msg.minQty || 1} ${msg.maxQty || 1} ${msg.chance ?? 100} ${msg.quality || "common"}` } }); setTimeout(() => this.loadTables(), 300); break; }
-      case "removeItem": { if (sr) sr({ type: "COMMAND", data: { command: `loottable removeitem ${msg.itemId}` } }); setTimeout(() => this.loadTables(), 300); break; }
-      case "updateItem": { if (sr && msg.itemId) sr({ type: "COMMAND", data: { command: `loottable updateitem ${msg.itemId} ${msg.minQty || 1} ${msg.maxQty || 1} ${msg.chance ?? 100} ${msg.quality || "common"}` } }); setTimeout(() => this.loadTables(), 300); break; }
       case "editorClosed": { this.onWindowClosed(); break; }
     }
   };
 
-  private loadTables() { const sr = (window as any).sendRequest; if (sr) sr({ type: "LIST_LOOT_TABLES", data: null }); }
+  private sendToServer(type: string, data: any) { const sr = (window as any).sendRequest; if (sr) sr({ type, data }); }
+
+  private loadTables() { this.sendToServer("LIST_LOOT_TABLES", null); }
 
   public handleTableList(tables: any[]) {
     this.tables = tables || [];
     if (this.isActive && this.editorWindow) {
       this.sendToEditor({ type: "tableListUpdate", tables: this.tables, itemCache: this.getItemCache() });
+    }
+  }
+
+  /** The server's answer to a change: whether it was made, why not when it was not, and the tables as they now stand. */
+  public handleResult(result: any) {
+    if (Array.isArray(result?.tables)) this.tables = result.tables;
+    if (this.selectedTableId !== null && !this.tables.some((t: any) => t.id === this.selectedTableId)) this.selectedTableId = null;
+    if (this.isActive && this.editorWindow) {
+      this.sendToEditor({ ...result, type: "result", itemCache: this.getItemCache() });
     }
   }
 }

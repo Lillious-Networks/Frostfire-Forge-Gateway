@@ -8,6 +8,7 @@ import { getCachedImage } from "./images.js";
 import { initializeLayeredAnimation, getVisibleLayersSorted } from "./layeredAnimation.js";
 import { getEffectiveTime, isDarkness } from "./ambience.js";
 import { queueGlow } from "./glowqueue.js";
+import { particleImage } from "./particleimages.js";
 import {
   windBurst,
   calculateWindSpeed,
@@ -71,7 +72,12 @@ const particlePool = new ParticlePool();
 // Cache of pre-rendered particle sprites keyed by color|size|glow intensity|glow radius. Baking the
 // radial gradient (and any glow) once and reusing it via drawImage avoids the
 // costly per-frame createRadialGradient / shadowBlur work that tanks FPS on iOS.
-const particleSpriteCache = new Map<string, { canvas: HTMLCanvasElement; half: number }>();
+const particleSpriteCache = new Map<string, ParticleSprite>();
+/**
+ * A baked particle: its canvas, half its side (it is drawn centred), and how it is drawn: the dot adds its light
+ * ('lighter'), an image is drawn as it is ('source-over').
+ */
+type ParticleSprite = { canvas: HTMLCanvasElement; half: number; blend: GlobalCompositeOperation };
 
 // Convert a hex/named color to rgba() at a given alpha so we can build a
 // feathered gradient that fades smoothly instead of ending on a hard edge.
@@ -118,15 +124,25 @@ function particleBrightness(particle: any): number {
   return v === null || v === undefined || v === "" || !Number.isFinite(n) ? 1 : Math.max(0, n);
 }
 
-function getParticleSprite(color: string, radius: number, glowIntensity: number, glowRadius: number = 0, brightness: number = 1): { canvas: HTMLCanvasElement; half: number } {
-  const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}`;
+/**
+ * `image` (USER REQUEST 2026-10-04, "Allow particles to choose an image to emit rather than a particle"): the name of a
+ * sprite of the asset server (particleimages.ts). Once it has loaded it is baked in place of the round core, `radius`
+ * * 2 px wide at its own proportions, over the glow; until then, and with no such sprite, the particle is its dot.
+ */
+function getParticleSprite(color: string, radius: number, glowIntensity: number, glowRadius: number = 0, brightness: number = 1, image: unknown = null): ParticleSprite {
+  const img = particleImage(image);
+  const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}|${img ? image : ""}`;
   const cached = particleSpriteCache.get(key);
   if (cached) return cached;
 
+  // an image: its half extent (the longer side) takes the place of the dot's radius for the glow and the canvas
+  const imgW = img ? Math.max(1, radius * 2) : 0, imgH = img ? Math.max(1, imgW * img.naturalHeight / img.naturalWidth) : 0;
+  const body = img ? Math.max(imgW, imgH) / 2 : radius;
+
   // Bake at a fixed 1x scale on every device so the additive result (and thus
   // brightness) is identical everywhere (matching the 1x PC/editor look).
-  const reach = glowIntensity > 0 ? glowReach(radius, glowRadius) : 0;
-  const outer = radius + reach;
+  const reach = glowIntensity > 0 ? glowReach(body, glowRadius) : 0;
+  const outer = body + reach;
   const sizeCss = Math.ceil(2 * outer) + 2;
   const half = sizeCss / 2;
 
@@ -140,7 +156,7 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
   // higher intensity is a brighter glow, not a bigger one (each whole unit one more halo, the fraction a partial one).
   if (glowIntensity > 0) {
     const halo = sctx.createRadialGradient(half, half, 0, half, half, outer);
-    const edge = Math.min(0.95, radius / outer);
+    const edge = Math.min(0.95, body / outer);
     halo.addColorStop(0, colorToRgba(color, 0.5));
     halo.addColorStop(edge, colorToRgba(color, 0.32));
     halo.addColorStop(edge + (1 - edge) * 0.35, colorToRgba(color, 0.12));
@@ -154,14 +170,20 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
     }
   }
 
-  // The particle itself: the feathered core.
-  const gradient = sctx.createRadialGradient(half, half, 0, half, half, radius);
-  addFeatheredStops(gradient, color);
+  // The particle itself: its image as it is (pixel art: not smoothed), or the feathered core.
   sctx.globalAlpha = 1;
-  sctx.fillStyle = gradient;
-  sctx.beginPath();
-  sctx.arc(half, half, radius, 0, Math.PI * 2);
-  sctx.fill();
+  if (img) {
+    sctx.globalCompositeOperation = "source-over";
+    sctx.imageSmoothingEnabled = false;
+    sctx.drawImage(img, half - imgW / 2, half - imgH / 2, imgW, imgH);
+  } else {
+    const gradient = sctx.createRadialGradient(half, half, 0, half, half, radius);
+    addFeatheredStops(gradient, color);
+    sctx.fillStyle = gradient;
+    sctx.beginPath();
+    sctx.arc(half, half, radius, 0, Math.PI * 2);
+    sctx.fill();
+  }
 
   // Brightness: the whole sprite (core and glow) stacked additively, each whole unit one more copy and the fraction a
   // partial one (above 1 it burns towards white); below 1 it is drawn fainter.
@@ -179,7 +201,7 @@ function getParticleSprite(color: string, radius: number, glowIntensity: number,
     }
   }
 
-  const sprite = { canvas: out, half };
+  const sprite: ParticleSprite = { canvas: out, half, blend: img ? "source-over" : "lighter" };
   particleSpriteCache.set(key, sprite);
   return sprite;
 }
@@ -504,10 +526,10 @@ function createNPC(data: any) {
         const key = particle.name || '';
         const emitted = npc.particleArrays[key];
         if (emitted?.length) { for (const p of emitted) particlePool.release(p); emitted.length = 0; }
-        const sprite = getParticleSprite(particle.color || "white", (particle.size || 5) / 2, particle.glow_intensity || 0, Number((particle as any).glow_radius) || 0, particleBrightness(particle));
-        const sx = npc.position.x + 16 + Number(particle.localposition?.x || 0);
+        const sprite = getParticleSprite(particle.color || "white", (particle.size || 5) / 2, particle.glow_intensity || 0, Number((particle as any).glow_radius) || 0, particleBrightness(particle), particle.image);
+        const sx =npc.position.x + 16 + Number(particle.localposition?.x || 0);
         const sy = npc.position.y + 24 + Number(particle.localposition?.y || 0);
-        context.globalCompositeOperation = 'lighter';
+        context.globalCompositeOperation = sprite.blend;
         context.globalAlpha = particle.opacity ?? 1;
         context.drawImage(sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2);
         if ((particle.glow_intensity || 0) > 0) queueGlow(context.getTransform(), sprite.canvas, sx - sprite.half, sy - sprite.half, sprite.half * 2, sprite.half * 2, particle.opacity ?? 1);
@@ -633,7 +655,8 @@ function createNPC(data: any) {
 
       // The gradient + glow are identical for every particle of this config, so
       // look the sprite up once per frame instead of per particle.
-      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle));
+      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle), particle.image);
+      context.globalCompositeOperation = particleSprite.blend; // an image is drawn as it is, not added as light
       // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts)
       const glowMatrix = glowIntensity > 0 ? context.getTransform() : null;
 

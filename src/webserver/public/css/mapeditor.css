@@ -1,0 +1,117 @@
+/* The map editor's own parts, on top of css/tools.css. It is a tool window, not
+   a list of records with a form: the shared frame (side pane, top bar, cards)
+   holds the layers on the left, the tools in a bar of their own, and the tile
+   palette in the card that fills the rest. Everything here starts with me-;
+   the colours, spacing and corners are the shared ones. The script side is
+   js/core/tileeditorbridge.ts. */
+
+/* ------------------------------------------------------------- the frame */
+
+.me-app { --side-w: 300px; }
+
+/* The side pane: the tile layers, which scroll, and under them the two object layers, which do not. */
+.me-side { gap: var(--s-4); padding-bottom: var(--s-3); }
+.me-side-part { display: flex; flex-direction: column; gap: var(--s-2); min-height: 0; }
+.me-side-layers { flex: 1; }
+.me-side-layers .tl-list { padding-bottom: 2px; }
+.me-side-objects { flex-shrink: 0; padding-top: var(--s-3); border-top: 1px solid var(--border); }
+.me-side-objects .tl-list { flex: none; padding-bottom: 0; overflow: visible; }
+
+/* What is open and how it stands: the map, then the layer and the tool in use, then whether anything is unsaved. */
+.me-status { display: flex; align-items: center; gap: var(--s-2); flex-shrink: 1; min-width: 0; }
+.me-status .tl-pill { min-width: 0; }
+.me-status .tl-pill > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.me-pill-layer { max-width: 220px; }
+.me-pill-tool { flex-shrink: 0; }
+.me-pill-saved { flex-shrink: 0; }
+
+/* ----------------------------------------------------------- the toolbar */
+
+.me-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-shrink: 0;
+  min-height: 52px;
+  padding: 0 var(--s-6);
+  border-bottom: 1px solid var(--border);
+}
+.me-toolbar-title { color: var(--text-faint); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.me-toolbar-end { display: flex; align-items: center; gap: var(--s-1); margin-left: auto; }
+
+/* The tools, side by side: an icon, the word, and the key that picks it. */
+.me-tools .tl-seg-item { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; }
+/* The tool in use is a mode of the whole window, so it is marked in the accent; a tool that is off fades as any choice does (tools.css). */
+.me-tools .tl-seg-item[aria-checked="true"] { background: var(--accent-soft); color: var(--accent-text); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.me-tools .tl-seg-item[aria-checked="true"]:disabled { background: var(--slate-700); color: var(--text-strong); box-shadow: none; }
+.me-tools .tl-kbd, .me-key { padding: 0 4px; border-bottom-width: 1px; color: var(--text-muted); font-size: 10.5px; }
+.me-tools .tl-seg-item[aria-checked="true"] .tl-kbd { border-color: var(--accent-line); color: var(--accent-text); }
+.me-toolbar .tl-btn .me-key { margin-left: 2px; }
+
+/* ------------------------------------------------------------ the layers */
+
+/* One layer to a row: what kind it is, its name, a mark while it has unsaved edits, then its lock and its eye. */
+.me-layer { align-items: center; }
+.me-layer .tl-list-open { gap: var(--s-2); min-height: 36px; padding: 4px var(--s-1) 4px 10px; }
+.me-layer.is-selected::before { top: 8px; bottom: 8px; }
+.me-kind { display: grid; place-items: center; flex-shrink: 0; width: 18px; height: 18px; color: var(--text-faint); }
+.me-kind-collision { color: var(--danger); }
+.me-kind-nopvp { color: var(--accent); }
+.me-kind-shadow { color: #b9a3f5; }
+.me-kind-object { color: var(--info-text); }
+.me-layer .tl-list-name { flex: 0 1 auto; }
+.me-layer.is-locked .tl-list-name, .me-layer.is-unseen .tl-list-name { color: var(--text-muted); }
+.me-unsaved { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+.me-layer-actions { display: flex; align-items: center; flex-shrink: 0; padding-right: 2px; }
+.me-toggle { width: 28px; height: 28px; color: var(--text-faint); }
+/* Locked, or hidden: no longer how a layer usually is, so the mark stands out. */
+.me-toggle.is-locked { color: var(--warning-text); }
+.me-toggle.is-unseen { color: var(--text); }
+.me-layer:not(:hover):not(:focus-within) .me-toggle:not(.is-locked):not(.is-unseen) { color: rgba(124, 138, 160, 0.55); }
+
+/* ----------------------------------------------------------- the palette */
+
+.me-page { padding-top: var(--s-4); }
+.me-page .tl-page-inner { max-width: none; }
+.me-palette { flex: 1; min-height: 0; overflow: hidden; }
+/* Across the top of the card: the tilesets as tabs, and how large the tiles are shown. */
+.me-palette-head { display: flex; align-items: stretch; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.me-palette-head .tl-tabs { flex: 1; min-width: 0; border-bottom: 0; scrollbar-width: none; }
+.me-palette-head .tl-tab > span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+/* More tilesets than fit: the row scrolls (the wheel, the arrow keys), and fades at the end that has more. */
+.me-palette-head .tl-tabs.has-more-after { mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent); }
+.me-palette-head .tl-tabs.has-more-before { mask-image: linear-gradient(90deg, transparent, #000 40px); }
+.me-palette-head .tl-tabs.has-more-before.has-more-after { mask-image: linear-gradient(90deg, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
+.me-zoom { display: flex; align-items: center; gap: var(--s-2); flex-shrink: 0; padding: 0 var(--s-3); border-left: 1px solid var(--border); color: var(--text-muted); font-size: var(--t-sm); }
+.me-zoom .tl-seg-item { height: 24px; padding: 0 var(--s-2); font-variant-numeric: tabular-nums; }
+
+/* Where the tileset is laid out. It scrolls both ways, and a drag with the middle button moves it. */
+.me-stage { position: relative; flex: 1; min-height: 0; overflow: auto; padding: var(--s-3); background: var(--slate-950); scrollbar-width: auto; }
+.me-stage.is-panning { cursor: grabbing; }
+.me-canvas { display: block; cursor: crosshair; image-rendering: pixelated; box-shadow: 0 0 0 1px var(--border-strong), 0 6px 18px rgba(2, 6, 23, 0.5); }
+.me-stage.is-panning .me-canvas { cursor: grabbing; }
+/* In place of the tileset while there is none to show: loading, none, not answering. */
+.me-stage-note { position: absolute; inset: 0; display: grid; align-content: center; overflow: auto; background: var(--slate-950); }
+.me-stage-wait { display: grid; gap: var(--s-3); align-content: start; height: 100%; padding: var(--s-3); }
+.me-stage-wait .tl-skeleton { height: auto; min-height: 120px; flex: 1; }
+.me-stage-wait > p { color: var(--text-muted); }
+
+/* Under the tileset: what is picked, and the tile under the pointer. */
+.me-foot { display: flex; align-items: center; gap: var(--s-4); flex-shrink: 0; min-height: 36px; padding: 0 var(--s-4); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.me-foot-picked { display: flex; align-items: center; gap: var(--s-2); flex: 1; min-width: 0; color: var(--slate-300); }
+.me-foot-picked > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-foot-picked.is-none { color: var(--text-muted); }
+.me-foot-under { flex-shrink: 0; white-space: nowrap; }
+.me-legend { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; white-space: nowrap; }
+/* The corner the palette draws on a tile that moves. */
+.me-legend-mark { width: 9px; height: 9px; background: linear-gradient(135deg, rgba(255, 210, 40, 0.95) 50%, transparent 50%); box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.3); }
+
+/* --------------------------------------------------------- narrow window */
+
+@media (max-width: 1199px) {
+  .me-app { --side-w: 264px; }
+  .me-toolbar { padding: 0 var(--s-5); }
+  .me-toolbar-title { display: none; }
+  .me-pill-layer { max-width: 150px; }
+  .me-legend { display: none; }
+}

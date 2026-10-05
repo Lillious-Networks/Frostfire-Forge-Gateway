@@ -345,66 +345,6 @@
           </div>
       </div>
       <div id="party-container" class="ui"></div>
-      <!-- Admin Panel -->
-      <div id="admin-panel-container" class="ui">
-        <div id="admin-panel-content" class="ui">
-          <!-- Target Player Section -->
-          <div class="admin-section ui">
-            <label class="admin-label ui">Target Player</label>
-            <select id="admin-player-select" class="admin-select ui">
-              <option value="">Select a player...</option>
-            </select>
-          </div>
-
-          <!-- Self Commands Section -->
-          <div class="admin-section ui">
-            <label class="admin-label ui">Self Commands</label>
-            <div class="admin-button-grid ui">
-              <button type="button" id="admin-noclip" class="admin-button ui">Noclip</button>
-              <button type="button" id="admin-stealth" class="admin-button ui">Stealth</button>
-            </div>
-          </div>
-
-          <!-- Player Commands Section -->
-          <div class="admin-section ui">
-            <label class="admin-label ui">Player Management</label>
-            <div class="admin-button-grid ui">
-              <button type="button" id="admin-summon" class="admin-button ui">Summon</button>
-              <button type="button" id="admin-teleport" class="admin-button ui">Teleport To</button>
-              <button type="button" id="admin-respawn" class="admin-button ui">Respawn</button>
-              <button type="button" id="admin-kick" class="admin-button admin-button-warning ui">Kick</button>
-              <button type="button" id="admin-ban" class="admin-button admin-button-danger ui">Ban</button>
-              <button type="button" id="admin-unban" class="admin-button ui">Unban</button>
-              <button type="button" id="admin-toggle-admin" class="admin-button admin-button-special ui">Toggle Admin</button>
-            </div>
-          </div>
-
-          <!-- Server Commands Section -->
-          <div class="admin-section ui">
-            <label class="admin-label ui">Server Control</label>
-            <input type="text" id="admin-map-input" class="admin-input ui" placeholder="Map name (leave empty for current map)" />
-            <button type="button" id="admin-reload-map" class="admin-button admin-button-full ui">Reload Map</button>
-          </div>
-
-          <!-- Warp Section -->
-          <div class="admin-section ui">
-            <label class="admin-label ui">Warp to Map</label>
-            <input type="text" id="admin-warp-input" class="admin-input ui" placeholder="Map name to warp to" />
-            <button type="button" id="admin-warp" class="admin-button admin-button-full ui">Warp</button>
-          </div>
-
-          <!-- Broadcast Section -->
-          <div class="admin-section ui">
-            <label class="admin-label ui">Broadcast Message</label>
-            <input type="text" id="admin-broadcast-input" class="admin-input ui" placeholder="Type your message..." />
-            <div class="admin-button-grid ui">
-              <button type="button" id="admin-broadcast-all" class="admin-button ui">All Players</button>
-              <button type="button" id="admin-broadcast-map" class="admin-button ui">Current Map</button>
-              <button type="button" id="admin-broadcast-admins" class="admin-button ui">Admins Only</button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     <!-- NPC Editor -->
 
@@ -462,11 +402,11 @@
         <button class="radial-item" data-action="inventory" data-hotkey="KeyB" title="Inventory (B)">🎒</button>
         <button class="radial-item" data-action="spellbook" data-hotkey="KeyP" title="Spellbook (P)">📖</button>
         <button class="radial-item" data-action="questlog" data-hotkey="KeyL" title="Quest Log (L)">❗</button>
+        <button class="radial-item" data-action="worldmap" data-hotkey="KeyM" title="World Map (M)">🗺️</button>
         <button class="radial-item" data-action="character" data-hotkey="KeyC" title="Character (C)">👤</button>
         <button class="radial-item" data-action="friends" data-hotkey="KeyO" title="Friends (O)">👥</button>
         <button class="radial-item" data-action="guild" data-hotkey="KeyG" title="Guild (G)">🛡️</button>
         <button class="radial-item" data-action="collectables" data-hotkey="KeyK" title="Collectables (K)">💎</button>
-        <button class="radial-item admin-only" data-action="admin" data-hotkey="Insert" title="Admin Panel">🛠️</button>
         <button class="radial-item" data-action="settings" data-hotkey="Escape" title="Settings">⚙️</button>
       </div>
     </div>

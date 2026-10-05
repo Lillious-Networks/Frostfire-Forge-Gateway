@@ -1,0 +1,269 @@
+/* Server control panel: what it has that no other tool window does. The look
+   itself (colours, space, type, the window, cards, forms, buttons, tables,
+   toasts, dialogs) is css/tools.css, which every tool loads and which was
+   taken from this panel; its classes start with tl-. What is left here, under
+   cp-, is the navigation, the figures of the top bar, the dashboard and its
+   charts, and the lists of the Players and the Items & Loot pages. */
+
+/* ------------------------------------------------------------- navigation */
+
+/* The pages are a .tl-nav of tools.css; here they are grouped under headings, and scroll in a short window. */
+.cp-nav-list { flex-shrink: 1; min-height: 0; overflow-y: auto; }
+.cp-nav-group {
+  padding: var(--s-3) var(--s-2) var(--s-1);
+  color: var(--text-faint);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.cp-nav-group:first-child { padding-top: 0; }
+
+.cp-viewer { display: grid; gap: var(--s-2); margin-top: auto; padding: var(--s-3) var(--s-2) 0; border-top: 1px solid var(--border); }
+.cp-viewer:empty { display: none; }
+.cp-viewer-who { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.cp-viewer-words { display: grid; min-width: 0; line-height: 1.3; }
+.cp-viewer-name { color: var(--text-strong); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-viewer-note { color: var(--text-muted); font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-viewer-modes { display: flex; flex-wrap: wrap; gap: var(--s-1); }
+
+/* The server's state at a glance, in the top bar. */
+.cp-status { display: flex; align-items: center; gap: var(--s-4); min-width: 0; margin-left: auto; overflow: hidden; }
+.cp-stat { display: flex; align-items: baseline; gap: 6px; padding-left: var(--s-4); border-left: 1px solid var(--border); white-space: nowrap; }
+.cp-stat-label { color: var(--text-muted); font-size: var(--t-sm); }
+.cp-stat-value { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-updated { color: var(--text-faint); font-size: var(--t-sm); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* -------------------------------------------------------------- dashboard */
+
+.cp-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s-3); }
+.cp-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 128px;
+  padding: 14px var(--s-4) var(--s-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.cp-kpi-label { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--t-sm); font-weight: 500; white-space: nowrap; }
+.cp-kpi-value { display: flex; align-items: baseline; gap: 6px; color: var(--text-strong); font: 600 var(--t-2xl)/1.25 var(--font-display); letter-spacing: -0.01em; white-space: nowrap; }
+.cp-kpi-unit { color: var(--text-muted); font: 500 var(--t-base)/1 var(--font); letter-spacing: 0; }
+.cp-kpi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-height: 20px; margin-bottom: var(--s-2); color: var(--text-muted); font-size: var(--t-sm); }
+.cp-delta { display: inline-flex; align-items: center; gap: 2px; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-delta-good { color: var(--accent-text); }
+.cp-kpi-note { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: var(--s-2); border-top: 1px solid var(--border-soft); color: var(--text-muted); font-size: var(--t-sm); }
+
+/* The trend of a headline figure: no axes, the last reading marked. */
+.cp-spark { position: relative; height: 30px; margin-top: auto; }
+.cp-spark svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.cp-spark-line { fill: none; stroke: var(--data-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.cp-spark-area { fill: var(--data-1); opacity: 0.1; }
+.cp-spark-end {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--data-1);
+  box-sizing: content-box;
+  transform: translate(-50%, -50%);
+}
+
+/* The title with the figures of the time shown beside it, or under it where the card is narrow. */
+.cp-chart .tl-card-head { flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px var(--s-4); }
+.cp-chart .tl-card-words { flex: 0 0 auto; }
+.cp-chart .tl-card-title { white-space: nowrap; }
+.cp-chart-summary { display: flex; flex-wrap: wrap; gap: 2px var(--s-4); }
+.cp-chart-stat { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.cp-chart-stat-label { color: var(--text-muted); font-size: var(--t-sm); }
+.cp-chart-stat-value { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.cp-plot { position: relative; margin: var(--s-2) var(--s-2) var(--s-2) var(--s-1); }
+.cp-plot-svg { display: block; border-radius: var(--r-sm); cursor: crosshair; touch-action: none; }
+.cp-plot-grid line { stroke: var(--grid); stroke-width: 1; }
+.cp-plot-grid line.cp-plot-base { stroke: var(--axis); }
+.cp-plot-label { fill: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cp-plot-line { fill: none; stroke: var(--data-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.cp-plot-area { fill: var(--data-1); opacity: 0.1; }
+.cp-plot-dot { fill: var(--data-1); }
+.cp-plot-end, .cp-plot-marker circle { fill: var(--data-1); stroke: var(--surface); stroke-width: 2; }
+.cp-plot-marker line { stroke: var(--slate-400); stroke-width: 1; }
+/* Dashes are kept for this one line: a level to stay under, not part of the grid. */
+.cp-plot-threshold line { stroke: var(--warning); stroke-width: 1; stroke-dasharray: 4 4; }
+.cp-plot-threshold .cp-plot-label { fill: var(--text-muted); }
+.cp-plot-tip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: 1px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.cp-plot-tip strong { color: var(--text-strong); font-size: var(--t-md); font-variant-numeric: tabular-nums; }
+.cp-plot-tip span { color: var(--text-muted); font-size: var(--t-sm); }
+.cp-plot-tip time { color: var(--text-faint); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.cp-plot-empty { position: absolute; inset: 12px 14px 24px 46px; display: grid; place-items: center; padding: 0 var(--s-4); color: var(--text-muted); font-size: var(--t-sm); text-align: center; }
+
+/* A list that scrolls inside its card, as tall as the cards beside it and no taller. */
+.cp-activity { contain: size; min-height: 0; }
+.cp-activity.tl-span-4 { grid-row: span 2; }
+.cp-activity .tl-card-body { min-height: 0; overflow-y: auto; padding: var(--s-2) var(--s-2) var(--s-2); }
+.cp-acts { display: flex; flex-direction: column; padding: 0; list-style: none; }
+.cp-act { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px var(--s-2); }
+.cp-act + .cp-act { border-top: 1px solid var(--border-soft); }
+.cp-act-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(148, 163, 184, 0.13); color: var(--text-muted); }
+.cp-act-body { min-width: 0; }
+.cp-act-line { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; }
+.cp-act-line strong { color: var(--text-strong); }
+.cp-act-what { padding: 0 7px; border-radius: var(--r-pill); background: rgba(148, 163, 184, 0.15); color: var(--slate-300); font-size: 11.5px; font-weight: 500; line-height: 19px; white-space: nowrap; }
+.cp-act-detail { color: var(--text-muted); }
+.cp-act-said { margin-top: 2px; color: var(--text-muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
+.cp-act-when { padding-top: 2px; color: var(--text-faint); font-size: var(--t-sm); white-space: nowrap; }
+.cp-message-text { color: var(--text-strong); overflow-wrap: anywhere; }
+
+/* Breakdowns. Bars are thin, round at the end that carries the figure and square at the axis. */
+.cp-bars { display: flex; flex-direction: column; gap: 2px; margin: 0 calc(var(--s-2) * -1); }
+.cp-bar-row {
+  display: grid;
+  grid-template-columns: minmax(64px, 32%) minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px var(--s-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  text-align: left;
+}
+button.cp-bar-row:hover { background: var(--surface-hover); }
+button.cp-bar-row:hover .cp-bar-fill { filter: brightness(1.2); }
+.cp-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-bar-track { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.cp-bar-fill { flex: 0 0 auto; width: calc((100% - 40px) * var(--share, 0)); min-width: 2px; height: 12px; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--data-1); }
+.cp-bar-value { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-bar-share { color: var(--text-muted); font-size: var(--t-sm); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* A chart that grows to the height of the cards beside its own. */
+.cp-card-fill { display: flex; flex-direction: column; }
+.cp-card-fill > * { flex: 1; }
+.cp-cols { display: flex; gap: var(--s-2); min-height: 176px; }
+.cp-col { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.cp-col-stack { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: flex-end; gap: var(--s-1); width: 100%; min-height: 0; border-bottom: 1px solid var(--axis); }
+.cp-col-value { color: var(--text-strong); font-size: var(--t-sm); font-weight: 600; line-height: 16px; font-variant-numeric: tabular-nums; }
+.cp-col-fill { width: min(24px, 72%); height: calc((100% - 20px) * var(--share, 0)); min-height: 2px; border-radius: var(--r-sm) var(--r-sm) 0 0; background: var(--data-1); }
+.cp-col:hover .cp-col-fill { filter: brightness(1.2); }
+.cp-col-none { min-height: 0; }
+.cp-col-label { color: var(--text-faint); font-size: var(--t-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.cp-shares-bar { display: flex; gap: 2px; height: 12px; }
+.cp-shares-piece { flex-basis: 0; min-width: 3px; }
+.cp-shares-piece:first-child { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.cp-shares-piece:last-child { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.cp-shares-piece:only-child { border-radius: var(--r-sm); }
+.cp-shares-piece:hover { filter: brightness(1.2); }
+.cp-shares-none { border-radius: var(--r-sm); background: var(--grid); }
+.cp-series-1 { background: var(--data-1); }
+.cp-series-2 { background: var(--data-2); }
+.cp-series-3 { background: var(--data-3); }
+.cp-shares-legend { display: grid; margin-top: var(--s-3); }
+.cp-shares-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 40px; align-items: center; gap: 10px; padding: 5px 0; }
+.cp-shares-key { width: 10px; height: 10px; border-radius: 3px; }
+.cp-shares-value { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-shares-share { color: var(--text-muted); font-size: var(--t-sm); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* How full against a limit: the fill says how close, on a paler track of the same colour. */
+.cp-meter-row { display: grid; gap: 6px; margin-top: var(--s-4); padding-top: 14px; border-top: 1px solid var(--border); }
+.cp-meter-words { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+.cp-meter-value { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cp-meter { height: 8px; border-radius: var(--r-pill); background: var(--accent-soft); overflow: hidden; }
+.cp-meter-fill { display: block; min-width: 4px; height: 100%; border-radius: var(--r-pill); background: var(--accent); }
+.cp-meter-warning { background: var(--warning-soft); }
+.cp-meter-warning .cp-meter-fill { background: var(--warning); }
+.cp-meter-danger { background: var(--danger-soft); }
+.cp-meter-danger .cp-meter-fill { background: var(--danger); }
+
+/* ---------------------------------------------------------------- players */
+
+.cp-players { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: var(--s-4); flex: 1; min-height: 0; }
+.cp-players.has-detail { grid-template-columns: minmax(0, 1fr) 400px; }
+.cp-cell-player .tl-avatar { margin-right: 10px; }
+.cp-cell-player .tl-tag { margin-left: var(--s-2); }
+.cp-player-name { color: var(--text-strong); font-weight: 500; }
+.cp-row-offline .cp-player-name { color: var(--text); }
+.cp-row-offline .tl-avatar { background: none; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-muted); }
+
+/* A player's permissions, between the rows of what can be done to them. */
+.tl-row + .cp-permissions, .cp-permissions + .tl-row { border-top: 1px solid var(--border-soft); }
+.cp-permissions { display: grid; gap: var(--s-3); padding: var(--s-3) 0; }
+.cp-permissions .tl-actions { margin-top: 0; }
+.cp-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s-3); max-height: 216px; padding: var(--s-2) 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow-y: auto; }
+.cp-check { display: flex; align-items: center; gap: var(--s-2); min-width: 0; padding: 5px 0; cursor: pointer; }
+.cp-check span { min-width: 0; font: 400 var(--t-sm)/1.3 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------ items & loot */
+
+.cp-lootrows { display: grid; }
+.cp-lootrow { display: grid; grid-template-columns: minmax(150px, 1fr) 84px 84px 96px 32px; align-items: center; gap: var(--s-2); padding: 5px 0; }
+.cp-lootrows-quality .cp-lootrow { grid-template-columns: minmax(150px, 1fr) 84px 84px 96px 124px 176px; }
+.cp-lootrow-head { padding: 0 0 2px; color: var(--text-muted); font-size: var(--t-sm); font-weight: 500; }
+.cp-lootrow-item { display: flex; align-items: center; gap: var(--s-2); min-width: 0; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-lootrow-head .cp-lootrow-item { color: inherit; }
+.cp-lootrow-end { display: flex; justify-content: flex-end; gap: 6px; }
+.cp-lootrow-new { margin-top: var(--s-2); padding-top: var(--s-3); border-top: 1px solid var(--border-soft); }
+.cp-loot-new { flex-wrap: nowrap; }
+.cp-loot-new .tl-input { flex: 0 0 auto; width: 230px; }
+/* Each loot table is a .tl-subcard of tools.css that folds; its rows line up under its name. */
+.tl-subcard .cp-lootrows { padding-left: 27px; }
+
+/* ----------------------------------------------------------- narrow window */
+
+/* Under 1440 the headline figures take two rows of three, and the table of
+   players gives up its last column while a player's details are open. */
+@media (max-width: 1439px) {
+  .cp-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cp-players.has-detail .cp-col-time { display: none; }
+  .cp-players.has-detail :is(.tl-table td, .tl-sort) { padding-left: var(--s-3); padding-right: var(--s-3); }
+}
+
+@media (max-width: 1279px) {
+  .cp-players.has-detail { grid-template-columns: minmax(0, 1fr) 380px; }
+}
+
+/* Under 1200 the navigation folds to its icons; each still has its name as a tooltip. */
+@media (max-width: 1199px) {
+  :root { --side-w: 64px; }
+  .cp-nav { align-items: center; padding: var(--s-4) var(--s-2); }
+  .cp-nav .tl-brand { padding: 2px 0; }
+  .cp-nav .tl-brand-words, .cp-nav .tl-nav-label, .cp-viewer-words, .cp-viewer-modes { display: none; }
+  .cp-nav-list { width: 100%; align-items: center; }
+  .cp-nav-group { width: 28px; height: 1px; margin: var(--s-2) 0; padding: 0; background: var(--border); font-size: 0; }
+  .cp-nav-group:first-child { display: none; }
+  .cp-nav .tl-nav-item { justify-content: center; width: 44px; height: 40px; padding: 0; }
+  .cp-nav .tl-nav-item > .tl-count { position: absolute; top: 2px; right: 0; min-width: 18px; padding: 0 4px; background: var(--slate-600); color: #fff; font-size: 10px; line-height: 16px; }
+  .cp-viewer { padding: var(--s-3) 0 0; justify-items: center; }
+  .cp-status { gap: var(--s-3); }
+  .cp-stat { padding-left: var(--s-3); }
+  .cp-lootrows-quality .cp-lootrow { grid-template-columns: minmax(120px, 1fr) 72px 72px 80px 112px 168px; }
+  .cp-loot-new .tl-input { width: 190px; }
+}
+
+@media (max-width: 1099px) {
+  .cp-stat-wide { display: none; }
+}
+
+/* Smaller than the panel is meant for: one column, so nothing is cut off. */
+@media (max-width: 899px) {
+  .cp-activity { contain: none; max-height: 420px; }
+  .cp-players.has-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .cp-status .cp-stat, .cp-updated { display: none; }
+}

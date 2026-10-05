@@ -1,0 +1,1270 @@
+/* Frostfire Forge tool windows: the one look of the control panel and of every
+   editor. It was taken out of the control panel, which is the model: the dark
+   slate, one scale of space and of type, a few colours that each mean one
+   thing, and the same corners and borders throughout. Green is the accent and
+   "all is well"; amber is a warning; red is danger or a problem; blue is kept
+   for the marks of charts. A page loads this file, then a file of its own only
+   for what no other tool has (controlpanel.css holds the charts and the
+   dashboard). The script side is js/core/toolkit.ts (elements, icons,
+   formatting, toasts, dialogs), js/core/toolfields.ts (form fields built from
+   a definition) and js/core/tooleditor.ts (the editor window below).
+
+   ============================== HOW TO USE ==============================
+
+   Every class starts with tl-. States are is-* and has-* classes or ARIA
+   attributes, never a second look-alike class. Icons are inline SVG from
+   toolkit.ts icon(); there are no emoji and no image files in this system.
+
+   THE WINDOW (the control panel, a dashboard)
+     <div class="tl-app">
+       <nav class="tl-side">             side pane; .tl-brand first, then a .tl-nav of
+                                         button.tl-nav-item (+ is-active) holding an icon,
+                                         .tl-nav-label and, where it counts something, .tl-count
+       <div class="tl-main">
+         <header class="tl-topbar">      .tl-title, then anything, .tl-topbar-end last
+         <div class="tl-banner" hidden>  one line across the top; + tl-banner-danger | -warning | -info
+         <main class="tl-page">          scrolls; holds one .tl-page-inner
+     <div id="tl-toasts" class="tl-toasts">   optional: toast() makes it when it is missing
+
+   THE WORKBENCH (an editor). Put this in the page and let tooleditor.ts fill it:
+     <div class="tl-app tl-app-editor">
+       <aside id="tl-side" class="tl-side"></aside>
+       <div class="tl-main">
+         <header id="tl-topbar" class="tl-topbar"></header>
+         <div id="tl-banner" class="tl-banner" role="status" hidden></div>
+         <div id="tl-tabs" class="tl-tabs" hidden></div>
+         <main id="tl-page" class="tl-page"></main>
+       </div>
+     </div>
+   What the script builds inside it:
+     side pane   .tl-brand, a .tl-nav of the kinds of record (only in an editor of several),
+                 .tl-side-tools (.tl-list-head with .tl-list-title and .tl-count, .tl-search,
+                 the New button), .tl-list, .tl-list-foot, .tl-side-foot (hidden while empty)
+     top bar     .tl-record (.tl-record-thumb > .tl-thumb, .tl-record-words > .tl-title +
+                 .tl-record-note, .tl-record-state > .tl-pill), .tl-topbar-actions
+                 (the editor's own buttons, Duplicate, Delete, .tl-topbar-rule, Save: each
+                 of the last three only in an editor that has it)
+     tabs        .tl-tab[aria-selected]; a tab with problems holds a .tl-tab-mark
+     page        .tl-page-inner.tl-work (+ has-aside) > .tl-work-main + .tl-work-aside
+
+   LAYOUT
+     .tl-page-inner          the page's column (max 1560px, centred); .tl-lead for its opening line
+     .tl-page-fill           on .tl-page: the page fills the window and scrolls inside its parts
+     .tl-grid + .tl-span-4|5|6|7|8|12     twelve columns
+     .tl-stack               children in a column, 16px apart
+     .tl-sectionbar          a heading between groups of cards (-words, -title, -lead)
+     .tl-work                an editor's page: the form, and beside it .tl-work-aside
+                             (a preview or summary that stays in view) when it has-aside
+
+   CARD: a titled section
+     <section class="tl-card">
+       <header class="tl-card-head"><div class="tl-card-words"><h2 class="tl-card-title">
+         <p class="tl-card-lead"></div><div class="tl-card-tools"></header>
+       <div class="tl-card-body">
+     + tl-card-flush (body without side padding, for tables), tl-card-danger
+     A .tl-count inside the .tl-card-title says how many of them there are (titleCount()).
+     .tl-subcard (-head, -words, -title, -lead, -tools, -body)   a record inside a card (subcard()).
+       One that folds has button.tl-subcard-fold[aria-expanded] in its head and is-open while
+       its body shows; + has-error. A list of them is a .tl-subcards, with a .tl-btn-add after it.
+     .tl-group + .tl-group-title                         a ruled-off part inside a card or detail panel
+
+   FORM
+     .tl-fields              the grid fields sit in; as many columns as fit (min 208px)
+                             + tl-fields-2 | tl-fields-3 for a fixed number
+     .tl-field               one field: label, control, hint, problem
+       <div class="tl-field"><label class="tl-field-label" for>…</label> control
+         <span class="tl-field-hint">…</span><span class="tl-field-error" role="alert">…</span></div>
+       + has-error (red border, the problem shown), tl-field-wide (the whole row),
+         tl-field-row-start (begins a new row), tl-field-toggle (a switch or checkbox with its label)
+     .tl-input               text, number (+ tl-input-number), <select> (+ tl-select),
+                             <textarea> (+ tl-textarea)
+     .tl-affix               an input with its unit written inside it: input + .tl-affix-unit
+     .tl-switch              <button role="switch" aria-checked> holding .tl-switch-knob
+     .tl-toggle              a switch or checkbox on one line with its .tl-toggle-label
+     .tl-check / .tl-checks  a checkbox with its label / a boxed grid of them
+     .tl-seg > .tl-seg-item[role=radio][aria-checked][data-value]   segmented control (segments());
+                             in a field it is as wide as its choices and wraps
+     .tl-options > .tl-option[aria-checked]               one choice to a line (-mark, -title, -note)
+     .tl-picker              the button of a field that opens the asset picker (.tl-thumb, .tl-picker-name)
+     .tl-chips > .tl-chip (+ is-missing) holding .tl-chip-x   a list of names, each removable
+     .tl-money > .tl-money-part (input + .tl-coin.tl-coin-gold|silver|copper)   an amount to type in
+     .tl-coins > .tl-coins-part (number + .tl-coin)       an amount to read, in a line of text (coins())
+     .tl-readonly            a value that cannot be edited here
+     .tl-form (+ tl-form-tight), .tl-inline, .tl-actions   the control panel's small forms
+     .tl-why                 why a control is greyed out (lock icon + words)
+     .is-readonly            on a container: disabled controls inside stay readable
+
+   BUTTONS
+     .tl-btn                 + tl-btn-primary | -danger | -danger-solid | -quiet | -quiet-danger
+                             + tl-btn-sm, tl-btn-block, tl-btn-add (dashed, "add another")
+                             + is-busy (a spinner in place of the label, same width)
+                             + tl-btn-fold (label hidden under 1200px wide; give it a tooltip)
+     .tl-icon-btn            32px square, icon only; needs aria-label (+ tl-icon-btn-danger)
+     .tl-link                a text button in a banner
+
+   SMALL PARTS
+     .tl-tag (+ -good | -warning | -danger | -info | -muted | -you), in .tl-tags
+     .tl-pill (+ -good | -warning | -danger | -info | -wait) holding .tl-pill-dot or an icon
+     .tl-count               a number in a small pill (beside a list title, in a tab)
+     .tl-avatar (+ -lg), .tl-dot (+ -on), .tl-kbd
+     .tl-quality.tl-quality-<quality>      the game's rarity colour as a dot
+     .tl-quality-text[data-quality]        the same as the colour of a name
+     .tl-thumb (+ -lg | -xl)               a square for an icon; .item-frame on it gives the rarity frame
+     .tl-facts > .tl-fact (-label, -value, -note)   label over value
+     .tl-rows > .tl-row (-words, -title, -note, -controls)   one thing that can be done, per line
+     .tl-note (+ -warning | -danger | -plain)   a boxed remark inside the page, icon first
+     .tl-error               the same in red, under the controls of a card
+     .tl-summary             plain sentences that say what the numbers add up to
+     .tl-preview             the record at a glance (-head, -words, -name, -kind, -text, and
+                             -line + tl-preview-line-good | -bad | -faint)
+     .tl-code                stored text shown as it is, in a fixed-width face
+
+   LISTS AND TABLES
+     .tl-list > .tl-list-row (+ is-selected) > .tl-list-open (.tl-thumb, .tl-list-words >
+       .tl-list-name + .tl-list-note, .tl-tags) + .tl-list-actions (icon buttons, shown on hover or focus)
+     .tl-toolbar + .tl-search (icon + .tl-input)   above a table
+     .tl-table-card > .tl-table-scroll > table.tl-table (+ tl-table-plain), .tl-table-foot
+       th > button.tl-sort; th[aria-sort]; td.tl-num; tr[tabindex] is clickable; tr.is-selected
+       tr.tl-table-group | .tl-table-note | .tl-table-empty
+     table.tl-table.tl-table-plain.tl-table-edit   in a .tl-card-flush: rows edited where they stand.
+       A row starts with .tl-item (.tl-thumb, .tl-item-words > a name + .tl-item-note) and ends
+       with td.tl-table-end (its way out); tr.is-leaving while it is being taken out.
+     .tl-detail              a card used as a side panel (-head, -words, -name, -state)
+     .tl-suggest-wrap > input + .tl-suggest > .tl-suggest-row (+ is-active)   matches listed under a field
+       (-name, -note, -none)
+
+   FEEDBACK AND STATES
+     toast(text, kind)       .tl-toasts > .tl-toast (+ tl-toast-warning | tl-toast-error)
+     confirmDialog(…)        dialog.tl-dialog (-top, -badge, -words, -title, -body, -actions);
+     noticeDialog(…)         the same with one button, for a refusal that takes reading
+     leaveDialog(…)          the same with three answers (+ tl-dialog-three)
+     askText(…)              the same with a line to type in (.tl-field.tl-dialog-field)
+     openDialog(…)           dialog.tl-dialog.tl-dialog-wide (-head, -tools, -scroll, -foot)
+     In every dialog the last button is the yes and the first the no.
+     asset picker            .tl-asset-grid | .tl-asset-list > button.tl-asset (+ is-selected)
+     tooltip(node, text)     .tl-tooltip
+     .tl-empty               nothing here (icon, -title, -text, a button)
+     .tl-screen              a page with nothing but a reason (-badge, -title, -text): not
+                             connected, not allowed, not answering, nothing open
+     .tl-skeleton (+ -tile | -block | -row | -line)   the shape of what is loading
+     .tl-loading             a line of text while a part loads
+
+   A NEW TOOL PAGE
+     1. <link rel="stylesheet" href="./css/tools.css"> and, only if it has parts
+        of its own, a second stylesheet after it.
+     2. The workbench markup above in <body>.
+     3. A bridge script that makes an EditorShell (tooleditor.ts), draws its
+        fields with a FieldRenderer (toolfields.ts) and talks to window.opener.
+   itemeditor.html + js/core/itemeditorbridge.ts is the smallest whole example;
+   spelleditorbridge.ts adds problems per field, a read-only record and a list
+   of sub-records.
+   ======================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* The slate of the tool windows, from their background up. */
+  --slate-950: #0b1120;
+  --slate-900: #0f172a;
+  --slate-850: #161e30;
+  --slate-800: #1e293b;
+  --slate-700: #334155;
+  --slate-600: #475569;
+  --slate-500: #64748b;
+  --slate-400: #94a3b8;
+  --slate-300: #cbd5e1;
+  --slate-200: #e2e8f0;
+
+  /* Neutral */
+  --bg: var(--slate-900);
+  --nav-bg: var(--slate-950);
+  --surface: var(--slate-850);
+  --surface-raised: var(--slate-800);
+  --surface-hover: rgba(148, 163, 184, 0.09);
+  --border: rgba(148, 163, 184, 0.16);
+  --border-soft: rgba(148, 163, 184, 0.09);
+  --border-strong: rgba(148, 163, 184, 0.3);
+  --text: var(--slate-200);
+  --text-strong: #f8fafc;
+  --text-muted: var(--slate-400);
+  --text-faint: #7c8aa0;
+
+  /* Accent: the green of the editors. Success shares it; warning and danger are their own. */
+  --accent: #2ecc71;
+  --accent-hover: #4ad987;
+  --accent-text: #6ee7a0;
+  --accent-soft: rgba(46, 204, 113, 0.13);
+  --accent-line: rgba(46, 204, 113, 0.5);
+  --on-accent: #06281a;
+  --success: var(--accent);
+  --warning: #f5b83d;
+  --warning-text: #fcd581;
+  --warning-soft: rgba(245, 184, 61, 0.13);
+  --danger: #f87171;
+  --danger-text: #fca5a5;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-line: rgba(248, 113, 113, 0.45);
+  --danger-solid: #dc2626;
+  --info-text: #9ccbff;
+  --info-soft: rgba(100, 180, 255, 0.14);
+
+  /* Data: the marks of the charts. The three have been checked against each
+     other for colour-blind readers on this surface. */
+  --data-1: #3987e5;
+  --data-2: #d95926;
+  --data-3: #199e70;
+  --grid: rgba(148, 163, 184, 0.12);
+  --axis: rgba(148, 163, 184, 0.3);
+
+  /* The game's own colours for how rare an item is: as a mark, and lightened
+     where they colour words so the words stay readable on the slate. */
+  --q-common: #e2e8f0;
+  --q-uncommon: #1eff00;
+  --q-rare: #2b8cf0;
+  --q-epic: #a335ee;
+  --q-legendary: #ff8000;
+  --q-rare-text: #6db3ff;
+  --q-epic-text: #c98df7;
+  --q-legendary-text: #ffa040;
+
+  /* Space */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+
+  /* Type */
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  --t-xs: 11px;
+  --t-sm: 12px;
+  --t-base: 13px;
+  --t-md: 14px;
+  --t-lg: 16px;
+  --t-xl: 20px;
+  --t-2xl: 26px;
+
+  /* Corners and depth */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+  --shadow: 0 14px 36px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(2, 6, 23, 0.4);
+
+  /* How wide the side pane is. */
+  --side-w: 228px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { height: 100%; margin: 0; }
+body {
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--t-base)/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, p, dl, dd, ol { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
+strong { font-weight: 600; }
+.tl-icon { flex-shrink: 0; display: block; }
+.tl-muted { color: var(--text-muted); }
+
+/* Keyboard focus is always visible, and never drawn for the mouse. */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+* { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.3) transparent; }
+
+/* ------------------------------------------------------------------ frame */
+
+.tl-app {
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  height: 100%;
+}
+
+.tl-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  min-height: 0;
+  padding: var(--s-4) var(--s-3);
+  background: var(--nav-bg);
+  border-right: 1px solid var(--border);
+}
+.tl-brand { display: flex; align-items: center; gap: var(--s-3); padding: 2px var(--s-2); }
+.tl-brand-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  /* Frost to fire. */
+  background: linear-gradient(140deg, #38bdf8, #6366f1 45%, #f97316);
+  color: #fff;
+}
+.tl-brand-words { display: grid; min-width: 0; line-height: 1.25; }
+.tl-brand-name { color: var(--text-strong); font-size: var(--t-md); font-weight: 600; white-space: nowrap; }
+.tl-brand-sub { color: var(--text-muted); font-size: var(--t-sm); white-space: nowrap; }
+
+/* What the side pane leads to, one to a line: the pages of the control panel, the kinds of record of an editor. */
+.tl-nav { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.tl-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 36px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.tl-nav-item:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
+.tl-nav-item:disabled { opacity: 0.5; }
+.tl-nav-item.is-active { background: rgba(148, 163, 184, 0.13); color: var(--text-strong); }
+.tl-nav-item.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.tl-nav-item.is-active .tl-icon { color: var(--accent); }
+.tl-nav-label { flex: 1; min-width: 0; white-space: nowrap; }
+
+.tl-main { display: flex; flex-direction: column; min-width: 0; height: 100%; min-height: 0; }
+
+.tl-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  flex-shrink: 0;
+  height: 56px;
+  padding: 0 var(--s-6);
+  border-bottom: 1px solid var(--border);
+}
+.tl-title { color: var(--text-strong); font: 600 var(--t-lg)/1.2 var(--font-display); white-space: nowrap; }
+.tl-topbar-end { display: flex; align-items: center; gap: var(--s-2); padding-left: var(--s-4); border-left: 1px solid var(--border); }
+
+.tl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--slate-300);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tl-pill-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.tl-pill-good { background: var(--accent-soft); color: var(--accent-text); }
+.tl-pill-good .tl-pill-dot { background: var(--accent); box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.5); animation: tl-pulse 2.4s ease-out infinite; }
+.tl-pill-warning { background: var(--warning-soft); color: var(--warning-text); }
+.tl-pill-danger { background: var(--danger-soft); color: var(--danger-text); }
+.tl-pill-info { background: var(--info-soft); color: var(--info-text); }
+.tl-pill-wait .tl-pill-dot { animation: tl-blink 1.2s ease-in-out infinite; }
+@keyframes tl-pulse { 70%, 100% { box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); } }
+@keyframes tl-blink { 50% { opacity: 0.25; } }
+
+.tl-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-shrink: 0;
+  padding: 10px var(--s-6);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-base);
+}
+.tl-banner-danger { background: var(--danger-soft); color: #fecaca; border-bottom-color: var(--danger-line); }
+.tl-banner-warning { background: var(--warning-soft); color: #fde9b0; border-bottom-color: rgba(245, 184, 61, 0.4); }
+.tl-banner-info { background: var(--info-soft); color: #d3e7ff; border-bottom-color: rgba(100, 180, 255, 0.35); }
+.tl-link { margin-left: auto; padding: 0; border: 0; background: none; color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+
+.tl-page { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-5) var(--s-6) var(--s-8); }
+.tl-page-inner { display: flex; flex-direction: column; gap: var(--s-4); max-width: 1560px; margin: 0 auto; }
+.tl-lead { max-width: 84ch; color: var(--text-muted); }
+/* A page that fills the window and scrolls inside its own parts. */
+.tl-page-fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--s-5); }
+.tl-page-fill .tl-page-inner { flex: 1; width: 100%; min-height: 0; }
+
+/* ------------------------------------------------------------------ parts */
+
+.tl-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--s-4); }
+.tl-span-4 { grid-column: span 4; }
+.tl-span-5 { grid-column: span 5; }
+.tl-span-6 { grid-column: span 6; }
+.tl-span-7 { grid-column: span 7; }
+.tl-span-8 { grid-column: span 8; }
+.tl-span-12 { grid-column: span 12; }
+.tl-stack { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+
+.tl-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.tl-card-head { display: flex; align-items: flex-start; gap: var(--s-4); padding: 14px var(--s-4) 0; }
+.tl-card-words { flex: 1; min-width: 0; }
+.tl-card-title { color: var(--text-strong); font-size: var(--t-md); font-weight: 600; line-height: 1.35; }
+.tl-card-lead { margin-top: 2px; color: var(--text-muted); font-size: var(--t-sm); }
+.tl-card-tools { display: flex; align-items: center; gap: var(--s-2); flex-shrink: 0; }
+.tl-card-tools:empty { display: none; }
+.tl-card-body { flex: 1; min-width: 0; padding: 14px var(--s-4) var(--s-4); }
+.tl-card-flush .tl-card-body { padding: var(--s-3) 0 var(--s-1); }
+.tl-card-danger { border-color: var(--danger-line); background: linear-gradient(0deg, rgba(248, 113, 113, 0.05), rgba(248, 113, 113, 0.05)), var(--surface); }
+.tl-card-danger .tl-card-title { color: var(--danger-text); }
+
+.tl-sectionbar { display: flex; align-items: flex-end; gap: var(--s-4); margin-top: var(--s-2); }
+.tl-sectionbar-words { flex: 1; min-width: 0; }
+.tl-sectionbar-title { color: var(--text-strong); font: 600 var(--t-lg)/1.3 var(--font-display); }
+.tl-sectionbar-lead { color: var(--text-muted); font-size: var(--t-sm); }
+
+/* What went wrong, under the controls that caused it. */
+.tl-error {
+  display: flex;
+  gap: var(--s-2);
+  margin: 0 var(--s-4) var(--s-4);
+  padding: 10px var(--s-3);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+  color: #fecaca;
+}
+.tl-error .tl-icon { margin-top: 2px; color: var(--danger); }
+.tl-group > .tl-error { margin: var(--s-2) 0 0; }
+
+.tl-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.tl-btn:hover:not(:disabled) { background: rgba(148, 163, 184, 0.17); border-color: rgba(148, 163, 184, 0.42); }
+.tl-btn:active:not(:disabled) { background: rgba(148, 163, 184, 0.24); }
+.tl-btn:disabled { opacity: 0.45; }
+.tl-btn-primary { border-color: transparent; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+.tl-btn-primary:hover:not(:disabled) { border-color: transparent; background: var(--accent-hover); }
+.tl-btn-primary:active:not(:disabled) { background: var(--accent); }
+.tl-btn-danger { border-color: var(--danger-line); background: none; color: var(--danger-text); }
+.tl-btn-danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
+.tl-btn-danger-solid { border-color: transparent; background: var(--danger-solid); color: #fff; font-weight: 600; }
+.tl-btn-danger-solid:hover:not(:disabled) { border-color: transparent; background: #b91c1c; }
+.tl-btn-quiet, .tl-btn-quiet-danger { border-color: transparent; background: none; color: var(--text-muted); }
+.tl-btn-quiet:hover:not(:disabled) { border-color: transparent; background: var(--surface-hover); color: var(--text); }
+/* Dangerous, but one of many in a list: red only under the pointer or the focus. */
+.tl-btn-quiet-danger:hover:not(:disabled), .tl-btn-quiet-danger:focus-visible { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger-text); }
+/* Waiting for the server's answer: the label makes way for a spinner, the width stays. */
+.is-busy { pointer-events: none; }
+.tl-btn.is-busy > * { visibility: hidden; }
+.tl-btn.is-busy::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: tl-spin 0.7s linear infinite;
+}
+@keyframes tl-spin { to { transform: rotate(360deg); } }
+
+.tl-icon-btn {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.tl-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+.tl-icon-btn.is-spinning .tl-icon { animation: tl-spin 0.6s ease-out; }
+
+.tl-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); }
+.tl-form-tight { grid-template-columns: minmax(0, 1fr) 112px; align-items: start; }
+.tl-field { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.tl-field-label { color: var(--slate-300); font-size: var(--t-sm); font-weight: 500; }
+.tl-field-hint, .tl-hint { color: var(--text-muted); font-size: var(--t-sm); }
+.tl-hint { margin-top: var(--s-2); }
+.tl-input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--text-strong);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.tl-input::placeholder { color: var(--text-faint); }
+.tl-input:hover:not(:disabled) { border-color: rgba(148, 163, 184, 0.45); }
+.tl-input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tl-input:disabled { opacity: 0.5; }
+.tl-input-number { font-variant-numeric: tabular-nums; }
+.tl-select {
+  appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 14px;
+}
+.tl-select option { background: var(--surface-raised); color: var(--text); }
+.tl-textarea { height: auto; min-height: 96px; padding: var(--s-2) 10px; line-height: 1.5; resize: vertical; }
+input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1) brightness(1.6); cursor: pointer; }
+input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+
+.tl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-4); }
+.tl-inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.tl-inline .tl-input { width: auto; flex: 1 1 140px; }
+/* Why a control is greyed out. */
+.tl-why { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--t-sm); }
+.tl-why .tl-icon { color: var(--text-faint); }
+.tl-loading { padding: var(--s-2) 0; color: var(--text-muted); }
+
+.tl-seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.tl-seg-item {
+  height: 28px;
+  padding: 0 var(--s-3);
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+}
+.tl-seg-item:hover:not(:disabled) { color: var(--text); }
+.tl-seg-item[aria-checked="true"] { background: var(--slate-700); color: var(--text-strong); }
+/* Turned off: the choice that was made stays readable, the others fade. */
+.tl-seg-item:disabled { opacity: 0.45; }
+.tl-seg-item[aria-checked="true"]:disabled { opacity: 0.75; }
+/* In a field it is as wide as its choices, not as its column, and goes to a second line before it runs into the next field. */
+.tl-field > .tl-seg { flex-wrap: wrap; justify-self: start; max-width: 100%; }
+
+/* One thing that can be done: what it is, what it does, and its control. */
+.tl-rows { display: flex; flex-direction: column; }
+.tl-row { display: flex; align-items: center; gap: var(--s-4); padding: 10px 0; }
+.tl-row + .tl-row { border-top: 1px solid var(--border-soft); }
+.tl-rows > .tl-row:first-child { padding-top: 2px; }
+.tl-rows > .tl-row:last-child { padding-bottom: 2px; }
+.tl-row-words { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.tl-row-title { color: var(--text-strong); font-weight: 500; }
+.tl-row-note { color: var(--text-muted); font-size: var(--t-sm); }
+.tl-row-controls { display: flex; align-items: center; gap: var(--s-2); flex-shrink: 0; }
+.tl-row-controls .tl-input { width: 180px; }
+.tl-rows-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s-8); align-items: start; }
+.tl-rows-split > .tl-row { border-top: 0; padding-top: 2px; }
+
+.tl-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3) var(--s-4); }
+.tl-facts-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-4); }
+.tl-facts-inline { margin-top: var(--s-4); padding-top: 14px; border-top: 1px solid var(--border); }
+.tl-fact { min-width: 0; }
+.tl-fact-label { color: var(--text-muted); font-size: var(--t-sm); }
+.tl-fact-value { color: var(--text-strong); font-size: var(--t-md); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tl-fact-note { color: var(--text-faint); font-size: var(--t-sm); }
+
+.tl-tags { display: inline-flex; flex-wrap: wrap; gap: var(--s-1); vertical-align: middle; }
+.tl-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--slate-300);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tl-tag-you { background: var(--accent-soft); color: var(--accent-text); }
+.tl-tag-good { background: var(--accent-soft); color: var(--accent-text); }
+.tl-tag-warning { background: var(--warning-soft); color: var(--warning-text); }
+.tl-tag-danger { background: var(--danger-soft); color: var(--danger-text); }
+.tl-tag-info { background: var(--info-soft); color: var(--info-text); }
+.tl-tag-muted { background: none; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-muted); }
+
+.tl-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--slate-700);
+  color: var(--slate-200);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  vertical-align: middle;
+}
+.tl-avatar-lg { width: 40px; height: 40px; font-size: var(--t-lg); }
+.tl-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--slate-500); }
+.tl-dot-on { background: var(--accent); }
+
+.tl-empty { display: grid; justify-items: center; gap: 6px; padding: var(--s-6) var(--s-4); color: var(--text-muted); text-align: center; }
+.tl-empty > .tl-icon { color: var(--text-faint); margin-bottom: 2px; }
+.tl-empty-title { color: var(--text); font-weight: 600; }
+.tl-empty-text { max-width: 40ch; font-size: var(--t-sm); }
+.tl-empty .tl-btn { margin-top: var(--s-2); }
+
+/* A page with nothing to show but a reason. */
+.tl-screen { display: grid; justify-items: center; align-content: center; gap: var(--s-3); min-height: 100%; padding: var(--s-8); text-align: center; }
+.tl-screen-badge { display: grid; place-items: center; width: 60px; height: 60px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--text-muted); }
+.tl-screen-title { color: var(--text-strong); font: 600 var(--t-xl)/1.3 var(--font-display); }
+.tl-screen-text { max-width: 52ch; color: var(--text-muted); font-size: var(--t-md); }
+.tl-screen .tl-btn { margin-top: var(--s-2); }
+
+.tl-skeleton {
+  border-radius: var(--r-lg);
+  background: linear-gradient(100deg, var(--surface) 30%, rgba(148, 163, 184, 0.1) 50%, var(--surface) 70%);
+  background-size: 300% 100%;
+  animation: tl-shimmer 1.6s linear infinite;
+}
+.tl-skeleton-tile { height: 124px; }
+.tl-skeleton-block { height: 320px; }
+.tl-skeleton-row { height: 44px; border-radius: var(--r-md); }
+.tl-skeleton-line { height: 12px; border-radius: var(--r-sm); }
+@keyframes tl-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* A field searched on the server, with its matches listed under it. */
+.tl-suggest-wrap { position: relative; min-width: 0; }
+.tl-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--s-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+.tl-suggest-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: 7px var(--s-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  text-align: left;
+}
+.tl-suggest-row { color: var(--text); }
+/* Under the pointer, holding the focus, or (is-active) the one the arrow keys are on while the field keeps the focus. */
+.tl-suggest-row:hover, .tl-suggest-row:focus-visible, .tl-suggest-row.is-active { outline: none; background: rgba(148, 163, 184, 0.16); }
+.tl-suggest-row .tl-thumb { width: 24px; height: 24px; border-radius: var(--r-sm); }
+.tl-suggest-name { flex: 1; min-width: 0; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-suggest-note { color: var(--text-muted); font-size: var(--t-sm); }
+.tl-suggest-none { padding: 7px var(--s-2); color: var(--text-muted); font-size: var(--t-sm); }
+/* The game's own colours for how rare an item is, as a dot beside its name. */
+.tl-quality { flex-shrink: 0; width: 8px; height: 8px; border-radius: 50%; background: #e2e8f0; }
+.tl-quality-uncommon { background: #1eff00; }
+.tl-quality-rare { background: #2b8cf0; }
+.tl-quality-epic { background: #a335ee; }
+.tl-quality-legendary { background: #ff8000; }
+
+/* ------------------------------------------------------- tables and details */
+
+.tl-table-card { min-height: 0; overflow: hidden; }
+.tl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--border); }
+.tl-toolbar .tl-select { width: auto; min-width: 132px; max-width: 200px; }
+.tl-search { position: relative; flex: 1 1 150px; max-width: 320px; }
+.tl-search .tl-icon { position: absolute; top: 50%; left: 10px; color: var(--text-faint); transform: translateY(-50%); pointer-events: none; }
+.tl-search .tl-input { padding-left: 32px; }
+.tl-table-foot { flex-shrink: 0; padding: var(--s-2) var(--s-4); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+
+.tl-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+.tl-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.tl-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  background: #1a2336;
+  color: var(--text-muted);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.tl-table-plain th { position: static; padding: 9px var(--s-4); background: none; }
+.tl-sort { display: flex; align-items: center; gap: var(--s-1); width: 100%; padding: 9px var(--s-4); border: 0; background: none; color: inherit; font-weight: inherit; text-align: inherit; }
+.tl-sort:hover { color: var(--text); }
+.tl-sort:focus-visible { outline-offset: -2px; }
+.tl-sort .tl-icon { opacity: 0; }
+.tl-sort:hover .tl-icon { opacity: 0.5; }
+th[aria-sort="ascending"] .tl-sort, th[aria-sort="descending"] .tl-sort { color: var(--text-strong); }
+th[aria-sort="ascending"] .tl-icon, th[aria-sort="descending"] .tl-icon { opacity: 1; }
+th.tl-num .tl-sort { flex-direction: row-reverse; }
+.tl-table td { padding: 9px var(--s-4); border-bottom: 1px solid var(--border-soft); vertical-align: middle; white-space: nowrap; }
+.tl-table tbody tr:last-child td { border-bottom: 0; }
+.tl-num { text-align: right; font-variant-numeric: tabular-nums; }
+.tl-table tr[tabindex] { cursor: pointer; }
+.tl-table tr[tabindex]:hover td { background: var(--surface-hover); }
+.tl-table tr[tabindex]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tl-table tr.is-selected td { background: var(--accent-soft); }
+.tl-table tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.tl-table-group td { padding-top: var(--s-4); background: none; color: var(--text-muted); font-size: var(--t-sm); font-weight: 600; }
+.tl-table-note td { color: var(--text-muted); font-size: var(--t-sm); white-space: normal; }
+.tl-table-empty td { padding: var(--s-6) var(--s-4); white-space: normal; }
+
+/* A table in a card whose rows are edited where they stand: what the row is
+   about (.tl-item), a few boxes to type in, and its way out at the end
+   (td.tl-table-end). The page gives the columns their widths. */
+.tl-table-edit { table-layout: fixed; }
+.tl-table-edit th { padding: 0 var(--s-2) var(--s-2); }
+.tl-table-edit td { padding: 7px var(--s-2); }
+.tl-table-edit :is(th, td):first-child { padding-left: var(--s-4); }
+.tl-table-edit :is(th, td):last-child { padding-right: var(--s-3); }
+.tl-table-edit tbody tr:hover td { background: rgba(148, 163, 184, 0.04); }
+.tl-table-edit tbody tr:focus-within td { background: var(--surface-hover); }
+/* A row that has just been sent to be taken out waits, greyed, for the list that no longer has it. */
+.tl-table-edit tr.is-leaving td { opacity: 0.45; }
+.tl-table-end { text-align: right; }
+.tl-table-end .tl-icon-btn { display: inline-grid; }
+/* What a row is about: its picture, then its name over a line on what it is. */
+.tl-item { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.tl-item-words { display: grid; gap: 1px; min-width: 0; line-height: 1.3; }
+.tl-item-note { color: var(--text-muted); font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.tl-detail { gap: 14px; min-height: 0; padding: var(--s-4); overflow-y: auto; }
+.tl-detail-head { display: flex; align-items: center; gap: var(--s-3); }
+.tl-detail-words { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.tl-detail-name { color: var(--text-strong); font: 600 var(--t-lg)/1.25 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-detail-state { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--t-sm); }
+.tl-group { padding-top: 14px; border-top: 1px solid var(--border); }
+.tl-group-title { display: flex; align-items: center; gap: 6px; margin-bottom: var(--s-1); color: var(--text-faint); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.tl-group .tl-form { margin-top: var(--s-2); }
+.tl-group .tl-actions { margin-top: var(--s-3); }
+
+/* ------------------------------------------------------- choices and switches */
+
+/* One choice to a line: the mark, what it is, and a note at the end. */
+.tl-options { display: grid; gap: 6px; }
+.tl-option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.tl-option:hover { background: var(--surface-hover); }
+.tl-option-mark { width: 16px; height: 16px; border: 1.5px solid var(--slate-500); border-radius: 50%; }
+.tl-option-title { color: var(--text-strong); font-weight: 500; }
+.tl-option-note { color: var(--text-muted); font-size: var(--t-sm); white-space: nowrap; }
+.tl-option[aria-checked="true"] { border-color: var(--accent-line); background: var(--accent-soft); }
+.tl-option[aria-checked="true"] .tl-option-mark { border: 5px solid var(--accent); background: var(--on-accent); }
+.tl-card-body > .tl-field + .tl-field { margin-top: var(--s-4); }
+
+.tl-switch { position: relative; flex-shrink: 0; width: 38px; height: 22px; padding: 0; border: 1px solid var(--border-strong); border-radius: var(--r-pill); background: rgba(148, 163, 184, 0.22); transition: background 0.15s, border-color 0.15s; }
+.tl-switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--slate-200); transition: transform 0.15s; }
+.tl-switch[aria-checked="true"] { border-color: var(--accent); background: var(--accent); }
+.tl-switch[aria-checked="true"] .tl-switch-knob { background: #fff; transform: translateX(16px); }
+.tl-switch:disabled { opacity: 0.45; }
+.tl-switch.is-busy { opacity: 0.6; }
+
+/* -------------------------------------------------------------- feedback */
+
+.tl-toasts { position: fixed; right: var(--s-5); bottom: var(--s-5); z-index: 100; display: flex; flex-direction: column; gap: var(--s-2); width: min(380px, calc(100vw - 40px)); pointer-events: none; }
+.tl-toast {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 10px 6px 10px var(--s-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: tl-toast-in 0.18s ease-out;
+}
+.tl-toast > .tl-icon { margin-top: 3px; color: var(--info-text); }
+.tl-toast-warning { border-color: rgba(245, 184, 61, 0.45); }
+.tl-toast-warning > .tl-icon { color: var(--warning); }
+.tl-toast-error { border-color: var(--danger-line); }
+.tl-toast-error > .tl-icon { color: var(--danger); }
+.tl-toast-text { color: var(--text-strong); overflow-wrap: anywhere; padding-top: 1px; }
+.tl-toast-more { margin-top: 2px; color: var(--text-muted); font-size: var(--t-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-toast-close { width: 24px; height: 24px; }
+.tl-toast.is-leaving { opacity: 0; transform: translateY(6px); transition: opacity 0.18s, transform 0.18s; }
+@keyframes tl-toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+.tl-dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: var(--s-5);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.tl-dialog::backdrop { background: rgba(2, 6, 23, 0.66); }
+.tl-dialog[open] { animation: tl-toast-in 0.16s ease-out; }
+.tl-dialog-top { display: flex; gap: 14px; }
+.tl-dialog-badge { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--danger-soft); color: var(--danger); }
+.tl-dialog-words { min-width: 0; padding-top: 2px; }
+.tl-dialog-title { color: var(--text-strong); font: 600 var(--t-lg)/1.3 var(--font-display); overflow-wrap: anywhere; }
+.tl-dialog-body { margin-top: 6px; color: var(--slate-300); font-size: var(--t-md); line-height: 1.5; overflow-wrap: anywhere; }
+.tl-dialog-actions { display: flex; justify-content: flex-end; gap: var(--s-2); margin-top: var(--s-5); }
+/* The line of text a question is answered with (askText), under what it asks. */
+.tl-dialog-field { margin-top: var(--s-4); }
+/* A question with three answers (leaveDialog): staying sits apart from the two ways out. */
+.tl-dialog-three { width: min(500px, calc(100vw - 32px)); }
+.tl-dialog-three .tl-dialog-actions { flex-wrap: wrap; }
+.tl-dialog-three .tl-dialog-actions > :first-child { margin-right: auto; }
+
+/* =====================================================================
+   What follows was added for the editors, drawn from the parts above. The
+   control panel uses a little of it (the count pill, the record that folds).
+   ===================================================================== */
+
+/* ---------------------------------------------------------- more buttons */
+
+.tl-btn-sm { height: 26px; padding: 0 10px; font-size: var(--t-sm); }
+.tl-btn-block { width: 100%; }
+/* "Add another": a dashed outline the width of the list it adds to. */
+.tl-btn-add { width: 100%; height: 40px; border-style: dashed; background: none; color: var(--text-muted); }
+.tl-btn-add:hover:not(:disabled) { color: var(--text); }
+.tl-icon-btn:disabled { opacity: 0.35; }
+.tl-icon-btn:disabled:hover { background: none; color: var(--text-muted); }
+.tl-icon-btn-danger:hover:not(:disabled), .tl-icon-btn-danger:focus-visible { background: var(--danger-soft); color: var(--danger-text); }
+/* A question whose yes loses nothing, and one that takes more than a paragraph to explain. */
+.tl-dialog-badge-plain { background: var(--info-soft); color: var(--info-text); }
+.tl-dialog-body p + p { margin-top: var(--s-2); }
+
+.tl-count {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--slate-300);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.tl-kbd { padding: 1px 5px; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--r-sm); color: var(--slate-300); font: 500 var(--t-xs)/1.4 var(--font-mono); white-space: nowrap; }
+.tl-quality-text[data-quality="common"] { color: var(--text-strong); }
+.tl-quality-text[data-quality="uncommon"] { color: var(--q-uncommon); }
+.tl-quality-text[data-quality="rare"] { color: var(--q-rare-text); }
+.tl-quality-text[data-quality="epic"] { color: var(--q-epic-text); }
+.tl-quality-text[data-quality="legendary"] { color: var(--q-legendary-text); }
+
+/* A square that holds an icon. Empty, it shows the icon of the kit put in it. */
+.tl-thumb {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: rgba(148, 163, 184, 0.07);
+  color: var(--text-faint);
+}
+.tl-thumb > img { max-width: 100%; max-height: 100%; border-radius: 3px; image-rendering: pixelated; }
+.tl-thumb-lg { width: 36px; height: 36px; }
+.tl-thumb-xl { width: 52px; height: 52px; border-radius: 8px; }
+
+/* The rarity frame around an item's icon, as the game draws it
+   (js/core/itemframe.ts puts .item-frame and data-quality on the square).
+   The game's own copy of these rules is in game.css. */
+.item-frame { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box; border-radius: 4px; border: 2px solid rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.12); }
+.item-frame > img { max-width: 100%; max-height: 100%; border-radius: 3px; image-rendering: pixelated; }
+.item-frame-missing { font-size: 10px; color: #888; }
+.item-frame[data-quality="common"] { border-color: rgba(255, 255, 255, 0.6); background: rgba(255, 255, 255, 0.12); }
+.item-frame[data-quality="uncommon"] { border-color: rgba(52, 235, 73, 0.6); background: rgba(52, 235, 73, 0.12); }
+.item-frame[data-quality="rare"] { border-color: rgba(52, 122, 235, 0.6); background: rgba(52, 122, 235, 0.12); }
+.item-frame[data-quality="epic"] { border-color: rgba(189, 52, 235, 0.6); background: rgba(189, 52, 235, 0.1); }
+.item-frame[data-quality="legendary"] { border-color: transparent; background: rgba(255, 128, 0, 0.12); position: relative; overflow: visible; }
+.item-frame[data-quality="legendary"]::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 6px;
+  padding: 2px;
+  background: linear-gradient(135deg, #ff6b6b, #ffb347, #ffe66d, #51cf66, #45b7d1, #9b59b6, #ff6b6b);
+  background-size: 300% 300%;
+  animation: tl-rainbow 4s ease-in-out infinite;
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+@keyframes tl-rainbow { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+/* ------------------------------------------------------------ more of forms */
+
+.tl-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: var(--s-4); align-items: start; }
+.tl-fields-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tl-fields-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tl-field-wide { grid-column: 1 / -1; }
+.tl-field-row-start { grid-column-start: 1; }
+/* Fields in a grid are spaced by the grid, not by the rule for fields stacked in a card. */
+.tl-fields > .tl-field + .tl-field { margin-top: 0; }
+
+.tl-field.has-error :is(.tl-input, .tl-picker, .tl-seg, .tl-checks) { border-color: var(--danger); }
+.tl-field.has-error .tl-input:focus-visible { box-shadow: 0 0 0 3px var(--danger-soft); }
+.tl-field-error { display: flex; align-items: flex-start; gap: 6px; color: var(--danger-text); font-size: var(--t-sm); }
+.tl-field-error .tl-icon { margin-top: 2px; color: var(--danger); }
+
+/* The unit of a number, written inside its field. */
+.tl-affix { position: relative; min-width: 0; }
+.tl-affix .tl-input { padding-right: calc(var(--unit-w, 0px) + 20px); }
+.tl-affix-unit { position: absolute; top: 50%; right: 10px; color: var(--text-faint); font-size: var(--t-sm); transform: translateY(-50%); pointer-events: none; }
+/* The arrows of a number field would sit on top of the unit. */
+.tl-affix .tl-input::-webkit-inner-spin-button { display: none; }
+
+/* A switch or a checkbox on one line with what it turns on. In a grid of
+   fields it drops to the line of the inputs beside it. */
+.tl-toggle { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.tl-toggle-label { min-width: 0; color: var(--text-strong); font-weight: 500; cursor: pointer; }
+.tl-fields > .tl-field-toggle { padding-top: 24px; }
+/* With a row to itself it has no input beside it to line up with. */
+.tl-fields > .tl-field-toggle:only-child, .tl-fields > .tl-field-toggle.tl-field-wide { padding-top: 0; }
+.tl-check { display: flex; align-items: center; gap: var(--s-2); min-width: 0; padding: 5px 0; cursor: pointer; }
+.tl-check input { flex-shrink: 0; } /* a long label must not squeeze the box */
+.tl-check span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 0 var(--s-3); padding: var(--s-2) 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+
+/* The button of a field whose value is picked from a list with pictures. */
+.tl-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 30px 0 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center / 14px;
+  color: var(--text-strong);
+  text-align: left;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.tl-picker:hover:not(:disabled) { border-color: rgba(148, 163, 184, 0.45); }
+.tl-picker:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tl-picker:disabled { opacity: 0.5; }
+.tl-picker .tl-thumb { width: 26px; height: 26px; border-radius: var(--r-sm); }
+.tl-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-picker-name:first-child { padding-left: 7px; }
+.tl-picker-name.is-none { color: var(--text-faint); }
+
+/* Names in a list, each with its own way out. */
+.tl-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 34px; }
+.tl-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; height: 26px; padding: 0 4px 0 10px; border-radius: var(--r-pill); background: rgba(148, 163, 184, 0.15); color: var(--slate-200); font-size: var(--t-sm); font-weight: 500; }
+.tl-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-chip.is-missing { background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger-line); color: var(--danger-text); }
+.tl-chip-x { display: grid; place-items: center; flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; opacity: 0.7; }
+.tl-chip-x:hover:not(:disabled) { background: rgba(148, 163, 184, 0.22); opacity: 1; }
+.tl-chip-x:disabled { display: none; }
+.tl-chip:has(.tl-chip-x:disabled) { padding-right: 10px; }
+.tl-chips-none { color: var(--text-faint); font-size: var(--t-sm); }
+
+/* Gold, silver and copper of one amount. */
+.tl-money { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+.tl-money-part { position: relative; min-width: 0; }
+.tl-money-part .tl-input { padding-right: 26px; }
+.tl-money-part .tl-input::-webkit-inner-spin-button { display: none; }
+.tl-coin { position: absolute; top: 50%; right: 9px; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); transform: translateY(-50%); pointer-events: none; }
+.tl-coin-gold { background: #f2c14e; }
+.tl-coin-silver { background: #c3ccd9; }
+.tl-coin-copper { background: #c97b4a; }
+/* An amount of money to read, in a sentence or a line (toolfields.ts coins()): each number with its coin after it. */
+.tl-coins { display: inline-flex; align-items: center; gap: 7px; color: var(--text-strong); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: bottom; }
+.tl-coins-part { display: inline-flex; align-items: center; gap: 4px; }
+.tl-coins .tl-coin { position: static; flex-shrink: 0; transform: none; }
+
+.tl-readonly { display: flex; align-items: center; min-height: 34px; padding: 0 10px; border: 1px dashed var(--border-strong); border-radius: var(--r-md); color: var(--slate-300); overflow-wrap: anywhere; }
+
+/* A record that can be read but not changed here: its controls are off, and still easy to read. */
+.is-readonly :is(.tl-input, .tl-picker):disabled { border-color: var(--border); background-color: transparent; opacity: 1; }
+.is-readonly .tl-select:disabled, .is-readonly .tl-picker:disabled { background-image: none; }
+.is-readonly .tl-switch:disabled { opacity: 0.7; }
+.is-readonly .tl-toggle-label { cursor: default; }
+
+/* -------------------------------------------------------- more small parts */
+
+/* A remark inside the page: what to know before going on. */
+.tl-note {
+  display: flex;
+  gap: 10px;
+  padding: 10px var(--s-3);
+  border: 1px solid rgba(100, 180, 255, 0.3);
+  border-radius: var(--r-md);
+  background: var(--info-soft);
+  color: #d3e7ff;
+}
+.tl-note > .tl-icon { margin-top: 2px; color: var(--info-text); }
+.tl-note-words { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.tl-note-title { color: var(--text-strong); font-weight: 600; }
+.tl-note-warning { border-color: rgba(245, 184, 61, 0.4); background: var(--warning-soft); color: #fde9b0; }
+.tl-note-warning > .tl-icon { color: var(--warning); }
+.tl-note-danger { border-color: var(--danger-line); background: var(--danger-soft); color: #fecaca; }
+.tl-note-danger > .tl-icon { color: var(--danger); }
+.tl-note-plain { border-color: var(--border); background: none; color: var(--text-muted); }
+.tl-note-plain > .tl-icon { color: var(--text-faint); }
+.tl-note .tl-link { align-self: center; }
+
+/* What the numbers add up to, said in sentences. */
+.tl-summary { display: grid; gap: var(--s-2); color: var(--slate-300); line-height: 1.55; }
+
+/* How the record looks in the game: an item's tooltip, a spell's entry. */
+.tl-preview { display: grid; gap: 5px; padding: var(--s-3); border: 1px solid var(--border-strong); border-radius: 8px; background: var(--slate-950); }
+.tl-preview-head { display: flex; align-items: center; gap: var(--s-3); margin-bottom: 3px; }
+.tl-preview-words { display: grid; min-width: 0; line-height: 1.3; }
+.tl-preview-name { color: var(--text-strong); font-size: var(--t-md); font-weight: 600; overflow-wrap: anywhere; }
+.tl-preview-kind { color: var(--text-muted); font-size: var(--t-sm); }
+.tl-preview-line { color: var(--slate-300); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tl-preview-line-good { color: var(--accent-text); }
+.tl-preview-line-bad { color: var(--danger-text); }
+.tl-preview-line-faint { color: var(--text-faint); }
+.tl-preview-text { margin-top: 3px; padding-top: var(--s-2); border-top: 1px solid var(--border-soft); color: #f1d9a0; overflow-wrap: anywhere; }
+
+/* Stored text, shown as it is. */
+.tl-code { max-height: 320px; margin: 0; padding: var(--s-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg); color: var(--slate-300); font: 400 var(--t-sm)/1.55 var(--font-mono); overflow: auto; white-space: pre; tab-size: 2; }
+
+/* A record inside a card: one of several of the same kind (toolkit.ts subcard()). */
+.tl-subcard { border: 1px solid var(--border); border-radius: 8px; background: rgba(148, 163, 184, 0.04); }
+.tl-subcard + .tl-subcard { margin-top: var(--s-2); }
+.tl-subcard-head { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3); }
+.tl-subcard-words { display: grid; flex: 1; min-width: 0; }
+.tl-subcard-title { color: var(--text-strong); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-subcard-lead { color: var(--text-muted); font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-subcard-lead:empty { display: none; }
+.tl-subcard-tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.tl-subcard-tools:empty { display: none; }
+.tl-subcard-body { padding: var(--s-1) var(--s-3) var(--s-3); }
+/* One that folds: its head is a button, with a mark that turns when it is open. */
+.tl-subcard-fold { display: flex; align-items: center; gap: var(--s-3); flex: 1; min-width: 0; min-height: 32px; padding: 2px var(--s-1) 2px 0; border: 0; border-radius: var(--r-md); background: none; color: inherit; text-align: left; }
+.tl-subcard-fold > .tl-icon:first-child { color: var(--text-faint); transition: transform 0.12s; }
+.tl-subcard-fold[aria-expanded="true"] > .tl-icon:first-child { transform: rotate(90deg); }
+.tl-subcard-fold:hover > .tl-icon:first-child { color: var(--text); }
+.tl-subcard.is-open { border-color: var(--border-strong); background: rgba(148, 163, 184, 0.06); }
+.tl-subcard.is-open > .tl-subcard-head { border-bottom: 1px solid var(--border-soft); }
+.tl-subcard.is-open > .tl-subcard-body { padding-top: var(--s-3); }
+.tl-subcard.has-error { border-color: var(--danger-line); }
+/* The list of them, with the button that adds another under it. */
+.tl-subcards:not(:empty) + .tl-btn-add { margin-top: var(--s-2); }
+
+/* How many of them there are, beside a card's title (toolkit.ts titleCount()). */
+.tl-card-title > .tl-count { display: inline-block; margin-left: var(--s-2); vertical-align: 1px; }
+
+.tl-tooltip {
+  position: fixed;
+  z-index: 300;
+  max-width: 300px;
+  padding: 5px var(--s-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: #0a0f1c;
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.6);
+  color: var(--text-strong);
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------- wide dialogs, asset picker */
+
+.tl-dialog-wide { width: min(760px, calc(100vw - 32px)); max-height: min(680px, calc(100vh - 48px)); padding: 0; overflow: hidden; }
+.tl-dialog-wide[open] { display: flex; flex-direction: column; }
+.tl-dialog-head { display: flex; align-items: center; gap: var(--s-3); flex-shrink: 0; padding: var(--s-4) var(--s-3) var(--s-3) var(--s-5); }
+.tl-dialog-head .tl-dialog-title { flex: 1; min-width: 0; }
+.tl-dialog-tools { display: flex; align-items: center; gap: var(--s-3); flex-shrink: 0; padding: 0 var(--s-5) var(--s-4); }
+.tl-dialog-tools .tl-search { max-width: none; }
+.tl-dialog-scroll { flex: 1; min-height: 120px; padding: var(--s-3) var(--s-5) var(--s-5); border-top: 1px solid var(--border); overflow-y: auto; }
+.tl-dialog-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); flex-shrink: 0; padding: var(--s-3) var(--s-5); border-top: 1px solid var(--border); }
+.tl-dialog-foot > .tl-muted { margin-right: auto; font-size: var(--t-sm); }
+
+.tl-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--s-1); }
+.tl-asset {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 6px var(--s-2);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  text-align: center;
+  transition: background 0.12s, border-color 0.12s;
+}
+.tl-asset:hover { border-color: var(--border); background: var(--surface-hover); }
+.tl-asset:focus-visible { outline-offset: -2px; }
+.tl-asset.is-selected { border-color: var(--accent-line); background: var(--accent-soft); color: var(--text-strong); }
+.tl-asset .tl-thumb { width: 48px; height: 48px; border-radius: 8px; }
+.tl-asset-name { display: -webkit-box; max-width: 100%; font-size: var(--t-sm); line-height: 1.3; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* Names only, no pictures: a list in columns. */
+.tl-asset-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 2px var(--s-2); }
+.tl-asset-list .tl-asset { justify-items: start; padding: 7px 10px; text-align: left; }
+.tl-asset-list .tl-asset-name { display: block; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-base); }
+
+/* ------------------------------------------------- the workbench: an editor */
+
+.tl-app-editor { --side-w: 300px; }
+.tl-app-editor .tl-side { gap: var(--s-4); padding-bottom: 0; }
+
+/* The kinds of record of an editor of several, over the list they choose: a
+   little tighter than the control panel's pages, and ruled off from the list. */
+.tl-app-editor .tl-nav-item { height: 34px; padding: 0 var(--s-2) 0 var(--s-3); }
+.tl-nav + .tl-side-tools { padding-top: var(--s-4); border-top: 1px solid var(--border); }
+/* Under the list: what belongs to the whole window, not to one record. */
+.tl-side-foot { flex-shrink: 0; margin: 0 calc(var(--s-3) * -1); padding: var(--s-3) var(--s-5); border-top: 1px solid var(--border); }
+.tl-side-foot:empty { display: none; }
+.tl-list-foot:not([hidden]) + .tl-side-foot { border-top-color: var(--border-soft); }
+/* In a short window the list keeps room for two rows, whatever stands over and under it. */
+.tl-app-editor .tl-list { min-height: 92px; }
+
+.tl-side-tools { display: grid; gap: var(--s-2); }
+.tl-list-head { display: flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-2) 2px; }
+.tl-list-title { flex: 1; color: var(--text-faint); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; }
+.tl-side .tl-search { flex: none; max-width: none; }
+
+/* The records, one to a row. A row's own actions show under the pointer or the focus. */
+.tl-list { display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0; margin: 0 calc(var(--s-3) * -1); padding: 2px var(--s-3) var(--s-3); overflow-y: auto; }
+.tl-list-row { --row-bg: transparent; position: relative; display: flex; flex-shrink: 0; border-radius: var(--r-md); background: var(--row-bg); }
+.tl-list-row:hover, .tl-list-row:focus-within { --row-bg: #171e2e; }
+.tl-list-row.is-selected { --row-bg: #1d2434; }
+.tl-list-row.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+.tl-list-open { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; min-height: 44px; padding: 6px var(--s-2) 6px 10px; border: 0; border-radius: var(--r-md); background: none; color: var(--text); text-align: left; }
+.tl-list-open:focus-visible { outline-offset: -2px; }
+.tl-list-words { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
+.tl-list-name { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-list-row.is-selected .tl-list-name { color: var(--text-strong); }
+.tl-list-note { color: var(--text-muted); font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-list-open .tl-tags { flex-shrink: 0; flex-wrap: nowrap; }
+.tl-list-actions { position: absolute; top: 0; right: 0; bottom: 0; display: none; align-items: center; padding: 0 var(--s-1) 0 22px; border-radius: 0 var(--r-md) var(--r-md) 0; background: linear-gradient(90deg, transparent, var(--row-bg) 18px); }
+.tl-list-row:hover .tl-list-actions, .tl-list-row:focus-within .tl-list-actions { display: flex; }
+.tl-list-actions .tl-icon-btn { width: 28px; height: 28px; }
+.tl-list .tl-empty { padding: var(--s-6) var(--s-3); }
+.tl-list-foot { flex-shrink: 0; margin: 0 calc(var(--s-3) * -1); padding: var(--s-2) var(--s-5); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--t-sm); }
+
+/* The top bar of an editor: what is open and how it stands on the left, what can be done to it on the right. */
+.tl-record { display: flex; align-items: center; gap: var(--s-3); flex: 1; min-width: 0; }
+.tl-record-words { display: grid; min-width: 0; line-height: 1.25; }
+.tl-record .tl-title { overflow: hidden; text-overflow: ellipsis; }
+.tl-record-note { color: var(--text-muted); font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-record-thumb, .tl-record-state { display: flex; flex-shrink: 0; }
+.tl-topbar-actions { display: flex; align-items: center; gap: var(--s-2); flex-shrink: 0; margin-left: auto; }
+.tl-topbar-rule { width: 1px; height: 24px; margin: 0 var(--s-1); background: var(--border); }
+
+.tl-tabs { display: flex; align-items: stretch; gap: var(--s-1); flex-shrink: 0; height: 44px; padding: 0 var(--s-3); border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tl-tab { position: relative; display: inline-flex; align-items: center; gap: var(--s-2); padding: 0 var(--s-3); border: 0; background: none; color: var(--text-muted); font-weight: 500; white-space: nowrap; transition: color 0.12s; }
+.tl-tab:hover { color: var(--text); }
+.tl-tab:focus-visible { outline-offset: -6px; }
+.tl-tab[aria-selected="true"] { color: var(--text-strong); }
+.tl-tab[aria-selected="true"]::after { content: ""; position: absolute; left: var(--s-3); right: var(--s-3); bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
+/* How many problems are on a tab that is not in view. */
+.tl-tab-mark { min-width: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--danger-soft); color: var(--danger-text); font-size: var(--t-xs); font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* An editor's page: the form, and beside it what stays in view while it is filled in. */
+.tl-work { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; max-width: 1240px; margin: 0; }
+.tl-work.has-aside { grid-template-columns: minmax(0, 1fr) 300px; }
+.tl-work-main { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.tl-work-aside { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.tl-work-main > .tl-error { margin: 0; }
+.tl-work-main > .tl-note, .tl-work-main > .tl-error { scroll-margin-top: var(--s-5); }
+
+/* ----------------------------------------------------------- narrow window */
+
+@media (max-width: 1279px) {
+  .tl-facts-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Under 1240 an editor's preview goes under its form. */
+@media (max-width: 1239px) {
+  .tl-work.has-aside { grid-template-columns: minmax(0, 1fr); }
+  .tl-work-aside { position: static; }
+}
+
+@media (max-width: 1199px) {
+  .tl-page { padding-left: var(--s-5); padding-right: var(--s-5); }
+  .tl-topbar { gap: var(--s-4); padding: 0 var(--s-5); }
+  .tl-banner { padding-left: var(--s-5); padding-right: var(--s-5); }
+  .tl-rows-split { grid-template-columns: minmax(0, 1fr); }
+  .tl-rows-split > .tl-switch-rows { border-top: 1px solid var(--border-soft); }
+  .tl-rows-split > .tl-row { padding-bottom: 10px; }
+  .tl-app-editor { --side-w: 264px; }
+  .tl-side-foot { padding-left: var(--s-4); padding-right: var(--s-4); }
+  .tl-tabs { padding: 0 var(--s-2); }
+  /* A top bar button gives up its label and keeps its icon and tooltip. The label is still there for a screen reader. */
+  .tl-btn-fold { width: 32px; padding: 0; }
+  .tl-btn-fold > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* Smaller than the tools are meant for: one column, so nothing is cut off. */
+@media (max-width: 899px) {
+  .tl-grid > * { grid-column: span 12; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

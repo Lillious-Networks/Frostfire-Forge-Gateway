@@ -8,6 +8,10 @@ const cache = Cache.getInstance();
 const NPC_HIT_W = 32;
 const NPC_HIT_H = 48;
 
+/** The size the editor window opens at, where the screen allows. */
+const EDITOR_WIDTH = 1120;
+const EDITOR_HEIGHT = 820;
+
 /** Appearance columns, kept together so an in-flight edit can be preserved across a refresh. */
 const SPRITE_KEYS = [
   "sprite_type", "sprite_body", "sprite_head", "sprite_helmet", "sprite_shoulderguards",
@@ -85,8 +89,15 @@ class NpcEditor {
     this.isActive = true;
 
     const url = window.location.origin + '/npc-editor';
+    // NPCs are placed, dragged and clicked in the game window, so this editor opens against the right edge of
+    // the screen, a little narrower than the other editors, and leaves the world in view beside it.
+    const area = window.screen as Screen & { availLeft?: number; availTop?: number };
+    const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
+    const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
+    const left = (area.availLeft ?? 0) + Math.max(0, area.availWidth - width - 24);
+    const top = (area.availTop ?? 0) + Math.max(0, Math.round((area.availHeight - height) / 2));
     this.editorWindow = window.open(url, 'NpcEditor',
-      'width=1100,height=750,left=120,top=80,location=no,toolbar=no,menubar=no,status=no');
+      `width=${width},height=${height},left=${left},top=${top},location=no,toolbar=no,menubar=no,status=no`);
 
     if (!this.editorWindow) {
       this.isActive = false;

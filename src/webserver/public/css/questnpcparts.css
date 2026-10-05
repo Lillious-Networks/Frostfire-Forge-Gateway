@@ -1,0 +1,26 @@
+/* What the quest editor and the NPC editor share and no other tool has: a
+   field that holds several picks out of a list (quests, NPCs, particles),
+   shown as chips, and the dialog they are ticked in. It is made of the parts
+   of tools.css and loads after it; the script side is js/core/questnpcparts.ts.
+   Every class here starts with qn-. It moves to tools.css when a third tool
+   needs it.
+
+   The field       .tl-field.tl-field-wide > .tl-field-label + .tl-chips (.tl-chip holding
+                   .qn-chip-mark, then .tl-chips-none when empty, then button.qn-open) + hint
+   The dialog      openDialog() holding .qn-picks > label.qn-pick (checkbox, .qn-pick-name,
+                   .qn-pick-note); the count of what is ticked and Done in its foot */
+
+/* The button that opens the dialog keeps its words on one line, after however many chips. */
+.tl-chips > .qn-open { flex-shrink: 0; }
+
+/* What tells two picks of the same name apart, beside the name on its chip: "#12". */
+.qn-chip-mark { flex-shrink: 0; margin-left: 5px; color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.tl-chip.is-missing .qn-chip-mark { color: inherit; }
+
+/* Everything that can be picked, one to a line, ticked or not. */
+.qn-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2px var(--s-3); }
+.qn-pick { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 7px 10px; border-radius: var(--r-md); cursor: pointer; transition: background 0.12s; }
+.qn-pick:hover, .qn-pick:focus-within { background: var(--surface-hover); }
+.qn-pick-name { flex: 1; min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qn-pick input:checked ~ .qn-pick-name { color: var(--text-strong); font-weight: 500; }
+.qn-pick-note { flex-shrink: 0; max-width: 45%; color: var(--text-muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

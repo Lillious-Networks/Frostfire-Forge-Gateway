@@ -1,0 +1,104 @@
+/* Player editor: only what no other tool window has. The look itself (the
+   slate, the workbench, cards, fields, buttons, rows) is css/tools.css, loaded
+   before this file.
+
+   A player is not made, copied or deleted here, and nothing waits for one
+   Save: list changes are sent as they are made and each form has its own
+   Apply. So this editor has none of the workbench's New, Duplicate, Delete
+   and Save; the top bar holds the player's own state and Reload.
+
+   .pl-flags     the open player's state in the top bar (online, admin, banned…)
+   .pl-pair      two cards side by side; one column in a narrow window
+   .pl-bar       a strip under several cards that share one Apply
+   .pl-foot      the Apply button of a form, at the foot of its card
+   .pl-items     the inventory: a table edited in place (item, amount, remove)
+   .pl-slots     the equipment slots, a tile each
+   .pl-people    people in a grid, each with a way out (friends)
+   .pl-picks     the matches of the item picker, searched on the server
+   .pl-change    what Apply will do, said before it is pressed (permissions) */
+
+/* ----------------------------------------------------------------- top bar */
+
+.pl-flags { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pl-flags:empty { display: none; }
+
+/* ------------------------------------------------------------------ layout */
+
+.pl-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4); }
+/* A short card beside a long one. */
+.pl-pair-lead { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.pl-pair-main { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.pl-fields-1 { grid-template-columns: minmax(0, 1fr); }
+.pl-fields-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+.pl-bar { display: grid; gap: var(--s-3); padding: var(--s-3) var(--s-4); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.pl-bar > .tl-error { margin: 0; }
+.pl-foot { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-4); }
+.pl-bar > .pl-foot { margin-top: 0; }
+.pl-foot-hint { min-width: 0; color: var(--text-muted); font-size: var(--t-sm); }
+/* A form's Apply stays at the foot of its card when the card beside it is taller. */
+.pl-pair > .tl-card > .tl-card-body { display: flex; flex-direction: column; }
+.pl-pair > .tl-card > .tl-card-body > .pl-foot { margin-top: auto; padding-top: var(--s-4); }
+
+/* -------------------------------------------------------------------- rows */
+
+.pl-list > .tl-row { gap: var(--s-3); }
+.pl-row-line { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.pl-row-line > .tl-row-title, .pl-row-line > .pl-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-row-line > .tl-tag { flex-shrink: 0; }
+.pl-list .tl-row-note { overflow-wrap: anywhere; }
+
+/* The inventory, edited in place: a .tl-table-edit of tools.css, with these columns. */
+.pl-items .pl-col-amount { width: 136px; }
+.pl-items .pl-col-end { width: 56px; }
+.pl-item-name { font-weight: 500; }
+
+/* ---------------------------------------------------------------- equipment */
+
+.pl-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--s-2); }
+.pl-slot { display: flex; align-items: center; gap: var(--s-2); min-width: 0; padding: var(--s-2) var(--s-2) var(--s-2) 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(148, 163, 184, 0.04); }
+.pl-slot.is-empty { background: none; border-style: dashed; }
+.pl-slot > .tl-thumb { margin-right: var(--s-1); }
+.pl-slot-words { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
+.pl-slot-label { color: var(--text-muted); font-size: var(--t-sm); }
+.pl-slot-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-slot.is-empty .pl-slot-name { color: var(--text-faint); font-weight: 400; }
+
+/* ------------------------------------------------------------------ people */
+
+.pl-group-count { margin-bottom: var(--s-2); color: var(--text-strong); font-size: var(--t-md); font-weight: 600; }
+.pl-members { display: flex; }
+.pl-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: var(--s-2); }
+.pl-person { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 4px 4px 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(148, 163, 184, 0.04); }
+.pl-person-name { flex: 1; min-width: 0; color: var(--text-strong); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------- permissions */
+
+.pl-permissions { max-height: 320px; overflow-y: auto; }
+.pl-permissions .tl-check span { font: 400 var(--t-sm)/1.3 var(--font-mono); }
+/* A name too long for its column is cut short; its box keeps its size. */
+.pl-permissions .tl-check input { flex-shrink: 0; }
+/* Held, but no longer one the server knows: it can only be taken away. */
+.pl-permissions .tl-check.is-unknown span { color: var(--warning-text); }
+.pl-change { margin-top: var(--s-3); color: var(--text-muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
+.pl-change.is-changed { color: var(--warning-text); }
+
+/* ------------------------------------------------------------- item picker */
+
+.pl-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 2px var(--s-2); }
+.pl-pick { display: flex; align-items: center; gap: var(--s-3); min-width: 0; padding: 6px var(--s-2); border: 1px solid transparent; border-radius: 8px; background: none; color: var(--text); text-align: left; transition: background 0.12s, border-color 0.12s; }
+.pl-pick:hover { border-color: var(--border); background: var(--surface-hover); }
+.pl-pick:focus-visible { outline-offset: -2px; }
+.pl-pick-words { display: grid; min-width: 0; line-height: 1.3; }
+.pl-pick-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-pick-note { color: var(--text-muted); font-size: var(--t-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------ narrow window */
+
+@media (max-width: 1199px) {
+  .pl-pair, .pl-pair-lead, .pl-pair-main { grid-template-columns: minmax(0, 1fr); }
+  .pl-pair .pl-fields-1 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pl-fields-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pl-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pl-picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

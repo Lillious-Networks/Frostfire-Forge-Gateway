@@ -20,6 +20,7 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     closeAllPanels} from "./input.js";
 import { friendsListSearch } from "./friends.js";
 import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu } from "./actions.js";
+import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
 import { getScreenView, screenToWorldCss } from "./skeletons.js";
@@ -684,17 +685,9 @@ document.addEventListener("contextmenu", (event) => {
   const worldX = screenX - window.innerWidth / 2 + getCameraX() - mapCenterOffsetX;
   const worldY = screenY - window.innerHeight / 2 + getCameraY() - mapCenterOffsetY;
 
-  const clickedPlayer = Array.from(cache.players).find(player => {
-    const playerX = player.position.x;
-    const playerY = player.position.y;
-    // Corpses cannot be targeted. Ghosts can be targeted and interacted with,
-    // except while their graveyard teleport is still pending (not rendered).
-    if (player.isDead || (player.isGhost && player.ghostTeleportPending)) return false;
-    return (
-      worldX >= playerX - 16 && worldX <= playerX + 32 &&
-      worldY >= playerY - 24 && worldY <= playerY + 48
-    );
-  });
+  // Corpses cannot be targeted. Ghosts can be targeted and interacted with,
+  // except while their graveyard teleport is still pending (not rendered).
+  const clickedPlayer = playerAt(worldX, worldY, (player) => !player.isDead && !(player.isGhost && player.ghostTeleportPending));
 
   if (clickedPlayer) {
     const id = clickedPlayer.id;
@@ -735,11 +728,7 @@ canvas.addEventListener("touchstart", (e) => {
     const worldX = screenX - rect.width / 2 + getCameraX();
     const worldY = screenY - rect.height / 2 + getCameraY();
 
-    const clickedPlayer = Array.from(cache.players).find(player => {
-      return worldX >= player.position.x - 16 && worldX <= player.position.x + 32 &&
-             worldY >= player.position.y - 24 && worldY <= player.position.y + 48 &&
-             !player.isDead && !(player.isGhost && player.ghostTeleportPending);
-    });
+    const clickedPlayer = playerAt(worldX, worldY, (player) => !player.isDead && !(player.isGhost && player.ghostTeleportPending));
 
     if (clickedPlayer) {
       createContextMenu({ clientX: longPressStartX, clientY: longPressStartY } as MouseEvent, clickedPlayer.id);
@@ -1019,20 +1008,6 @@ friendsListSearch.addEventListener("focus", () => {
   stopMovement();
 });
 
-const adminInputFields = [
-  document.getElementById("admin-map-input"),
-  document.getElementById("admin-warp-input"),
-  document.getElementById("admin-broadcast-input")
-];
-
-adminInputFields.forEach(field => {
-  if (field) {
-    field.addEventListener("focus", () => {
-      stopMovement();
-    });
-  }
-});
-
 chatInput.addEventListener("blur", () => {
   sendRequest({
     type: "MOVEXY",
@@ -1112,7 +1087,7 @@ document.addEventListener("click", (e) => {
   // Don't close if clicking radial menu items - they toggle panels themselves
   if (target.closest(".radial-item") || target.closest(".radial-menu-btn") || target.closest("#radial-menu")) return;
 
-  const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #quest-frame-container.open, #quest-log-container.open, #friends-list-container.open, #guild-container.open, #admin-panel-container.open");
+  const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #quest-frame-container.open, #quest-log-container.open, #friends-list-container.open, #guild-container.open");
   if (openPanels.length === 0) return;
 
   const clickedInside = Array.from(openPanels).some(panel => panel.contains(target));

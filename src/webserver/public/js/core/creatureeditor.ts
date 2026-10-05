@@ -42,6 +42,10 @@ export interface DebugCreature {
 
 type ToolMode = "none" | "placeSpawn" | "drawPath";
 
+/** The size the editor's window opens at: what its workbench is laid out for, as the item and spell editors'. */
+const EDITOR_WIDTH = 1280;
+const EDITOR_HEIGHT = 820;
+
 class CreatureEditor {
   public isActive = false;
   public mode: ToolMode = "none";
@@ -79,7 +83,13 @@ class CreatureEditor {
   private open(): void {
     this.isActive = true;
     const url = window.location.origin + "/creature-editor";
-    this.editorWindow = window.open(url, "CreatureEditor", "width=1150,height=780,left=100,top=60,location=no,toolbar=no,menubar=no,status=no");
+    // The size the editor's workbench is laid out for, where the screen allows, in the middle of the screen.
+    const area = window.screen as Screen & { availLeft?: number; availTop?: number };
+    const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
+    const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
+    const left = (area.availLeft ?? 0) + Math.max(0, Math.round((area.availWidth - width) / 2));
+    const top = (area.availTop ?? 0) + Math.max(0, Math.round((area.availHeight - height) / 2));
+    this.editorWindow = window.open(url, "CreatureEditor", `width=${width},height=${height},left=${left},top=${top},location=no,toolbar=no,menubar=no,status=no`);
     this.bridgeReady = false;
     sendRequest({ type: "CREATURE_EDITOR_LIST", data: null });
     this.closeWatcher = setInterval(() => {
@@ -151,6 +161,10 @@ class CreatureEditor {
   private onBridgeMessage(event: MessageEvent): void {
     const msg = event.data;
     if (!msg?.type) return;
+    // Only this editor's own popup. This module is loaded with the game, so without the check it also relayed the
+    // "request" of every other editor's popup: each of their changes reached the server twice (the player editor's
+    // adds were made twice, and its admin toggle flipped back).
+    if (event.source !== this.editorWindow) return;
     switch (msg.type) {
       case "bridgeReady":
         this.bridgeReady = true;

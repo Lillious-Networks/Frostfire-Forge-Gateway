@@ -17,10 +17,12 @@ const STOP_MS = 180;
 const STEP_VOLUME = 0.6, VOLUME_SPREAD = 0.2;
 /**
  * Every step at its own pitch, as feet land differently each time (USER REQUEST 2026-10-03: "footstep sounds I want at
- * random pitches to simulate walking"; at +-8 % they all sounded the same): up to PITCH_SEMITONES up or down, and at
- * least PITCH_APART semitones from the step before, so two in a row never sound alike.
+ * random pitches to simulate walking"; at +-8 % they all sounded the same): up to PITCH_DOWN semitones lower or
+ * PITCH_UP higher, and at least PITCH_APART semitones from the step before, so two in a row never sound alike.
+ * (USER FEEDBACK 2026-10-04, "it sounds too high when it's at it's random peak": the top was 3 semitones up, a step
+ * played 19 % fast; it is 1 now, 6 %. The low end is as it was.)
  */
-const PITCH_SEMITONES = 3, PITCH_APART = 1;
+const PITCH_DOWN = 3, PITCH_UP = 1, PITCH_APART = 1;
 /** the feet: where the player's shadow is drawn, below the sprite's middle (player.ts) */
 const FEET_Y = 16;
 
@@ -70,7 +72,7 @@ let walked = 0, lastMoveAt = 0, lastStepAt = 0, lastPitch = 0;
 
 /** The next step's playback rate: a random pitch out of the range left when PITCH_APART round the last one is taken out. */
 function stepRate(): number {
-  const lo = -PITCH_SEMITONES, hi = PITCH_SEMITONES;
+  const lo = -PITCH_DOWN, hi = PITCH_UP;
   const gapLo = Math.max(lo, lastPitch - PITCH_APART), gapHi = Math.min(hi, lastPitch + PITCH_APART);
   const below = gapLo - lo, r = Math.random() * (below + hi - gapHi);
   const pitch = r < below ? lo + r : gapHi + (r - below);
@@ -81,7 +83,8 @@ function stepRate(): number {
 /** Call once a frame with the player this client controls: plays the footsteps of the walk (`now`: the frame's time, ms). */
 export function updateTileSounds(player: any, now: number = performance.now()) {
   const pos = player?.position;
-  if (!pos || player.isDead || player.isGhost) { last = null; return; }
+  // A player an admin is dragging is carried, not walking (canmove is false from DRAG_PLAYER_START to DRAG_PLAYER_STOP)
+  if (!pos || player.isDead || player.isGhost || player.canmove === false) { last = null; return; }
   const map = String(window.mapData?.name ?? "");
   // The walk is measured along its longer axis: the server moves a walker its speed on each axis a tick, so a diagonal
   // covers 1.41 times the ground of a straight walk in the same time, at the same pace of the legs (USER FEEDBACK

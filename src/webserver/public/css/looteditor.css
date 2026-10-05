@@ -1,0 +1,37 @@
+/* Loot table editor: only what no other tool window has. The look itself
+   (the slate, the workbench, cards, fields, buttons) is css/tools.css, loaded
+   before this file.
+
+   .le-add     the field in the head of the Rows card that searches the game's
+               items and lists the matches under it (tl-suggest)
+   .le-rows    the table of a loot table's rows, edited in place: an item, the
+               fewest and the most that drop, the chance, and its way out */
+
+/* ------------------------------------------------------- adding an item */
+
+.le-add { width: 340px; }
+.le-add .tl-search { max-width: none; }
+/* The matches get more room than the field: item names are long. */
+.le-add .tl-suggest { left: auto; width: 460px; max-width: calc(100vw - var(--side-w) - 64px); max-height: 320px; }
+.le-add .tl-suggest-row { gap: 10px; }
+.le-add .tl-suggest-row .tl-suggest-name { font-weight: 500; }
+/* What a press of the row does, said at its end. */
+.le-add-go { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--accent-text); font-size: var(--t-sm); font-weight: 600; }
+.le-add .tl-suggest-none { line-height: 1.45; }
+
+/* ------------------------------------------------------------- the rows */
+
+/* The table is a .tl-table-edit of tools.css; these are its columns. */
+.le-rows .le-col-num { width: 112px; }
+.le-rows .le-col-chance { width: 124px; }
+.le-rows .le-col-end { width: 56px; }
+.le-item-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* -------------------------------------------------------- narrow window */
+
+@media (max-width: 1199px) {
+  .le-add { width: 280px; }
+  .le-rows .le-col-num { width: 96px; }
+  .le-rows .le-col-chance { width: 108px; }
+  .le-rows .le-col-end { width: 48px; }
+}

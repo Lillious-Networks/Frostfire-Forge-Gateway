@@ -1,0 +1,65 @@
+/* The quest editor's own parts, for what no other tool window has. The page
+   loads css/tools.css (the look every tool shares), then css/questnpcparts.css
+   (the pick-several field it shares with the NPC editor), then this. Every
+   class here starts with qe-; all of it is drawn from the tokens of tools.css.
+
+   .qe-level                 the level a quest asks for, in the square a record's picture goes in
+   .qe-entry                 on a .tl-card that is one objective or one item reward:
+                             .qe-entry-thumb leads its title, .qe-entry-error is the server's
+                             remark on the card as a whole
+   .qe-fields-note           a line of explanation across a grid of fields
+   .qe-combo                 on .tl-suggest-wrap: a text field with a picture (.qe-combo-thumb)
+                             and its matches listed under it
+   .qe-summary               the quest in plain words: .qe-steps (what to do), .qe-loot (the items
+                             given), .qe-faint */
+
+/* The level, where an item or a spell shows its icon: what tells quests apart at a glance. */
+.qe-level { background: rgba(148, 163, 184, 0.11); color: var(--slate-200); font-size: var(--t-sm); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.qe-level.tl-thumb-lg { font-size: var(--t-md); }
+.qe-level.tl-thumb-xl { color: var(--text-strong); font: 600 var(--t-xl)/1 var(--font-display); }
+.tl-list-row.is-selected .qe-level { border-color: var(--accent-line); background: var(--accent-soft); color: var(--accent-text); }
+
+/* One objective or one item reward: a picture of what it is about leads the card's title. */
+.qe-entry .tl-card-head { gap: var(--s-3); }
+.qe-entry .tl-card-tools { gap: 2px; }
+.qe-entry-thumb { display: flex; flex-shrink: 0; }
+.qe-entry .tl-card-title, .qe-entry .tl-card-lead { overflow-wrap: anywhere; }
+.qe-entry-error { margin: 0 0 var(--s-3); }
+
+/* A line that explains several fields at once, under them. */
+.qe-fields-note { margin: -6px 0 0; }
+
+/* A name typed as text, with the items that match listed under it to pick from. */
+.qe-combo .tl-input { padding-left: 37px; }
+.qe-combo-thumb { position: absolute; top: 4px; left: 4px; display: flex; pointer-events: none; }
+.qe-combo-thumb .tl-thumb { width: 26px; height: 26px; border-radius: var(--r-sm); }
+.tl-field-hint.qe-combo-unknown { color: var(--warning-text); }
+
+/* The quest as a player meets it. */
+.qe-summary > p { overflow-wrap: anywhere; }
+.qe-summary .tl-preview-head { margin-bottom: var(--s-1); }
+.qe-summary .tl-preview-name { font-size: var(--t-lg); }
+.qe-steps { display: grid; gap: 6px; padding: 0; list-style: none; counter-reset: qe-step; }
+.qe-steps > li { position: relative; min-height: 20px; padding-left: 28px; color: var(--text-strong); overflow-wrap: anywhere; counter-increment: qe-step; }
+.qe-steps > li::before {
+  content: counter(qe-step);
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--slate-300);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.qe-steps-note { display: block; color: var(--text-muted); font-size: var(--t-sm); }
+.qe-loot { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.qe-loot > li { display: flex; align-items: center; gap: var(--s-2); min-width: 0; }
+.qe-loot-name { min-width: 0; color: var(--text-strong); overflow-wrap: anywhere; }
+.qe-loot-count { flex-shrink: 0; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.qe-faint { color: var(--text-faint); font-size: var(--t-sm); }

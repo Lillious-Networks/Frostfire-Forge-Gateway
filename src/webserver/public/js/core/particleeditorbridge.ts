@@ -1,3 +1,19 @@
+// Particle editor popup. Talks to the game window over postMessage; the game
+// window (js/core/particleeditor.ts) passes what is asked on to the server.
+// The window itself is the shared workbench (tooleditor.ts); this file holds
+// what is the particle editor's own: its settings, the rules for its names,
+// its conversation with the game window, and the live preview, which runs the
+// particle the way the game does.
+//
+// The server never answers a request from here by name: the game window asks
+// it for the list again a moment after each change, and passes that on. So
+// what was asked for is checked against the lists that follow, and the result
+// (done, or not done) is said once it is known. Nothing is sent to find out.
+import { EditorShell, type ListRow } from "./tooleditor.js";
+import { FieldRenderer, type AssetOption, type Field } from "./toolfields.js";
+import { askText, button, card, confirmDialog, count, el, icon, iconButton, note, num, setIcon, tag, toast, tooltip, type AskOptions } from "./toolkit.js";
+import { colourField, colourValue, rangeValue, sliderField, timeField, timeValue } from "./particleeditorparts.js";
+
 const WIND_BURST_CYCLE = 3000;
 const WIND_BURST_RAMP_UP = 400;
 const WIND_BURST_HOLD = 200;
@@ -36,15 +52,53 @@ function getWindBias(windSpeed: number, windDirection: string | null): { x: numb
   return bias;
 }
 
-const TRASH_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
-const COPY_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-const RENAME_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+/** The settings that are set with a slider, and what each slider can hold. */
+const RANGES = {
+  size: { min: 1, max: 512, step: 1 },
+  opacity: { min: 0, max: 1, step: 0.01 },
+  brightness: { min: 0, max: 5, step: 0.05 },
+  glow_intensity: { min: 0, max: 10, step: 0.1 },
+  glow_radius: { min: 0, max: 512, step: 1 },
+} as const;
+
+/** With no particles in the first list, how long to wait for a list that has some before saying there are none. */
+const EMPTY_WAIT_MS = 1500;
+/**
+ * How long what was asked for may take to show in a list before it is called not done. The game window asks the server
+ * for the list 300 to 400 ms after passing a change on, so a list that has it is here well within this.
+ */
+const GIVE_UP_MS = 2500;
+
+/** A whole number as the game stores one: what is not a number is 0. */
+const whole = (value: unknown): number => {
+  const n = Math.trunc(Number(value));
+  return Number.isFinite(n) ? n : 0;
+};
+const real = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** 1.6667 -> "1.67", 0.1 -> "0.1", 12.34 -> "12.3": a few digits, and no zeros that say nothing. */
+function few(value: number): string {
+  if (Math.abs(value) >= 100) return num(value);
+  return value.toFixed(Math.abs(value) < 10 ? 2 : 1).replace(/\.?0+$/, "");
+}
+const seconds = (ms: number): string => `${few(ms / 1000)} s`;
+
+/** Something asked of the server that the list has not shown yet. */
+interface Awaited {
+  kind: "create" | "rename" | "duplicate" | "delete";
+  /** The name the list should gain (or, for a delete, lose). */
+  name: string;
+  done: string;
+  /** What is said when it did not happen, and why that is likely when the server's own list came back without it. */
+  failed: string;
+  why: string;
+  /** A list has come back since, and it was not as asked. */
+  listed: boolean;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 class ParticleEditorBridge {
   private particles: any[] = [];
@@ -53,88 +107,149 @@ class ParticleEditorBridge {
   private lastEmitInterval: number = 0;
   private animFrameId: number | null = null;
   private lastFrameTime: number = 0;
-  private searchQuery: string = "";
 
-  private saveBtn: HTMLElement;
-  private resetBtn: HTMLElement;
   /** A particle to select once the list (re)arrives: one just created, renamed or duplicated. */
   private pendingSelect: string | null = null;
   /** The form holds edits that have not been saved. */
   private dirty: boolean = false;
-  private searchInput: HTMLInputElement;
-  private particleListEl: HTMLElement;
+  /** The settings in the form, as normalize() shapes them. The fields edit this in place. */
+  private form: any;
+  /** Counts the particles opened, so the page knows a redraw from a different one; and which the page shows now. */
+  private opened = 0;
+  private shownName: string | null = null;
+  /** The list has arrived, or it is clear by now that there is nothing in it. */
+  private loaded = false;
+  private emptyTimer: ReturnType<typeof setTimeout> | null = null;
+  private awaited: Awaited[] = [];
+
+  /** The asset server's sprites a particle can emit in place of its round dot, and where they are fetched from. */
+  private sprites: string[] = [];
+  private assetServerUrl: string = "";
+  /** The sprites loaded for the preview: null while one loads, and when the asset server has none by that name. */
+  private images = new Map<string, HTMLImageElement | null>();
+  /** The sprites the asset server turned out not to have. */
+  private missingImages = new Set<string>();
+
   private previewCanvas: HTMLCanvasElement;
   private previewCtx: CanvasRenderingContext2D;
-  private inputs: Record<string, HTMLInputElement | HTMLSelectElement> = {};
+  private paused = false;
+  /** How much the preview is shrunk to fit a large particle (1 = full size), and what the page last said it was. */
+  private previewScale = 1;
+  private saidScale = "";
+
+  /** The parts of the page that follow the settings as they are changed. */
+  private stageEl: HTMLElement | null = null;
+  private factsEl: HTMLElement | null = null;
+  private scheduleEl: HTMLElement | null = null;
+  private imageNoteEl: HTMLElement | null = null;
+  private staticNotes: HTMLElement[] = [];
+  private headSwatch = this.swatch(null, true);
+  private renameBtn: HTMLButtonElement;
+  private revertBtn: HTMLButtonElement;
+  private pauseBtn: HTMLButtonElement;
+
+  private shell = new EditorShell({
+    tool: "Particle Editor", noun: "particle", icon: "sparkle",
+    // The whole list is here: searching only narrows what is shown, at every key.
+    onSearch: () => this.renderList(),
+    liveSearch: true,
+    onNew: () => void this.newParticle(),
+    onSave: () => this.saveParticle(),
+    onDuplicate: () => void this.duplicate(this.findParticle(this.selectedParticleName ?? "")),
+    onDelete: () => void this.deleteParticle(this.selectedParticleName ?? ""),
+  });
+
+  private fields = new FieldRenderer({ rerender: () => this.renderForm() });
 
   constructor() {
-    this.saveBtn = document.getElementById("btn-save")!;
-    this.resetBtn = document.getElementById("btn-reset")!;
-    this.searchInput = document.getElementById("particle-search") as HTMLInputElement;
-    this.particleListEl = document.getElementById("particle-list")!;
-    this.previewCanvas = document.getElementById("particle-preview-canvas") as HTMLCanvasElement;
+    this.previewCanvas = el("canvas", "pe-canvas");
+    this.previewCanvas.width = 200;
+    this.previewCanvas.height = 200;
+    this.previewCanvas.setAttribute("role", "img");
+    this.previewCanvas.setAttribute("aria-label", "Live preview of the particle");
     this.previewCtx = this.previewCanvas.getContext("2d")!;
+    this.form = this.settled(this.normalize({ name: "" }));
 
-    const inputIds = ["inp-size","inp-opacity","inp-brightness","inp-color","inp-zindex","inp-glow","inp-glow-radius","inp-visible","inp-static","inp-vel-x","inp-vel-y","inp-grav-x","inp-grav-y","inp-spread-x","inp-spread-y","inp-lpos-x","inp-lpos-y","inp-weather","inp-lifetime","inp-interval","inp-amount","inp-stagger","inp-time","inp-timeon","inp-timeoff"];
-    for (const id of inputIds) {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (el) { this.inputs[id] = el; el.addEventListener("input", () => this.onFormChange()); el.addEventListener("change", () => this.onFormChange()); }
-    }
+    this.renameBtn = button("Rename", () => void this.rename(this.selectedParticleName ?? ""), { icon: "pencil", kind: "quiet", fold: true, tip: "Give this particle another name" });
+    this.revertBtn = button("Revert", () => this.resetForm(), { icon: "undo", kind: "quiet", fold: true });
+    this.pauseBtn = iconButton("pause", "Pause the preview", () => this.togglePause());
 
-    this.saveBtn.addEventListener("click", () => this.saveParticle());
-    this.resetBtn.addEventListener("click", () => this.resetForm());
-    this.searchInput.addEventListener("input", () => { this.searchQuery = this.searchInput.value; this.renderParticleList(); });
-
-    document.querySelectorAll(".editor-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => this.switchTab(btn.getAttribute("data-tab")!));
-    });
-
-    window.addEventListener("message", (e) => this.onMessage(e));
-    window.addEventListener("beforeunload", () => { if (window.opener) window.opener.postMessage({ type: "editorClosed" }, "*"); });
-    window.addEventListener("keydown", (e) => this.onKeyDown(e));
-
-    // Backup for the game page closing us on unload: if the game tab is gone,
-    // this editor has nothing to talk to, so close.
-    if (window.opener) {
-      setInterval(() => {
-        if (!window.opener || window.opener.closed) window.close();
-      }, 1000);
-    }
-
-    this.updateChrome();
+    this.shell.waiting(() => this.send({ type: "requestParticles" }));
     this.startPreviewLoop();
-    if (window.opener) window.opener.postMessage({ type: "bridgeReady" }, "*");
+    this.shell.connect((msg) => this.onMessage(msg));
   }
 
-  private send(msg: any): void { if (window.opener) window.opener.postMessage(msg, "*"); }
-  private onKeyDown(e: KeyboardEvent): void {
-    // Ctrl+S saves from anywhere, including while typing in a field.
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.saveParticle(); }
-  }
+  private send(msg: any): void { this.shell.send(msg); }
 
-  private status(text: string): void {
-    const el = document.getElementById("pe-status");
-    if (el) el.textContent = text;
-  }
-
-  private onMessage(e: MessageEvent): void {
-    if (e.source !== window.opener) return;
-    const msg = e.data;
+  private onMessage(msg: any): void {
     switch (msg.type) {
       case "init": this.handleInit(msg.particles || []); break;
       case "particleData": this.loadParticle(msg.particle); break;
+      case "sprites": this.setSprites(msg.sprites || [], msg.assetServerUrl || ""); break;
       case "close": window.close(); break;
     }
   }
 
+  // ------------------------------------------------------------------ images
+
+  /** The sprites to choose from arrived: the Image field offers them, and the one chosen stays chosen. */
+  private setSprites(sprites: string[], assetServerUrl: string): void {
+    this.sprites = sprites;
+    this.assetServerUrl = assetServerUrl;
+    if (this.loaded && this.selectedParticleName) this.renderForm();
+  }
+
+  private spriteUrl(name: string): string | null {
+    return this.assetServerUrl ? `${this.assetServerUrl}/sprite?name=${encodeURIComponent(name)}` : null;
+  }
+
+  /** What the Image field offers: "None" (the round particle), then the asset server's sprites. */
+  private imageAssets(): AssetOption[] {
+    const chosen = String(this.form.image || "");
+    // a particle's image the asset server does not list (the file was removed) is still shown, so saving keeps it
+    const names = chosen && !this.sprites.includes(chosen) ? [chosen, ...this.sprites] : this.sprites;
+    return [{ value: "", label: "None (round particle)" }, ...names.map((n) => ({ value: n, label: n, image: this.spriteUrl(n) }))];
+  }
+
+  /** The loaded sprite of a name for the preview (as the game's particleimages.ts), or null. */
+  private imageOf(name: string): HTMLImageElement | null {
+    if (!name || !this.assetServerUrl) return null;
+    const known = this.images.get(name);
+    if (known !== undefined) return known;
+    this.images.set(name, null);
+    fetch(`${this.assetServerUrl}/sprite?name=${encodeURIComponent(name)}`).then(async (res) => {
+      if (!res.ok || res.headers.get("X-Asset-Fallback")) return void this.imageMissing(name);
+      const img = new Image(), src = URL.createObjectURL(await res.blob());
+      await new Promise<void>((done, fail) => { img.onload = () => done(); img.onerror = () => fail(new Error("not an image")); img.src = src; });
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) this.images.set(name, img);
+      else this.imageMissing(name);
+    }).catch(() => this.imageMissing(name) /* no image: the preview shows the dot, as the game does */);
+    return null;
+  }
+
+  private imageMissing(name: string): void {
+    this.missingImages.add(name);
+    this.paintImageNote();
+  }
+
+  // -------------------------------------------------------------------- list
+
   /** The particle list (re)arrived: after opening, and after every create, rename, duplicate or delete. */
   private handleInit(particles: any[]): void {
+    const open = this.selectedParticleName;
+    let drawn = false;
     this.particles = particles;
     if (this.particles.length === 0) this.send({ type: "requestParticles" });
+    if (!this.loaded) {
+      // An empty first list may only mean that the game window has not heard from the server yet.
+      if (this.particles.length > 0) this.setLoaded();
+      else this.emptyTimer ??= setTimeout(() => this.setLoaded(), EMPTY_WAIT_MS);
+    }
     if (this.pendingSelect && this.findParticle(this.pendingSelect)) {
       this.selectedParticleName = this.pendingSelect;
       this.pendingSelect = null;
       this.loadParticle(this.findParticle(this.selectedParticleName));
+      drawn = true;
     } else if (this.selectedParticleName && !this.findParticle(this.selectedParticleName) && !this.pendingSelect) {
       // The open particle is gone (deleted here or elsewhere): close it.
       this.selectedParticleName = null;
@@ -143,70 +258,85 @@ class ParticleEditorBridge {
     if (!this.selectedParticleName && !this.pendingSelect && this.particles.length > 0) {
       this.selectedParticleName = this.particles[0].name;
       this.loadParticle(this.particles[0]);
+      drawn = true;
     }
-    this.renderParticleList();
-    this.updateChrome();
+    this.settle();
+    this.renderList();
+    if (!drawn && open !== this.selectedParticleName) this.renderForm();
+    else this.chrome();
   }
 
-  private renderParticleList(): void {
-    this.particleListEl.innerHTML = "";
-    const q = this.searchQuery.toLowerCase();
-    // New particles start from a pinned row at the top of the list.
-    const newRow = document.createElement("div");
-    newRow.className = "editor-item ce-new-row";
-    newRow.title = "New particle";
-    const newLabel = document.createElement("span");
-    newLabel.className = "editor-item-label";
-    newLabel.textContent = "+ New particle";
-    newRow.appendChild(newLabel);
-    newRow.addEventListener("click", () => this.showNewModal());
-    this.particleListEl.appendChild(newRow);
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
-      if (q && p.name.toLowerCase().indexOf(q) === -1) continue;
-      const item = document.createElement("div");
-      item.className = "editor-item" + (p.name === this.selectedParticleName ? " active" : "");
-      item.title = p.name;
-      const label = document.createElement("span");
-      label.className = "editor-item-label";
-      label.textContent = p.name;
-      item.appendChild(label);
-      item.appendChild(this.rowAction("ce-row-copy", RENAME_ICON, `Rename ${p.name}`, () => this.showRenameModal(p.name)));
-      item.appendChild(this.rowAction("ce-row-copy", COPY_ICON, `Duplicate ${p.name}`, () => this.showDuplicateModal(p)));
-      item.appendChild(this.rowAction("ce-row-delete", TRASH_ICON, `Delete ${p.name}`, () => this.showDeleteModal(p.name)));
-      item.addEventListener("click", () => this.selectParticle(p.name));
-      this.particleListEl.appendChild(item);
-    }
-  }
-
-  /** Icon button on a list row; acts on that row's particle without selecting it. */
-  private rowAction(className: string, icon: string, title: string, onClick: () => void): HTMLElement {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = className;
-    btn.title = title;
-    btn.setAttribute("aria-label", title);
-    btn.innerHTML = icon;
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onClick();
-    });
-    return btn;
-  }
-
-  private selectParticle(name: string): void {
-    if (name === this.selectedParticleName) return;
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    const p = this.findParticle(name);
-    if (!p) return;
-    this.selectedParticleName = name;
-    this.loadParticle(p);
-    this.renderParticleList();
-    this.updateChrome();
-    this.status("");
+  /** The first list is in (or there is none to come): the window can be used. */
+  private setLoaded(): void {
+    if (this.loaded) return;
+    this.loaded = true;
+    if (this.emptyTimer) clearTimeout(this.emptyTimer);
+    this.emptyTimer = null;
+    this.shell.arrived();
+    this.renderList();
+    this.renderForm();
   }
 
   private findParticle(name: string): any { for (const p of this.particles) { if (p.name === name) return p; } return null; }
+
+  /** "Static light", or "Emitter": what kind of particle it is, in a word or two. */
+  private kindOf(p: any): string {
+    const d = this.normalize(p);
+    return (d.static_light ? "Static light" : "Emitter") + (d.image ? ` · ${d.image}` : "");
+  }
+
+  /** A particle as a mark: a dot in its colour, haloed if it glows; a picture mark if it emits a sprite. */
+  private swatch(p: any, large = false): HTMLElement {
+    const box = el("span", "tl-thumb pe-swatch" + (large ? " tl-thumb-lg" : ""));
+    box.setAttribute("aria-hidden", "true");
+    if (p) this.paintSwatch(box, p);
+    return box;
+  }
+
+  private paintSwatch(box: HTMLElement, p: any): void {
+    const d = this.normalize(p);
+    const large = box.classList.contains("tl-thumb-lg");
+    box.style.setProperty("--pe-colour", colourValue(d.color));
+    box.classList.toggle("has-glow", Number(d.glow_intensity) > 0);
+    box.classList.toggle("has-image", !!d.image);
+    const dot = el("span", "pe-dot");
+    if (d.image) box.replaceChildren(icon("image", large ? 18 : 14), dot);
+    else box.replaceChildren(dot);
+  }
+
+  private renderList(): void {
+    if (!this.loaded) return;
+    const q = this.shell.query.toLowerCase();
+    const rows: ListRow[] = [];
+    for (const p of this.particles) {
+      const name = String(p.name);
+      if (q && name.toLowerCase().indexOf(q) === -1) continue;
+      const selected = name === this.selectedParticleName;
+      const d = this.normalize(p);
+      const tags: HTMLElement[] = [];
+      if (selected && this.dirty) tags.push(tag("Unsaved", "warning"));
+      else if (!d.visible && !d.affected_by_time) tags.push(tag("Hidden", "muted"));
+      rows.push({
+        id: name, name, note: this.kindOf(p), selected, thumb: this.swatch(p), tags,
+        actions: [
+          { icon: "pencil", label: `Rename ${name}`, onClick: () => void this.rename(name) },
+          { icon: "copy", label: `Duplicate ${name}`, onClick: () => void this.duplicate(p) },
+          { icon: "trash", label: `Delete ${name}`, danger: true, onClick: () => void this.deleteParticle(name) },
+        ],
+        onOpen: () => void this.selectParticle(name),
+      });
+    }
+    this.shell.setCount(this.particles.length);
+    this.shell.setList({
+      rows,
+      empty: q
+        ? { icon: "search", title: "No particles match that search", text: "Check the spelling, or search for less of the name." }
+        : { title: "No particles yet", text: "Start the first one with New particle." },
+      foot: q && rows.length > 0 && rows.length < this.particles.length ? `${num(rows.length)} of ${count(this.particles.length, "particle")} match` : "",
+    });
+  }
+
+  // ---------------------------------------------------------------- settings
 
   /** A stored particle in the shape getFormData() gives, with the defaults filled in. */
   private normalize(p: any): any {
@@ -223,215 +353,449 @@ class ParticleEditorBridge {
       affected_by_weather: toBool(p.affected_by_weather),
       lifetime: p.lifetime ?? 1000, interval: p.interval ?? 100, amount: p.amount ?? 10, staggertime: p.staggertime ?? 0,
       affected_by_time: toBool(p.affected_by_time), time_on: p.time_on || "", time_off: p.time_off || "",
+      image: typeof p.image === "string" ? p.image.trim() : "",
     };
+  }
+
+  /**
+   * The settings as the form's controls hold them: a slider keeps its number
+   * within its ends and on its steps, the colour field keeps "#rrggbb", a time
+   * field keeps a time or nothing.
+   */
+  private settled(d: any): any {
+    for (const [key, range] of Object.entries(RANGES)) d[key] = rangeValue(d[key], range.min, range.max, range.step);
+    d.color = colourValue(d.color);
+    d.time_on = timeValue(d.time_on);
+    d.time_off = timeValue(d.time_off);
+    return d;
   }
 
   private loadParticle(p: any): void {
     if (!p) return;
     this.updatePreview();
-    const d = this.normalize(p);
-    const v = (key: string, val: any) => { const el = this.inputs[key] as HTMLInputElement | null; if (el) { if (el.type === "checkbox") el.checked = !!val; else el.value = val != null ? String(val) : ""; } };
-    v("inp-size", d.size);
-    v("inp-opacity", d.opacity);
-    v("inp-brightness", d.brightness);
-    v("inp-color", d.color);
-    v("inp-zindex", d.zIndex);
-    v("inp-glow", d.glow_intensity);
-    v("inp-glow-radius", d.glow_radius);
-    v("inp-static", d.static_light);
-    v("inp-visible", d.visible);
-    v("inp-vel-x", d.velocity.x); v("inp-vel-y", d.velocity.y);
-    v("inp-grav-x", d.gravity.x); v("inp-grav-y", d.gravity.y);
-    v("inp-spread-x", d.spread.x); v("inp-spread-y", d.spread.y);
-    v("inp-lpos-x", d.localposition.x); v("inp-lpos-y", d.localposition.y);
-    v("inp-weather", d.affected_by_weather);
-    v("inp-lifetime", d.lifetime);
-    v("inp-interval", d.interval);
-    v("inp-amount", d.amount);
-    v("inp-stagger", d.staggertime);
-    v("inp-time", d.affected_by_time);
-    v("inp-timeon", d.time_on); v("inp-timeoff", d.time_off);
-    this.syncValueLabel("inp-size");
-    this.syncValueLabel("inp-opacity");
-    this.syncValueLabel("inp-brightness");
-    this.syncValueLabel("inp-glow");
-    this.syncValueLabel("inp-glow-radius");
+    this.form = this.settled(this.normalize(p));
     this.dirty = false;
-    this.updateChrome();
+    // Another particle starts at the top of its page; the same one put back keeps its place.
+    if (this.shownName !== this.selectedParticleName) {
+      this.shownName = this.selectedParticleName;
+      this.opened++;
+    }
+    this.renderForm();
+  }
+
+  /** The settings in the form, as they are sent to be saved and as the preview runs them. */
+  private getFormData(): any {
+    const f = this.form;
+    const xy = (val: any) => ({ x: real(val?.x), y: real(val?.y) });
+    return {
+      name: this.selectedParticleName || "", size: whole(f.size), opacity: real(f.opacity), brightness: real(f.brightness), color: f.color,
+      zIndex: whole(f.zIndex), glow_intensity: real(f.glow_intensity), glow_radius: real(f.glow_radius), static_light: !!f.static_light, visible: !!f.visible,
+      velocity: xy(f.velocity), gravity: xy(f.gravity),
+      spread: xy(f.spread), localposition: xy(f.localposition),
+      affected_by_weather: !!f.affected_by_weather,
+      lifetime: whole(f.lifetime), interval: whole(f.interval), amount: whole(f.amount), staggertime: real(f.staggertime),
+      affected_by_time: !!f.affected_by_time,
+      time_on: f.time_on, time_off: f.time_off, scale: 1, currentLife: 0, initialVelocity: { x: 0, y: 0 }, weather: {},
+      image: f.image || null,
+    };
+  }
+
+  /** A setting was changed: the preview starts over with it, and there is something to save. */
+  private touched(): void {
+    this.updatePreview();
+    this.paintLive();
+    if (!this.selectedParticleName) return;
+    const was = this.dirty;
+    this.dirty = true;
+    this.chrome();
+    // The open row says it has unsaved changes.
+    if (!was) this.renderList();
+  }
+
+  // ------------------------------------------------------------------ render
+
+  /** The top bar: what is open, how it stands, and what can be done to it. */
+  private chrome(): void {
+    const { shell } = this;
+    const name = this.selectedParticleName;
+    if (!name) {
+      shell.setRecord(null);
+      shell.setState(null);
+      shell.setActions({ open: false });
+      return;
+    }
+    this.paintSwatch(this.headSwatch, this.form);
+    shell.setRecord({ title: name, note: this.kindOf(this.form), thumb: this.headSwatch });
+    shell.setState(this.dirty ? "unsaved" : "saved");
+    this.revertBtn.disabled = !this.dirty;
+    tooltip(this.revertBtn, this.dirty ? "Put back the settings as they were last saved" : "No unsaved changes");
+    shell.setActions({ open: true, dirty: this.dirty, extra: [this.renameBtn, this.revertBtn] });
   }
 
   /**
-   * Form, preview and save icon only show while a particle is open; with none
-   * (e.g. it was deleted) an empty-state message takes their place.
+   * The page: the settings as cards, and the preview beside them. Drawn when a
+   * particle is opened, put back or closed; a setting that changes only
+   * repaints the parts that follow it.
    */
-  private updateChrome(): void {
-    const has = !!this.selectedParticleName;
-    const body = document.getElementById("pe-body");
-    const empty = document.getElementById("pe-empty");
-    if (body) body.hidden = !has;
-    if (empty) empty.hidden = has;
-    this.saveBtn.hidden = !has;
-    this.resetBtn.hidden = !has || !this.dirty;
-    this.saveBtn.classList.toggle("has-changes", has && this.dirty);
-    this.saveBtn.title = has && this.dirty ? "Save changes (Ctrl+S)" : "No unsaved changes";
-    const title = document.getElementById("pe-display-name");
-    if (title) title.textContent = this.selectedParticleName || "—";
-    const sub = document.getElementById("pe-display-sub");
-    if (sub) {
-      const isStatic = (this.inputs["inp-static"] as HTMLInputElement | undefined)?.checked;
-      sub.textContent = (isStatic ? "static light" : "emitter") + (this.dirty ? " · unsaved changes" : "");
+  private renderForm(): void {
+    this.chrome();
+    this.stageEl = this.factsEl = this.scheduleEl = this.imageNoteEl = null;
+    this.staticNotes = [];
+    if (!this.loaded) return;
+    if (!this.selectedParticleName) {
+      const box = this.shell.idle("Pick a particle on the left to change it, or start a new one.", this.particles.length ? null : "Start the first one.");
+      box.appendChild(button("New particle", () => void this.newParticle(), { icon: "plus", kind: "primary" }));
+      return;
+    }
+    const { main, aside } = this.shell.page(`particle:${this.opened}`, { aside: true });
+    // The preview stays beside the form at every width (css/particleeditor.css).
+    main.parentElement?.classList.add("pe-work");
+    const f = this.form;
+    const touch = () => this.touched();
+    const field = (def: Field, target: any = f) => this.fields.renderField(def, target, touch);
+    const slider = (key: keyof typeof RANGES, label: string, unit = "", hint = "") => sliderField({ key, label, ...RANGES[key], unit, hint }, f, touch);
+    const grid = (parent: HTMLElement, ...nodes: HTMLElement[]) => {
+      const box = el("div", "tl-fields");
+      box.append(...nodes);
+      parent.appendChild(box);
+      return box;
+    };
+    /** A vector, as its X and its Y side by side. */
+    const pair = (key: string, label: string, unit: string, hint = "") => [
+      field({ key: "x", path: `${key}.x`, label: `${label} X`, type: "number", step: 0.1, unit, hint }, f[key]),
+      field({ key: "y", path: `${key}.y`, label: `${label} Y`, type: "number", step: 0.1, unit }, f[key]),
+    ];
+    const unused = (parent: HTMLElement) => {
+      const box = note("Static light is on, so nothing is emitted: these settings are kept, and not used.", "plain");
+      this.staticNotes.push(box);
+      parent.appendChild(box);
+    };
+
+    const look = this.section(main, "Look", "What each particle looks like");
+    look.append(slider("size", "Size", "px"), slider("opacity", "Opacity", "", "0 cannot be seen; 1 is solid."));
+    grid(look,
+      colourField({ key: "color", label: "Colour" }, f, touch),
+      field({ key: "zIndex", label: "Z-index", type: "number", step: 1, hint: "Its place in the drawing order." }),
+      field({ key: "visible", label: "Visible", type: "switch", hint: "Off, the game does not draw it. A time window, when one is set, decides instead." }),
+    );
+
+    const light = this.section(main, "Light and glow", "The light it gives off, and the soft halo around each particle");
+    light.append(
+      slider("brightness", "Brightness", "×", "Light the whole particle gives off, day and night. 1 is as drawn; above 1 is brighter."),
+      slider("glow_intensity", "Glow intensity", "", "How strong the halo is. At 0 there is none."),
+      slider("glow_radius", "Glow radius", "px", "How far the halo reaches. At 0 it is sized from the particle."),
+    );
+    grid(light, field({ key: "static_light", label: "Static light", type: "switch", wide: true, hint: "One steady light at the particle's position: no emission, lifetime, movement or spread." }));
+
+    const image = this.section(main, "Image", "A sprite in place of the round particle");
+    grid(image, field({
+      key: "image", label: "Image", type: "asset", wide: true, assets: () => this.imageAssets(), fallback: "image",
+      hint: "A sprite from the asset server (assets/sprites), as wide as Size. The colour then only tints the glow.",
+    }));
+    this.imageNoteEl = el("div");
+    image.appendChild(this.imageNoteEl);
+
+    const emission = this.section(main, "Emission", "How often particles appear, how many, and for how long");
+    unused(emission);
+    const rate = grid(emission,
+      field({ key: "lifetime", label: "Lifetime", type: "number", min: 1, step: 1, unit: "ms", hint: "How long each particle lasts." }),
+      field({ key: "interval", label: "Interval", type: "number", min: 1, step: 1, unit: "frames", hint: "Frames from one particle to the next. The game counts 60 a second." }),
+      field({ key: "amount", label: "Max amount", type: "number", min: 1, step: 1, hint: "The most that are alive at once." }),
+      field({ key: "staggertime", label: "Stagger time", type: "number", min: 0, step: 0.1, unit: "ms", hint: "Each lasts up to this much longer, at random, so they do not all fade together." }),
+    );
+    rate.classList.add("tl-fields-2");
+    const start = el("div", "tl-group");
+    start.append(el("div", "tl-group-title", "Where they start"), el("p", "pe-group-lead", "Measured from what emits them. X grows to the right, Y grows downward."));
+    grid(start, ...pair("localposition", "Position", "px"), ...pair("spread", "Spread", "px", "Each starts at random within this width.")).classList.add("tl-fields-2");
+    emission.appendChild(start);
+
+    const motion = this.section(main, "Motion", "How particles move once they are out");
+    unused(motion);
+    grid(motion, ...pair("velocity", "Velocity", "px/s", "The speed each starts with."), ...pair("gravity", "Gravity", "px/s²", "A steady pull, added every second.")).classList.add("tl-fields-2");
+
+    const time = this.section(main, "Time and weather", "When it shows, and whether the wind moves it");
+    grid(time, field({ key: "affected_by_time", label: "Affected by time", type: "switch", wide: true, hint: "Only show it for part of the day, by the server's clock." }));
+    grid(time, timeField({ key: "time_on", label: "Shows from" }, f, touch), timeField({ key: "time_off", label: "Until" }, f, touch)).classList.add("tl-fields-2");
+    this.scheduleEl = el("div");
+    time.appendChild(this.scheduleEl);
+    grid(time, field({ key: "affected_by_weather", label: "Affected by weather", type: "switch", wide: true, hint: "The wind pushes it sideways in the game. The preview has no wind." }));
+
+    this.renderPreviewCard(aside);
+    this.paintLive();
+    this.paintImageNote();
+  }
+
+  /** A titled card appended to `parent`; returns where its fields go. */
+  private section(parent: HTMLElement, title: string, lead: string): HTMLElement {
+    const { body } = card(parent, title, lead);
+    body.classList.add("pe-body");
+    return body;
+  }
+
+  /** The live preview, with its own controls, and what the settings add up to. */
+  private renderPreviewCard(aside: HTMLElement): void {
+    const { root, tools, body } = card(aside, "Preview", "Runs as the game runs it");
+    root.classList.add("pe-preview");
+    tools.append(this.pauseBtn, iconButton("restart", "Start the preview over", () => this.updatePreview()));
+    this.stageEl = el("div", "pe-stage");
+    const frame = el("div", "pe-stage-frame");
+    frame.appendChild(this.previewCanvas);
+    this.stageEl.append(frame, el("p", "pe-caption"));
+    this.factsEl = el("div", "tl-facts tl-facts-inline");
+    body.append(this.stageEl, this.factsEl);
+    this.saidScale = "";
+    this.paintPause();
+  }
+
+  private togglePause(): void {
+    this.paused = !this.paused;
+    this.paintPause();
+  }
+
+  private paintPause(): void {
+    const label = this.paused ? "Run the preview" : "Pause the preview";
+    setIcon(this.pauseBtn, this.paused ? "play" : "pause");
+    this.pauseBtn.setAttribute("aria-label", label);
+    tooltip(this.pauseBtn, label);
+    this.stageEl?.classList.toggle("is-paused", this.paused);
+    this.paintCaption();
+  }
+
+  /** Under the preview: what the cross is, and how much the picture is shrunk when the particle is too large for it. */
+  private paintCaption(): void {
+    const caption = this.stageEl?.querySelector(".pe-caption");
+    if (!caption) return;
+    const scale = this.previewScale < 1 ? `Shown at ${Math.max(1, Math.round(this.previewScale * 100))}% to fit.` : "Shown at full size.";
+    const said = `${this.paused ? "Paused. " : ""}The cross marks what it is attached to. ${scale}`;
+    if (said === this.saidScale) return;
+    this.saidScale = said;
+    caption.textContent = said;
+  }
+
+  /** The parts of the page that say what the settings add up to. */
+  private paintLive(): void {
+    const d = this.getFormData();
+    for (const box of this.staticNotes) box.hidden = !d.static_light;
+
+    if (this.factsEl) {
+      // As the game runs it: an interval is counted in frames at 60 a second, and nothing is ever 0.
+      const every = ((d.interval || 1) / 60) * 1000;
+      const life = d.lifetime || 1000;
+      const longest = life + Math.max(0, d.staggertime || 0);
+      const most = d.amount || 1;
+      const steady = Math.max(1, Math.round((life + longest) / 2 / every));
+      const facts: Array<[string, string, string?]> = d.static_light
+        ? [["Kind", "Steady light"], ["Emits", "Nothing"], ["Alive at once", "1"], ["Lasts", "Always on"]]
+        : [
+            ["Kind", "Emitter"],
+            ["Emits", `1 every ${seconds(every)}`],
+            ["Alive at once", steady >= most ? num(most) : `About ${num(steady)}`, steady >= most ? "Max amount is the limit" : `${num(most)} at most`],
+            ["Each lasts", longest > life ? `${few(life / 1000)} to ${seconds(longest)}` : seconds(life)],
+          ];
+      this.factsEl.replaceChildren(...facts.map(([label, value, more]) => {
+        const fact = el("div", "tl-fact");
+        fact.append(el("div", "tl-fact-label", label), el("div", "tl-fact-value", value));
+        if (more) fact.appendChild(el("div", "tl-fact-note", more));
+        return fact;
+      }));
+    }
+
+    if (this.scheduleEl) {
+      const on = String(d.time_on || ""), off = String(d.time_off || "");
+      let said: string;
+      if (!d.affected_by_time) said = "Not on a schedule: it shows whenever Visible is on.";
+      else if (!on || !off) said = "Set both times. Until then it is not on a schedule, and shows whenever Visible is on.";
+      else if (on === off) said = "Both times are the same, so it shows all day.";
+      else said = on < off ? `Shows from ${on} until ${off} each day.` : `Shows from ${on} until ${off} the next morning.`;
+      this.scheduleEl.replaceChildren(note(`${said} In darkness weather a scheduled particle always shows.`, "plain", "clock"));
     }
   }
 
-  private getFormData(): any {
-    const gv = (key: string, isFloat?: boolean) => { const el = this.inputs[key] as HTMLInputElement | null; if (!el) return 0; if (el.type === "checkbox") return el.checked; const v = isFloat ? parseFloat(el.value) : parseInt(el.value, 10); return isNaN(v) ? 0 : v; };
-    const gs = (key: string) => { const el = this.inputs[key] as HTMLInputElement | null; return el ? el.value : ""; };
-    return {
-      name: this.selectedParticleName || "", size: gv("inp-size"), opacity: gv("inp-opacity", true), brightness: gv("inp-brightness", true), color: gs("inp-color"),
-      zIndex: gv("inp-zindex"), glow_intensity: gv("inp-glow", true), glow_radius: gv("inp-glow-radius", true), static_light: (this.inputs["inp-static"] as HTMLInputElement)?.checked ?? false, visible: (this.inputs["inp-visible"] as HTMLInputElement)?.checked ?? true,
-      velocity: { x: gv("inp-vel-x", true), y: gv("inp-vel-y", true) }, gravity: { x: gv("inp-grav-x", true), y: gv("inp-grav-y", true) },
-      spread: { x: gv("inp-spread-x", true), y: gv("inp-spread-y", true) }, localposition: { x: gv("inp-lpos-x", true), y: gv("inp-lpos-y", true) },
-      affected_by_weather: (this.inputs["inp-weather"] as HTMLInputElement)?.checked ?? false,
-      lifetime: gv("inp-lifetime"), interval: gv("inp-interval"), amount: gv("inp-amount"), staggertime: gv("inp-stagger", true),
-      affected_by_time: (this.inputs["inp-time"] as HTMLInputElement)?.checked ?? false,
-      time_on: gs("inp-timeon"), time_off: gs("inp-timeoff"), scale: 1, currentLife: 0, initialVelocity: { x: 0, y: 0 }, weather: {},
-    };
+  /** Under the Image field: said when the asset server turns out not to have the sprite chosen. */
+  private paintImageNote(): void {
+    if (!this.imageNoteEl) return;
+    const name = String(this.form.image || "");
+    this.imageNoteEl.replaceChildren();
+    this.imageNoteEl.hidden = !(name && this.missingImages.has(name));
+    if (!this.imageNoteEl.hidden) this.imageNoteEl.appendChild(note(`The asset server has no sprite named ${name}. Until it does, the game and this preview show the round particle in its place.`, "warning"));
   }
 
-  private onFormChange(): void {
-    this.syncValueLabel("inp-size");
-    this.syncValueLabel("inp-opacity");
-    this.syncValueLabel("inp-brightness");
-    this.syncValueLabel("inp-glow");
-    this.syncValueLabel("inp-glow-radius");
-    this.updatePreview();
-    if (this.selectedParticleName) { this.dirty = true; this.updateChrome(); }
+  // ----------------------------------------------------------------- opening
+
+  /** True when the open particle can be left: it has no unsaved changes, or the admin agreed to lose them. */
+  private async mayLeave(): Promise<boolean> {
+    return !this.dirty || !this.selectedParticleName || this.shell.discard(this.selectedParticleName);
   }
-  private syncValueLabel(id: string): void {
-    const el = this.inputs[id] as HTMLInputElement | null; if (!el || el.type !== "range") return;
-    const label = document.getElementById("val-" + id.replace("inp-", "")); if (label) label.textContent = parseFloat(el.value).toString();
+
+  private async selectParticle(name: string): Promise<void> {
+    if (name === this.selectedParticleName) return;
+    if (!(await this.mayLeave())) return;
+    const p = this.findParticle(name);
+    if (!p) return;
+    this.selectedParticleName = name;
+    this.loadParticle(p);
+    this.renderList();
   }
-  private resetForm(): void { const p = this.findParticle(this.selectedParticleName!); if (p) this.loadParticle(p); else this.updatePreview(); this.status("Reverted"); }
+
+  private resetForm(): void {
+    const name = this.selectedParticleName;
+    const p = this.findParticle(name ?? "");
+    if (p) this.loadParticle(p);
+    else this.updatePreview();
+    this.renderList();
+    if (name) toast(`Put ${name} back as it was last saved.`);
+  }
+
+  // ----------------------------------------------------------------- actions
+
   private saveParticle(): void {
-    if (!this.selectedParticleName) return; const data = this.getFormData();
-    this.send({ type: "saveParticle", particle: data }); const idx = this.particles.findIndex((p) => p.name === data.name);
+    if (!this.selectedParticleName) return;
+    const data = this.getFormData();
+    this.send({ type: "saveParticle", particle: data });
+    const idx = this.particles.findIndex((p) => p.name === data.name);
     if (idx >= 0) this.particles[idx] = data;
     this.dirty = false;
-    this.updateChrome();
-    this.status("Saved");
+    this.chrome();
+    this.renderList();
+    toast(`Saved ${data.name}.`);
   }
 
-  private showNewModal(): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    const taken = (n: string) => this.particles.some((p) => p.name.toLowerCase() === n.toLowerCase());
-    const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div"); box.className = "editor-modal-box";
-    box.innerHTML = '<h3>New Particle</h3><input type="text" id="modal-name" placeholder="Particle name"><p id="modal-error" style="color:#e74c3c;font-size:12px;margin:6px 0 0 0;min-height:14px"></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-confirm btn-primary">Create</button></div>';
-    overlay.appendChild(box); document.body.appendChild(overlay);
-    const input = box.querySelector("#modal-name") as HTMLInputElement, error = box.querySelector("#modal-error") as HTMLElement;
-    const confirmNew = () => {
-      const name = input.value.trim();
-      if (!name) return;
-      if (name.includes(",")) { error.textContent = "Names cannot contain commas."; return; }
-      if (taken(name)) { error.textContent = "A particle with that name already exists."; return; }
-      overlay.remove();
-      this.dirty = false;
-      this.pendingSelect = name;
-      this.send({ type: "createParticle", name });
-      this.status("Created");
-    };
-    box.querySelector(".btn-confirm")!.addEventListener("click", confirmNew);
-    box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") confirmNew(); if (e.key === "Escape") overlay.remove(); });
-    input.focus();
+  /** Asks for a particle's name. The box is marked pe-ask: it is this editor's one question that is not a yes or no. */
+  private askName(question: AskOptions): Promise<string | null> {
+    return askText({ ...question, className: "pe-ask" });
+  }
+
+  /** What is wrong with a name for a particle, or null. `except` is the particle being renamed, which may keep its own. */
+  private nameProblem(name: string, except = ""): string | null {
+    if (!name) return "Type a name first.";
+    if (name.includes(",")) return "Names cannot contain commas.";
+    if (this.particles.some((p) => p.name.toLowerCase() === name.toLowerCase() && p.name !== except)) return "A particle with that name already exists.";
+    return null;
+  }
+
+  private async newParticle(): Promise<void> {
+    if (!(await this.mayLeave())) return;
+    const name = await this.askName({
+      title: "New particle", body: "It starts as a small white dot. Its name is what NPCs, spells and mounts refer to it by.",
+      label: "Name", okLabel: "Create particle", icon: "sparkle", check: (n) => this.nameProblem(n),
+    });
+    if (name === null) return;
+    this.dirty = false;
+    this.pendingSelect = name;
+    this.send({ type: "createParticle", name });
+    this.expect("create", name, `Created ${name}.`, `${name} was not created.`, "The server did not add it. Your account may not be allowed to edit particles.");
+    this.chrome();
+    this.renderList();
   }
 
   /** Rename: the server renames the particle and the NPCs, spells and mounts that use it. */
-  private showRenameModal(from: string): void {
+  private async rename(from: string): Promise<void> {
     if (!from) return;
-    const open = from === this.selectedParticleName;
     // The renamed particle is reloaded from the server, which drops unsaved edits.
-    if (open && this.dirty && !window.confirm("Renaming discards unsaved changes. Continue?")) return;
-    const taken = (n: string) => this.particles.some((p) => p.name.toLowerCase() === n.toLowerCase() && p.name !== from);
-    const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div"); box.className = "editor-modal-box";
-    box.innerHTML = '<h3>Rename Particle</h3><input type="text" id="modal-name" placeholder="New particle name"><p id="modal-error" style="color:#e74c3c;font-size:12px;margin:6px 0 0 0;min-height:14px"></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-confirm">Rename</button></div>';
-    overlay.appendChild(box); document.body.appendChild(overlay);
-    const input = box.querySelector("#modal-name") as HTMLInputElement, error = box.querySelector("#modal-error") as HTMLElement;
-    input.value = from;
-    const confirm = () => {
-      const to = input.value.trim();
-      if (!to || to === from) { overlay.remove(); return; }
-      if (to.includes(",")) { error.textContent = "Names cannot contain commas."; return; }
-      if (taken(to)) { error.textContent = "A particle with that name already exists."; return; }
-      overlay.remove();
-      if (open) { this.pendingSelect = to; this.dirty = false; }
-      this.send({ type: "renameParticle", from, to });
-      this.status("Renamed");
-    };
-    box.querySelector(".btn-confirm")!.addEventListener("click", confirm);
-    box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") confirm(); if (e.key === "Escape") overlay.remove(); });
-    input.focus(); input.select();
+    if (from === this.selectedParticleName && this.dirty) {
+      const agreed = await confirmDialog({
+        title: "Rename and lose your changes?",
+        body: `Renaming reloads ${from} from the server, so what you changed and have not saved is lost.`,
+        okLabel: "Discard and rename", cancelLabel: "Keep editing",
+      });
+      if (!agreed) return;
+    }
+    const to = await this.askName({
+      title: `Rename ${from}`, body: "The NPCs, spells and mounts that use it are moved to the new name with it.",
+      label: "New name", value: from, okLabel: "Rename", check: (n) => this.nameProblem(n, from),
+    });
+    if (to === null || to === from) return;
+    // It may have gone while the question was open.
+    if (!this.findParticle(from)) return void toast(`${from} is no longer in the list, so it was not renamed.`, "error");
+    if (from === this.selectedParticleName) { this.pendingSelect = to; this.dirty = false; }
+    this.send({ type: "renameParticle", from, to });
+    this.expect("rename", to, `Renamed ${from} to ${to}.`, `${from} was not renamed.`, "The server still lists it under that name. Your account may not be allowed to edit particles.");
+    this.chrome();
+    this.renderList();
   }
 
   /** Duplicate: a copy of a list row's particle under a new name; the open one is copied with the settings currently in the form. */
-  private showDuplicateModal(source: any): void {
+  private async duplicate(source: any): Promise<void> {
     if (!source?.name) return;
-    const open = source.name === this.selectedParticleName;
-    if (!open && this.dirty && !window.confirm("Discard unsaved changes?")) return;
+    const from = String(source.name);
+    // The copy is opened once it is made, which leaves the particle that is open now.
+    if (from !== this.selectedParticleName && !(await this.mayLeave())) return;
     const taken = (n: string) => this.particles.some((p) => p.name.toLowerCase() === n.toLowerCase());
-    let suggestion = `${source.name} Copy`;
-    for (let k = 2; taken(suggestion); k++) suggestion = `${source.name} Copy ${k}`;
-    const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div"); box.className = "editor-modal-box";
-    box.innerHTML = '<h3>Duplicate Particle</h3><input type="text" id="modal-name" placeholder="New particle name"><p id="modal-error" style="color:#e74c3c;font-size:12px;margin:6px 0 0 0;min-height:14px"></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-confirm">Duplicate</button></div>';
-    overlay.appendChild(box); document.body.appendChild(overlay);
-    const input = box.querySelector("#modal-name") as HTMLInputElement, error = box.querySelector("#modal-error") as HTMLElement;
-    input.value = suggestion;
-    const confirm = () => {
-      const name = input.value.trim();
-      if (!name) return;
-      if (name.includes(",")) { error.textContent = "Names cannot contain commas."; return; }
-      if (taken(name)) { error.textContent = "A particle with that name already exists."; return; }
-      overlay.remove();
-      this.pendingSelect = name;
-      this.dirty = false;
-      this.send({ type: "duplicateParticle", particle: { ...(open ? this.getFormData() : this.normalize(source)), name } });
-      this.status("Copy made");
-    };
-    box.querySelector(".btn-confirm")!.addEventListener("click", confirm);
-    box.querySelector(".btn-cancel")!.addEventListener("click", () => { overlay.remove(); });
-    input.addEventListener("keydown", (e) => { if (e.key === "Enter") confirm(); if (e.key === "Escape") overlay.remove(); });
-    input.focus(); input.select();
-  }
-
-  /** Delete a particle from its list row. Closes it if it is the open one. */
-  private showDeleteModal(name: string): void {
-    if (!name) return;
-    const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div"); box.className = "editor-modal-box";
-    box.innerHTML = '<h3>Delete Particle</h3><p></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger">Delete</button></div>';
-    box.querySelector("p")!.textContent = `Delete ${name}? NPCs, spells and mounts using it lose the effect.`;
-    overlay.appendChild(box); document.body.appendChild(overlay);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-    const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
-    document.addEventListener("keydown", onKey);
-    box.querySelector(".btn-danger")!.addEventListener("click", () => {
-      close();
-      if (name === this.selectedParticleName) { this.selectedParticleName = null; this.dirty = false; this.updateChrome(); }
-      this.particles = this.particles.filter((p) => p.name !== name);
-      this.renderParticleList();
-      this.send({ type: "deleteParticle", name });
-      this.status("Deleted");
+    let suggestion = `${from} Copy`;
+    for (let k = 2; taken(suggestion); k++) suggestion = `${from} Copy ${k}`;
+    const open = from === this.selectedParticleName;
+    const name = await this.askName({
+      title: `Duplicate ${from}`, body: open ? "The copy starts with the settings in the form now, saved or not." : "The copy starts with its settings as they were last saved.",
+      label: "Name of the copy", value: suggestion, okLabel: "Duplicate", icon: "copy", check: (n) => this.nameProblem(n),
     });
-    box.querySelector(".btn-cancel")!.addEventListener("click", close);
+    if (name === null) return;
+    const stillOpen = from === this.selectedParticleName;
+    this.pendingSelect = name;
+    this.dirty = false;
+    this.send({ type: "duplicateParticle", particle: { ...(stillOpen ? this.getFormData() : this.normalize(source)), name } });
+    this.expect("duplicate", name, `Copied ${from} as ${name}.`, `${name} was not created.`, "The server did not add the copy. Your account may not be allowed to edit particles.");
+    this.chrome();
+    this.renderList();
   }
 
-  private switchTab(tabName: string): void {
-    document.querySelectorAll(".editor-tab-btn").forEach((b) => { b.classList.toggle("active", b.getAttribute("data-tab") === tabName); });
-    document.querySelectorAll(".editor-tab-panel").forEach((p) => { p.classList.toggle("active", p.getAttribute("data-tab") === tabName); });
+  /** Delete a particle, from its list row or the top bar. Closes it if it is the open one. */
+  private async deleteParticle(name: string): Promise<void> {
+    if (!name) return;
+    if (!(await this.shell.confirmDelete(name, "NPCs, spells and mounts that use it lose the effect. It cannot be brought back."))) return;
+    const open = name === this.selectedParticleName;
+    if (open) { this.selectedParticleName = null; this.dirty = false; }
+    this.particles = this.particles.filter((p) => p.name !== name);
+    this.renderList();
+    this.send({ type: "deleteParticle", name });
+    this.expect("delete", name, `Deleted ${name}.`, `${name} was not deleted.`, "The server still lists it. Your account may not be allowed to edit particles.");
+    if (open) this.renderForm();
   }
+
+  // ------------------------------------------------ what was asked, and came of it
+
+  /** Watch the lists that follow for what was just asked of the server, to say whether it was done. */
+  private expect(kind: Awaited["kind"], name: string, done: string, failed: string, why: string): void {
+    const entry: Awaited = { kind, name, done, failed, why, listed: false, timer: setTimeout(() => this.giveUp(entry), GIVE_UP_MS) };
+    this.awaited.push(entry);
+  }
+
+  private forget(entry: Awaited): void {
+    clearTimeout(entry.timer);
+    this.awaited = this.awaited.filter((a) => a !== entry);
+  }
+
+  private met(entry: Awaited): boolean {
+    const listed = !!this.findParticle(entry.name);
+    return entry.kind === "delete" ? !listed : listed;
+  }
+
+  /**
+   * A list arrived: what it shows as done is said. One that does not show it is not the last word (it may have been
+   * on its way already), so what is still missing is only noted, and given until its time is up.
+   */
+  private settle(): void {
+    for (const entry of [...this.awaited]) {
+      if (this.met(entry)) {
+        this.forget(entry);
+        toast(entry.done);
+      } else entry.listed = true;
+    }
+  }
+
+  /** Its time is up and no list has shown it: it was not done, as far as this window can tell. */
+  private giveUp(entry: Awaited): void {
+    if (!this.awaited.includes(entry)) return;
+    this.forget(entry);
+    // The last particle was deleted: the game window passes on no list with nothing in it, so none was ever going to come.
+    if (entry.kind === "delete" && this.particles.length === 0) return toast(entry.done);
+    // Nothing is going to arrive under that name: stop waiting to open it.
+    if (entry.kind !== "delete" && this.pendingSelect === entry.name) this.pendingSelect = null;
+    toast(`${entry.failed}\n${entry.listed ? entry.why : "The game window has not sent the list again since. Check that your game is still connected."}`, "error");
+    this.renderList();
+    this.chrome();
+  }
+
+  // ----------------------------------------------------------------- preview
 
   private updatePreview(): void { this.previewParticles = []; this.lastEmitInterval = 0; }
 
@@ -457,37 +821,50 @@ class ParticleEditorBridge {
   private startPreviewLoop(): void {
     if (this.animFrameId) return;
     // Every frame, like the game: the particle clock below is capped at one 60 FPS frame.
-    const loop = () => { this.renderPreview(); this.animFrameId = requestAnimationFrame(loop); };
+    const loop = () => {
+      if (!this.paused) this.renderPreview();
+      this.animFrameId = requestAnimationFrame(loop);
+    };
     this.animFrameId = requestAnimationFrame(loop);
   }
 
   /** The last sprite baked, and the settings it was baked from. */
-  private sprite: { key: string; canvas: HTMLCanvasElement; half: number } | null = null;
+  private sprite: { key: string; canvas: HTMLCanvasElement; half: number; blend: GlobalCompositeOperation } | null = null;
 
   /**
    * The particle's sprite, baked exactly as the game bakes it (npc.ts getParticleSprite): the glow halo out to its
    * reach stacked once per unit of Intensity, the feathered core, then the whole stacked once per unit of Brightness.
-   * Keep the two in step: the preview is only right while this matches.
+   * Keep the two in step: the preview is only right while this matches. With an image (once it has loaded) the image
+   * takes the core's place, Size px wide at its own proportions, and the sprite is drawn as it is, not added as light.
    */
-  private getSprite(color: string, radius: number, glowIntensity: number, glowRadius: number, brightness: number): { canvas: HTMLCanvasElement; half: number } {
-    const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}`;
+  private getSprite(color: string, radius: number, glowIntensity: number, glowRadius: number, brightness: number, image: string = ""): { canvas: HTMLCanvasElement; half: number; blend: GlobalCompositeOperation } {
+    const img = this.imageOf(image);
+    const key = `${color}|${radius}|${glowIntensity}|${glowRadius}|${brightness}|${img ? image : ""}`;
     if (this.sprite?.key === key) return this.sprite;
-    const reach = glowIntensity > 0 ? (glowRadius > 0 ? glowRadius : Math.max(6, radius * 2)) : 0;
-    const outer = radius + reach, sizeCss = Math.ceil(2 * outer) + 2, half = sizeCss / 2;
+    const imgW = img ? Math.max(1, radius * 2) : 0, imgH = img ? Math.max(1, imgW * img.naturalHeight / img.naturalWidth) : 0;
+    const body = img ? Math.max(imgW, imgH) / 2 : radius;
+    const reach = glowIntensity > 0 ? (glowRadius > 0 ? glowRadius : Math.max(6, body * 2)) : 0;
+    const outer = body + reach, sizeCss = Math.ceil(2 * outer) + 2, half = sizeCss / 2;
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, sizeCss); canvas.height = Math.max(1, sizeCss);
     const sctx = canvas.getContext("2d")!;
     sctx.globalCompositeOperation = "lighter";
     if (glowIntensity > 0) {
-      const halo = sctx.createRadialGradient(half, half, 0, half, half, outer), edge = Math.min(0.95, radius / outer);
+      const halo = sctx.createRadialGradient(half, half, 0, half, half, outer), edge = Math.min(0.95, body / outer);
       halo.addColorStop(0, this.colorToRgba(color, 0.5)); halo.addColorStop(edge, this.colorToRgba(color, 0.32));
       halo.addColorStop(edge + (1 - edge) * 0.35, this.colorToRgba(color, 0.12)); halo.addColorStop(edge + (1 - edge) * 0.7, this.colorToRgba(color, 0.03));
       halo.addColorStop(1, this.colorToRgba(color, 0)); sctx.fillStyle = halo;
       const whole = Math.floor(glowIntensity), frac = glowIntensity - whole;
       for (let g = 0; g < whole + (frac > 0 ? 1 : 0); g++) { sctx.globalAlpha = g < whole ? 0.5 : frac * 0.5; sctx.fillRect(0, 0, sizeCss, sizeCss); }
     }
-    const grad = sctx.createRadialGradient(half, half, 0, half, half, radius); this.addFeatheredStops(grad, color);
-    sctx.globalAlpha = 1; sctx.fillStyle = grad; sctx.beginPath(); sctx.arc(half, half, radius, 0, Math.PI * 2); sctx.fill();
+    sctx.globalAlpha = 1;
+    if (img) {
+      sctx.globalCompositeOperation = "source-over"; sctx.imageSmoothingEnabled = false;
+      sctx.drawImage(img, half - imgW / 2, half - imgH / 2, imgW, imgH);
+    } else {
+      const grad = sctx.createRadialGradient(half, half, 0, half, half, radius); this.addFeatheredStops(grad, color);
+      sctx.fillStyle = grad; sctx.beginPath(); sctx.arc(half, half, radius, 0, Math.PI * 2); sctx.fill();
+    }
     let out = canvas;
     if (brightness !== 1) {
       out = document.createElement("canvas"); out.width = canvas.width; out.height = canvas.height;
@@ -496,7 +873,7 @@ class ParticleEditorBridge {
       const whole = Math.floor(brightness), frac = brightness - whole;
       for (let b = 0; b < whole + (frac > 0 ? 1 : 0); b++) { bctx.globalAlpha = b < whole ? 1 : frac; bctx.drawImage(canvas, 0, 0); }
     }
-    this.sprite = { key, canvas: out, half };
+    this.sprite = { key, canvas: out, half, blend: img ? "source-over" : "lighter" };
     return this.sprite;
   }
 
@@ -518,13 +895,15 @@ class ParticleEditorBridge {
       const extent = radius + reach + Math.max(Math.abs(pData.localposition.x), Math.abs(pData.localposition.y)) + Math.max(Math.abs(pData.spread.x), Math.abs(pData.spread.y)) * 0.5;
       const k = Math.min(1, (Math.min(canvas.width, canvas.height) / 2 - 4) / Math.max(1, extent));
       if (k < 1) { ctx.translate(canvas.width / 2, canvas.height / 2); ctx.scale(k, k); ctx.translate(-canvas.width / 2, -canvas.height / 2); }
+      // (said under the preview)
+      if (k !== this.previewScale) { this.previewScale = k; this.paintCaption(); }
     }
 
     // the game's clock: the frame delta capped at one 60 FPS frame, driving emission, aging and physics alike
     const now = performance.now(), dt = Math.min((now - this.lastFrameTime) / 1000, 0.01667); this.lastFrameTime = now;
     const originX = canvas.width / 2, originY = canvas.height / 2;
-    const sprite = this.getSprite(pData.color || "white", radius, glowIntensity, pData.glow_radius || 0, brightness);
-    ctx.globalCompositeOperation = 'lighter';
+    const sprite = this.getSprite(pData.color || "white", radius, glowIntensity, pData.glow_radius || 0, brightness, pData.image || "");
+    ctx.globalCompositeOperation = sprite.blend;
 
     // a static light: one steady light at the particle's position, nothing emitted
     if (pData.static_light) {

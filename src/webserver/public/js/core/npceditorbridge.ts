@@ -1,8 +1,48 @@
-import { FieldRenderer, orderFields, pick, sheetOptions, type AssetOption, type Field } from "./editorfields.js";
+// NPC editor popup. Talks to the game window over postMessage; the game
+// window owns the NPCs of the map the admin stands on, shows them in the
+// world (where they are placed, dragged and clicked) and sends what is saved
+// on to the server. The window itself is the shared workbench (tooleditor.ts);
+// this file holds what is the NPC editor's own: its fields, the NPC said in
+// plain words, and its conversation with the game window.
+//
+// That conversation is not like the other editors': there is no search on the
+// server and no result of a save. The game window sends the whole list
+// whenever it changes, and a save or a delete is known to have gone through
+// when the list that comes back shows it.
+import { EditorShell, type ListRow } from "./tooleditor.js";
+import { FieldRenderer, orderFields, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
+import { button, card, confirmDialog, count, el, listed, tag, thumb, toast, tooltip } from "./toolkit.js";
+import { manyField, type Choice } from "./questnpcparts.js";
+import { Completer, GOSSIP_RULES, SCRIPT_RULES, type CompleterRules } from "./npceditorcomplete.js";
 
-const TRASH_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "appearance", label: "Appearance" },
+  { id: "content", label: "Dialogue" },
+  { id: "quests", label: "Quests" },
+  { id: "effects", label: "Effects" },
+];
+const FACINGS = ["down", "up", "left", "right"];
+const FACING_WORDS: Record<string, string> = { down: "Down", up: "Up", left: "Left", right: "Right" };
+const SPRITE_WORDS: Record<string, string> = { animated: "Animated", static: "Static", none: "None" };
+/** The sprite sheets an animated NPC wears over its body and head. */
+const WORN: Array<{ key: string; label: string; slot: string }> = [
+  { key: "sprite_helmet", label: "Helmet", slot: "helmet" },
+  { key: "sprite_shoulderguards", label: "Shoulders", slot: "shoulderguards" },
+  { key: "sprite_neck", label: "Neck", slot: "neck" },
+  { key: "sprite_hands", label: "Gloves", slot: "hands" },
+  { key: "sprite_chest", label: "Chest", slot: "chest" },
+  { key: "sprite_feet", label: "Boots", slot: "feet" },
+  { key: "sprite_legs", label: "Pants", slot: "legs" },
+  { key: "sprite_weapon", label: "Weapon", slot: "weapon" },
+];
+/** With no answer for this long, the page stops waiting and says so. */
+const ANSWER_MS = 15000;
+/** How long the list waits for the map's NPCs before it says there are none. */
+const SETTLE_MS = 2500;
+
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const dialogOpen = (): boolean => !!document.querySelector("dialog[open]");
 
 /** Listings under an `animations` folder are animations, not sprite sheets an NPC can wear. */
 function inAnimationsFolder(option: AssetOption): boolean {
@@ -10,145 +50,125 @@ function inAnimationsFolder(option: AssetOption): boolean {
   return inFolder(option.value) || inFolder(option.image);
 }
 
+/** What is edited that is not one plain value of the NPC. */
+interface Edit {
+  direction: string;
+  given: number[];
+  ended: number[];
+  particles: string[];
+}
+
 class NpcEditorBridge {
   private npcs: any[] = [];
   private availableParticles: string[] = [];
   private availableQuests: Array<{ id: number; name: string }> = [];
-  private spriteData: { spriteSheets: Record<string, Array<{ name: string; image: string | null }>>; icons: AssetOption[] } = { spriteSheets: {}, icons: [] };
-  private appearance = new FieldRenderer({
+  private spriteData: { spriteSheets: Record<string, Array<{ name: string; image: string | null }>>; icons: Array<{ name: string; image: string | null }> } = { spriteSheets: {}, icons: [] };
+  private selectedNpcId: number | null = null;
+  /**
+   * A private copy of the open NPC, never the object the game window owns:
+   * the fields edit this in place, and the game window replaces its own rows
+   * on every refresh.
+   */
+  private draft: any = null;
+  private edit: Edit = { direction: "down", given: [], ended: [], particles: [] };
+  /** The row the draft was copied from, as text: a refresh that brings the same row again changes nothing. */
+  private source = "";
+  /** Unsaved edits live in the draft; a refresh must not overwrite them. */
+  private dirty = false;
+  /**
+   * The NPCs changed here, or moved in the world, and not saved since. The
+   * game window keeps such changes with the NPC while the editor is open, so
+   * they are still there, unsaved, when the NPC is opened again.
+   */
+  private unsaved = new Set<number | null>();
+  /** The NPCs whose last save was never seen to arrive. */
+  private unconfirmed = new Set<number | null>();
+  /** The open tab, kept across refreshes, across NPCs and from one visit to the next. */
+  private tab = "general";
+  /** Slots and counts of the sprite data last drawn, to skip pointless redraws. */
+  private spriteSignature = "";
+  /** The game window has answered. */
+  private ready = false;
+  /** The map's NPCs have arrived, or enough time has passed to say there are none. */
+  private settled = false;
+  /** Counts the NPCs opened, so the page knows a redraw from a different one. */
+  private opened = 0;
+  /** The page was not drawn again because a dialog was open over it; it is once the dialog has closed. */
+  private stale = false;
+
+  // The game window relays no result of a save or a delete, only the list as
+  // it is afterwards: each is waited for here until the list shows it.
+  private saving: { id: number | null; label: string; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** The NPCs being deleted, by id: several can be on their way at once. */
+  private deleting = new Map<number, { label: string; timer: ReturnType<typeof setTimeout> }>();
+  private discarding: string | null = null;
+
+  /** The parts of the page that follow the fields, and the world, as they change. */
+  private summaryEl: HTMLElement | null = null;
+  private placeEl: HTMLElement | null = null;
+  private headThumb: { key: string; node: HTMLElement } | null = null;
+  private completer = new Completer();
+
+  private shell = new EditorShell({
+    tool: "NPC Editor", noun: "NPC", plural: "NPCs", icon: "user", tabs: TABS,
+    // The NPCs of the map are all here: a search only narrows the list, at every key.
+    onSearch: () => this.renderList(),
+    liveSearch: true,
+    onNew: () => void this.createNpc(),
+    onSave: () => this.saveNpc(),
+    // An NPC is placed in the world, one at a time: there is nothing to duplicate, so no onDuplicate.
+    onDelete: () => void this.deleteNpc(this.npcs.find((n: any) => n.id === this.selectedNpcId)),
+    onTab: (id) => this.switchTab(id),
+  });
+
+  private fields = new FieldRenderer({
     assetOptions: (field, value) => field.type === "sheet"
       ? sheetOptions(this.spriteData.spriteSheets, field.slot || "other", String(value ?? "")).filter((option) => !inAnimationsFolder(option))
       : field.assets?.() ?? [],
-    rerender: () => this.renderAppearance(),
+    rerender: () => this.renderForm(),
   });
-  private selectedParticles: string[] = [];
-  private selectedNpcId: number | null = null;
-  /**
-   * A private copy of the selected NPC, never the object the game window owns:
-   * the appearance fields edit this in place, and the game window replaces its
-   * own rows on every refresh. Same draft model as the creature editor.
-   */
-  private selectedNpcData: any = null;
-  /** Unsaved edits live in the draft; a refresh must not overwrite them. */
-  private dirty: boolean = false;
-  /** The open tab, so a refresh does not drop the user back on General. */
-  private tab: string = "general";
-  /** Slots + counts of the sprite data last rendered, to skip pointless re-renders. */
-  private spriteSignature: string = "";
-  private searchQuery: string = "";
-  private particleSearchQuery: string = "";
-
-  private saveBtn: HTMLElement;
-  private searchInput: HTMLInputElement;
-  private npcListEl: HTMLElement;
-  private particleSearchInput: HTMLInputElement;
-  private particleOptionsEl: HTMLElement;
-  private inputs: Record<string, HTMLElement> = {};
 
   constructor() {
-    this.saveBtn = document.getElementById("btn-save")!;
-    this.searchInput = document.getElementById("ne-npc-search") as HTMLInputElement;
-    this.npcListEl = document.getElementById("ne-npc-list")!;
-    this.particleSearchInput = document.getElementById("ne-particle-search") as HTMLInputElement;
-    this.particleOptionsEl = document.getElementById("ne-particle-options")!;
+    const page = document.getElementById("tl-page")!;
+    // The shell writes the tool's name in small letters in its sentences; "NPC" keeps its capitals.
+    new MutationObserver(() => {
+      for (const node of page.querySelectorAll(".tl-screen-title, .tl-screen-text")) {
+        if (node.textContent?.includes("npc editor")) node.textContent = node.textContent.replace(/npc editor/g, "NPC editor");
+      }
+    }).observe(page, { childList: true, subtree: true });
+    // A dialog that closes leaves the page free to be drawn again, if it was waiting to be.
+    new MutationObserver(() => {
+      if (this.stale && !dialogOpen()) this.renderForm();
+    }).observe(document.body, { childList: true });
+    page.addEventListener("scroll", () => this.completer.hide());
+    tooltip(document.querySelector<HTMLElement>("#tl-side .tl-side-tools > .tl-btn")!, "Places a new NPC where your character stands");
 
-    const formIds = ["inp-quest-giver","inp-direction","inp-hidden",
-      "inp-name","inp-dialog","inp-gossip","inp-script","inp-quests-given","inp-quests-ended"];
-    for (const id of formIds) {
-      const el = document.getElementById(id);
-      if (el) { this.inputs[id] = el; el.addEventListener("input", () => this.markDirty()); el.addEventListener("change", () => this.markDirty()); }
-    }
+    try {
+      const kept = localStorage.getItem("ne-tab-preference");
+      if (kept && TABS.some((tab) => tab.id === kept)) this.tab = kept;
+    } catch { /* storage unavailable */ }
 
-    this.saveBtn.addEventListener("click", () => this.saveNpc());
-    // Some edits flag changes without re-rendering (appearance pickers);
-    // refresh the save icon after any interaction.
-    for (const type of ["input", "change", "click"]) {
-      document.addEventListener(type, () => queueMicrotask(() => this.updateSaveIcon()));
-    }
-    this.setupGossipAc();
-    this.setupScriptAc();
-    this.searchInput.addEventListener("input", () => { this.searchQuery = this.searchInput.value.toLowerCase(); this.renderNpcList(); });
-    this.particleSearchInput.addEventListener("input", () => { this.particleSearchQuery = this.particleSearchInput.value.toLowerCase(); this.renderParticleOptions(); });
-
-    try { this.tab = localStorage.getItem("ne-tab-preference") || this.tab; } catch { /* storage unavailable */ }
-    document.querySelectorAll(".editor-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => this.switchTab(btn.getAttribute("data-tab")!));
-    });
-
-    window.addEventListener("message", (e) => this.onMessage(e));
-    window.addEventListener("beforeunload", () => { if (window.opener) window.opener.postMessage({ type: "editorClosed" }, "*"); });
-    window.addEventListener("keydown", (e) => this.onKeyDown(e));
-
-    this.updateChrome();
-    if (window.opener) window.opener.postMessage({ type: "bridgeReady" }, "*");
+    // Saying it is ready again makes the game window send everything again.
+    this.shell.waiting(() => this.shell.send({ type: "bridgeReady" }));
+    this.shell.connect((msg) => this.onMessage(msg));
   }
 
-  /**
-   * Status to show once the server's change arrives: the game window relays no
-   * save/delete result, only the refreshed list, so report success on that.
-   */
-  private statusOnListUpdate: string | null = null;
-
-  private send(msg: any): void { if (window.opener) window.opener.postMessage(msg, "*"); }
-
-  private onKeyDown(e: KeyboardEvent): void {
-    // Ctrl+S saves from anywhere, including while typing in a field.
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); this.saveNpc(); }
+  private send(msg: any): void {
+    this.shell.send(msg);
   }
 
-  private status(text: string): void {
-    const el = document.getElementById("ne-status");
-    if (el) el.textContent = text;
-  }
-
-  private onMessage(e: MessageEvent): void {
-    if (e.source !== window.opener) return;
-    const msg = e.data;
+  private onMessage(msg: any): void {
     switch (msg.type) {
       case "init": this.handleInit(msg); break;
-      case "npcListUpdate":
-        this.npcs = msg.npcs || []; if (msg.quests) this.setAvailableQuests(msg.quests); this.storeSpriteData(msg); this.dropDeletedSelection(); this.refreshDraftFromList(); this.renderNpcList();
-        if (this.statusOnListUpdate) { this.status(this.statusOnListUpdate); this.statusOnListUpdate = null; }
+      case "npcListUpdate": this.onList(msg); break;
+      case "npcSelectUpdate": if (msg.npc) this.onSelected(msg); break;
+      case "particleOptions":
+        this.availableParticles = msg.particles || [];
+        if (this.draft && this.tab === "effects") this.redraw();
         break;
-      case "npcSelectUpdate": if (msg.npc) { this.selectedNpcId = msg.npc.id; this.setDraft(msg.npc); if (msg.quests) this.setAvailableQuests(msg.quests); this.storeSpriteData(msg); this.populateForm(); this.renderNpcList(); } break;
-      case "particleOptions": this.availableParticles = msg.particles || []; this.renderParticleOptions(); break;
-      case "positionUpdate": if (this.selectedNpcId === msg.id) { const el = document.getElementById("ne-display-pos"); if (el) el.textContent = "(" + msg.x + ", " + msg.y + ")"; if (this.selectedNpcData) { if (!this.selectedNpcData.position) this.selectedNpcData.position = {}; this.selectedNpcData.position.x = msg.x; this.selectedNpcData.position.y = msg.y; } } break;
+      case "positionUpdate": this.onMoved(msg); break;
       case "close": window.close(); break;
     }
-  }
-
-  /** A detached copy, so edits survive the game window replacing its own rows. */
-  private setDraft(npc: any): void {
-    this.selectedNpcData = npc ? JSON.parse(JSON.stringify(npc)) : null;
-    this.dirty = false;
-  }
-
-  /**
-   * Re-sync the draft with the refreshed list. Unsaved edits win: a list update
-   * can arrive because any player on this map changed an NPC, and that must not
-   * throw away what is being typed.
-   */
-  private refreshDraftFromList(): void {
-    if (this.dirty || this.selectedNpcId === null) return;
-    const fresh = this.npcs.find((n: any) => n.id === this.selectedNpcId);
-    if (!fresh) return;
-    // Most list updates are about some other NPC. Re-rendering then would close
-    // an open asset picker for no reason.
-    if (JSON.stringify(fresh) === JSON.stringify(this.selectedNpcData)) return;
-    this.setDraft(fresh);
-    this.populateForm();
-  }
-
-  private storeSpriteData(msg: any): void {
-    if (msg.spriteSheets) this.spriteData.spriteSheets = msg.spriteSheets;
-    if (msg.icons) this.spriteData.icons = msg.icons;
-    const sheets = this.spriteData.spriteSheets ?? {};
-    const signature = Object.keys(sheets).sort()
-      .map((slot) => `${slot}:${(sheets[slot] ?? []).length}`).join(",")
-      + `|${(this.spriteData.icons ?? []).length}`;
-    if (signature === this.spriteSignature) return;
-    this.spriteSignature = signature;
-    this.renderAppearance();
   }
 
   private handleInit(msg: any): void {
@@ -156,17 +176,187 @@ class NpcEditorBridge {
     this.availableParticles = msg.particles || [];
     if (msg.quests) this.setAvailableQuests(msg.quests);
     this.storeSpriteData(msg);
-    this.selectedParticles = this.normalizeParticleNames(msg.selectedParticles);
-    this.renderNpcList();
-    this.renderParticleOptions();
+    this.ready = true;
+    this.shell.arrived();
+    // The game window answers at once, with whatever it has: the map's NPCs may still be on their way.
+    if (this.npcs.length > 0) this.settled = true;
+    else if (!this.settled) {
+      setTimeout(() => {
+        if (this.settled) return;
+        this.settled = true;
+        this.renderList();
+      }, SETTLE_MS);
+    }
     if (msg.selectedNpc) {
       this.selectedNpcId = msg.selectedNpcId;
       this.setDraft(msg.selectedNpc);
-      this.populateForm();
+      // The game window knows it was changed, or moved, and not saved.
+      if (msg.isDirty) this.unsaved.add(this.selectedNpcId);
+      this.opened++;
     } else if (this.npcs.length > 0 && !this.selectedNpcId) {
-      this.selectNpc(this.npcs[0]);
+      return this.selectNpc(this.npcs[0]);
+    }
+    this.renderList();
+    this.renderForm();
+  }
+
+  /** The list as it is now: after a save, a delete, a drag in the world, or another admin's change. */
+  private onList(msg: any): void {
+    this.npcs = msg.npcs || [];
+    this.settled = true;
+    let redraw = msg.quests ? this.setAvailableQuests(msg.quests) : false;
+    redraw = this.storeSpriteData(msg) || redraw;
+    const dropped = this.dropDeletedSelection();
+    redraw = this.refreshDraftFromList() || redraw;
+    for (const id of [...this.unsaved]) if (!this.npcs.some((n: any) => n.id === id)) this.unsaved.delete(id);
+    for (const id of [...this.unconfirmed]) if (!this.npcs.some((n: any) => n.id === id)) this.unconfirmed.delete(id);
+    this.settlePending();
+    this.renderList();
+    if (dropped) this.renderForm();
+    else if (redraw && this.draft) this.redraw();
+    else this.chrome();
+  }
+
+  /** The game window says which NPC is open: the one picked here, or one clicked or dragged in the world. */
+  private onSelected(msg: any): void {
+    // A new NPC that has just been saved comes back with the id the server gave it: it is still the same one.
+    const adopted = !!this.draft && this.selectedNpcId === null && this.saving?.id === null && msg.npc.id !== null;
+    const another = !this.draft || (this.selectedNpcId !== msg.npc.id && !adopted);
+    let redraw = msg.quests ? this.setAvailableQuests(msg.quests) : false;
+    redraw = this.storeSpriteData(msg) || redraw;
+    // The answer to an NPC picked here is mostly the row it was opened from: then there is nothing to do.
+    if (!another && !adopted && !this.dirty && JSON.stringify(msg.npc) === this.source) {
+      if (redraw) this.redraw();
+      return;
+    }
+    // A dialog left open would go on working on the draft that was there before.
+    this.closeDialogs();
+    if (adopted) {
+      this.unsaved.delete(null);
+      this.saving!.id = msg.npc.id;
+    }
+    this.selectedNpcId = msg.npc.id;
+    this.setDraft(msg.npc);
+    if (another) this.opened++;
+    this.renderList();
+    this.renderForm();
+    if (another) this.showSelection();
+  }
+
+  /** The open NPC is being dragged in the world: follow it. Where it is let go is not saved until Save is pressed. */
+  private onMoved(msg: any): void {
+    if (this.selectedNpcId !== msg.id || !this.draft) return;
+    if (!this.draft.position) this.draft.position = {};
+    this.draft.position.x = msg.x;
+    this.draft.position.y = msg.y;
+    const marked = this.unsaved.has(msg.id);
+    this.unsaved.add(msg.id);
+    this.chrome();
+    this.paintLive();
+    if (!marked) this.renderList();
+  }
+
+  /** A detached copy, so edits survive the game window replacing its own rows. */
+  private setDraft(npc: any): void {
+    this.draft = npc ? clone(npc) : null;
+    this.source = npc ? JSON.stringify(npc) : "";
+    this.dirty = false;
+    if (!this.draft) return;
+    const facing = this.draft.position?.direction || this.draft.direction || "down";
+    const ids = (list: unknown) => (Array.isArray(list) ? list : []).map(Number);
+    this.edit = {
+      // A facing the game does not know is saved as "down", as it always was.
+      direction: FACINGS.includes(facing) ? facing : "down",
+      given: ids(this.draft.questsGiven),
+      ended: ids(this.draft.questsEnded),
+      particles: this.normalizeParticleNames(this.draft.particles),
+    };
+  }
+
+  /**
+   * Re-sync the draft with the refreshed list. Unsaved edits win: a list update
+   * can arrive because any player on this map changed an NPC, and that must not
+   * throw away what is being typed.
+   */
+  private refreshDraftFromList(): boolean {
+    if (this.dirty || this.selectedNpcId === null) return false;
+    const fresh = this.npcs.find((n: any) => n.id === this.selectedNpcId);
+    if (!fresh) return false;
+    // Most list updates are about some other NPC. Drawing the page again then
+    // would be for nothing. Nor under an open picker: what is picked there
+    // goes into the draft it was opened on.
+    if (JSON.stringify(fresh) === this.source || dialogOpen()) return false;
+    this.setDraft(fresh);
+    return true;
+  }
+
+  /** Whether anything in the sprite lists changed, so the page is only drawn again when it did. */
+  private storeSpriteData(msg: any): boolean {
+    if (msg.spriteSheets) this.spriteData.spriteSheets = msg.spriteSheets;
+    if (msg.icons) this.spriteData.icons = msg.icons;
+    const sheets = this.spriteData.spriteSheets ?? {};
+    const signature = Object.keys(sheets).sort()
+      .map((slot) => `${slot}:${(sheets[slot] ?? []).length}`).join(",")
+      + `|${(this.spriteData.icons ?? []).length}`;
+    if (signature === this.spriteSignature) return false;
+    this.spriteSignature = signature;
+    this.headThumb = null;
+    return true;
+  }
+
+  private setAvailableQuests(quests: any): boolean {
+    const list = Array.isArray(quests) ? quests : [];
+    const next = list
+      .filter((q: any) => q && q.id !== undefined && q.id !== null)
+      .map((q: any) => ({ id: Number(q.id), name: String(q.name ?? ("Quest #" + q.id)) }))
+      .sort((a: any, b: any) => a.id - b.id);
+    const changed = JSON.stringify(next) !== JSON.stringify(this.availableQuests);
+    this.availableQuests = next;
+    return changed;
+  }
+
+  /**
+   * The open NPC is gone from the list (deleted from its row, elsewhere, or an
+   * unsaved one discarded): close it instead of editing something that no
+   * longer exists.
+   */
+  private dropDeletedSelection(): boolean {
+    if (!this.draft) return false;
+    if (this.npcs.some((n: any) => n.id === this.selectedNpcId)) return false;
+    const label = this.liveLabel();
+    const ours = this.selectedNpcId === null ? this.discarding !== null : this.deleting.has(this.selectedNpcId);
+    this.closeDialogs();
+    this.selectedNpcId = null;
+    this.draft = null;
+    this.dirty = false;
+    if (!ours) toast(`${label} is no longer on this map, so it has been closed here.`, "warning");
+    return true;
+  }
+
+  /** What was asked for and has now happened: the list that came back shows it. */
+  private settlePending(): void {
+    if (this.saving) {
+      clearTimeout(this.saving.timer);
+      toast(`Saved ${this.saving.label}.`);
+      this.saving = null;
+    }
+    for (const [id, asked] of [...this.deleting]) {
+      if (this.npcs.some((n: any) => n.id === id)) continue;
+      clearTimeout(asked.timer);
+      toast(`Deleted ${asked.label}.`);
+      this.deleting.delete(id);
+    }
+    if (this.discarding !== null && !this.npcs.some((n: any) => n.id === null)) {
+      toast(`Discarded ${this.discarding}.`);
+      this.discarding = null;
     }
   }
+
+  private closeDialogs(): void {
+    for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) dialog.close();
+  }
+
+  // ------------------------------------------------------------------- words
 
   /** Named NPCs show their name; only unnamed ones fall back to NPC #id. */
   private npcLabel(npc: any): string {
@@ -175,209 +365,18 @@ class NpcEditorBridge {
     return npc?.id === null || npc?.id === undefined ? "Unsaved NPC" : "NPC #" + npc.id;
   }
 
-  /**
-   * The open NPC is gone from the list (deleted from its row, elsewhere, or an
-   * unsaved one discarded): close it instead of editing something that no
-   * longer exists.
-   */
-  private dropDeletedSelection(): void {
-    if (!this.selectedNpcData) return;
-    const stillThere = this.npcs.some((n: any) => n.id === this.selectedNpcId);
-    if (stillThere) return;
-    this.selectedNpcId = null;
-    this.selectedNpcData = null;
-    this.dirty = false;
-    this.updateChrome();
+  /** The open NPC's name as it is being typed. */
+  private liveLabel(): string {
+    return this.npcLabel({ id: this.selectedNpcId, name: String(this.draft?.name ?? "") });
   }
 
-  private renderNpcList(): void {
-    this.npcListEl.innerHTML = "";
-    const q = this.searchQuery;
-    // New NPCs start from a pinned row at the top of the list.
-    const newRow = document.createElement("div");
-    newRow.className = "editor-item ce-new-row";
-    newRow.title = "New NPC (placed where you stand)";
-    const newLabel = document.createElement("span");
-    newLabel.className = "editor-item-label";
-    newLabel.textContent = "+ New NPC";
-    newRow.appendChild(newLabel);
-    newRow.addEventListener("click", () => {
-      if (this.dirty && !confirm("Discard unsaved changes?")) return;
-      this.send({ type: "createNpc" });
-    });
-    this.npcListEl.appendChild(newRow);
-    for (let i = 0; i < this.npcs.length; i++) {
-      const npc = this.npcs[i];
-      const label = this.npcLabel(npc);
-      if (q && label.toLowerCase().indexOf(q) === -1 && (!npc.name || npc.name.toLowerCase().indexOf(q) === -1)) continue;
-      const item = document.createElement("div");
-      item.className = "editor-item" + (npc.id === this.selectedNpcId ? " active" : "");
-      const labelEl = document.createElement("span");
-      labelEl.className = "editor-item-label";
-      labelEl.textContent = label;
-      const posEl = document.createElement("span");
-      posEl.className = "editor-item-icon";
-      posEl.textContent = "(" + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "-") + ")";
-      item.appendChild(labelEl);
-      item.appendChild(posEl);
-      const del = document.createElement("button");
-      del.type = "button";
-      del.className = "ce-row-delete";
-      del.title = `Delete ${label}`;
-      del.setAttribute("aria-label", `Delete ${label}`);
-      del.innerHTML = TRASH_ICON;
-      del.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.deleteNpc(npc);
-      });
-      item.appendChild(del);
-      item.addEventListener("click", () => this.selectNpc(npc));
-      this.npcListEl.appendChild(item);
-    }
-    this.scrollToListSelection();
+  /** Where an NPC stands, to the pixel: "x 1204, y 388". */
+  private placeOf(npc: any): string {
+    return npc?.position ? `x ${Math.round(npc.position.x || 0)}, y ${Math.round(npc.position.y || 0)}` : "no position yet";
   }
 
-  private scrollToListSelection(): void {
-    const active = this.npcListEl.querySelector(".editor-item.active") as HTMLElement | null;
-    if (active) { active.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
-  }
-
-  private selectNpc(npc: any): void {
-    this.selectedNpcId = npc.id;
-    this.setDraft(npc);
-    this.renderNpcList();
-    this.populateForm();
-    this.send({ type: "selectNpc", id: npc.id });
-    this.scrollToListSelection();
-  }
-
-  private setAvailableQuests(quests: any): void {
-    const list = Array.isArray(quests) ? quests : [];
-    this.availableQuests = list
-      .filter((q: any) => q && q.id !== undefined && q.id !== null)
-      .map((q: any) => ({ id: Number(q.id), name: String(q.name ?? ("Quest #" + q.id)) }))
-      .sort((a: any, b: any) => a.id - b.id);
-    this.renderQuestSelects();
-  }
-
-  private selectedOptions(id: string): number[] {
-    const el = document.getElementById(id);
-    if (!el) return [];
-    return Array.from(el.querySelectorAll('input[type="checkbox"]'))
-      .filter((cb) => (cb as HTMLInputElement).checked)
-      .map((cb) => Number((cb as HTMLInputElement).value))
-      .filter((n) => Number.isFinite(n));
-  }
-
-  // Checkbox lists, not multi-selects: select.editor-form-input is pinned to
-  // 29px height, which collapses a multi-select into a broken single row.
-  private renderQuestSelects(): void {
-    for (const [id, selected] of [["inp-quests-given", this.selectedNpcData?.questsGiven || []], ["inp-quests-ended", this.selectedNpcData?.questsEnded || []]] as Array<[string, any]>) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      const chosen = new Set((Array.isArray(selected) ? selected : []).map(Number));
-      el.innerHTML = "";
-      if (this.availableQuests.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "editor-empty";
-        empty.textContent = "No quests available";
-        el.appendChild(empty);
-        continue;
-      }
-      for (const quest of this.availableQuests) {
-        const item = document.createElement("label");
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.value = String(quest.id);
-        cb.checked = chosen.has(quest.id);
-        cb.addEventListener("change", () => this.markDirty());
-        item.appendChild(cb);
-        item.appendChild(document.createTextNode(` #${quest.id} ${quest.name}`));
-        el.appendChild(item);
-      }
-    }
-  }
-
-  private populateForm(): void {
-    this.hideGossipAc();
-    this.hideScriptAc();
-    this.updateChrome();
-    const npc = this.selectedNpcData;
-    if (!npc) return;
-    const v = (id: string, val: any) => { const el = document.getElementById(id) as HTMLInputElement | null; if (el) { if (el.type === "checkbox") { el.checked = !!val; } else { el.value = val != null ? String(val) : ""; } } };
-    let el = document.getElementById("ne-display-name");
-    if (el) el.textContent = this.npcLabel(npc);
-    el = document.getElementById("ne-display-id");
-    if (el) el.textContent = npc.id === null ? "not saved yet" : "#" + npc.id;
-    el = document.getElementById("ne-display-pos");
-    if (el) el.textContent = "(" + (npc.position ? Math.round(npc.position.x || 0) + ", " + Math.round(npc.position.y || 0) : "-") + ")";
-    this.renderQuestSelects();
-    v("inp-quest-giver", npc.quest_giver || false);
-    v("inp-direction", npc.position?.direction || npc.direction || "down");
-    v("inp-hidden", npc.hidden || false);
-    v("inp-name", npc.name || "");
-    v("inp-dialog", npc.dialog || "");
-    v("inp-gossip", npc.gossip || "");
-    v("inp-script", npc.script || "");
-    this.selectedParticles = this.normalizeParticleNames(npc.particles);
-    this.renderParticleOptions();
-    this.renderAppearance();
-    this.restoreTab();
-  }
-
-  /**
-   * Keep the open tab across refreshes and NPC switches. The tab is editor-wide,
-   * not per NPC: picking another NPC on the left must not drop the user back on
-   * General.
-   */
-  private restoreTab(): void {
-    const exists = document.querySelector('.editor-tab-panel[data-tab="' + this.tab + '"]');
-    this.switchTab(exists ? this.tab : "general");
-  }
-
-  // Appearance tab: the exact same sprite tools as the creature editor, mapped
-  // onto NPC keys (body sheet / static image live in sprite_body; NPCs have no
-  // scale column, so that field is omitted).
-  private appearanceFields(): Field[] {
-    const spriteType = String(this.selectedNpcData?.sprite_type ?? "none");
-    return [
-      { key: "sprite_type", label: "Sprite type", type: "select", options: pick(["animated", "static", "none"]), rerender: true },
-      ...(spriteType === "static"
-        ? [{
-            key: "sprite_body",
-            label: "Static image",
-            type: "asset",
-            assets: () => [
-              { value: "", label: "None" },
-              ...(this.spriteData.icons ?? []).map((i: any) => ({ value: i.name, label: i.name, image: i.image })),
-            ],
-          } as Field]
-        : []),
-      ...(spriteType === "animated"
-        ? ([
-            { key: "sprite_body", label: "Body sheet", type: "sheet", slot: "body", noIcons: true },
-            { key: "sprite_head", label: "Head sheet", type: "sheet", slot: "head", noIcons: true },
-            { key: "sprite_helmet", label: "Helmet", type: "sheet", slot: "helmet" },
-            { key: "sprite_shoulderguards", label: "Shoulders", type: "sheet", slot: "shoulderguards" },
-            { key: "sprite_neck", label: "Neck", type: "sheet", slot: "neck" },
-            { key: "sprite_hands", label: "Gloves", type: "sheet", slot: "hands" },
-            { key: "sprite_chest", label: "Chest", type: "sheet", slot: "chest" },
-            { key: "sprite_feet", label: "Boots", type: "sheet", slot: "feet" },
-            { key: "sprite_legs", label: "Pants", type: "sheet", slot: "legs" },
-            { key: "sprite_weapon", label: "Weapon", type: "sheet", slot: "weapon" },
-          ] as Field[])
-        : []),
-    ];
-  }
-
-  private renderAppearance(): void {
-    const el = document.getElementById("ne-appearance-fields");
-    if (!el || !this.selectedNpcData) return;
-    el.innerHTML = "";
-    const touch = () => this.markDirty();
-    for (const field of orderFields(this.appearanceFields())) {
-      el.appendChild(this.appearance.renderField(field, this.selectedNpcData, touch));
-    }
+  private isUnsaved(): boolean {
+    return this.dirty || this.unsaved.has(this.selectedNpcId);
   }
 
   private normalizeParticleNames(particles: any): string[] {
@@ -387,439 +386,492 @@ class NpcEditorBridge {
       .filter((p): p is string => !!p);
   }
 
-  private switchTab(tabName: string): void {
-    this.tab = tabName;
-    document.querySelectorAll(".editor-tab-btn").forEach((b) => { b.classList.toggle("active", b.getAttribute("data-tab") === tabName); });
-    document.querySelectorAll(".editor-tab-panel").forEach((p) => { p.classList.toggle("active", p.getAttribute("data-tab") === tabName); });
-    try { localStorage.setItem("ne-tab-preference", tabName); } catch { /* storage unavailable */ }
+  private iconImage(name: unknown): string | null {
+    return (this.spriteData.icons ?? []).find((i) => i.name === name)?.image ?? null;
   }
 
-  private renderParticleOptions(): void {
-    this.particleOptionsEl.innerHTML = "";
-    const q = this.particleSearchQuery;
-    for (let i = 0; i < this.availableParticles.length; i++) {
-      const name = this.availableParticles[i];
-      if (q && name.toLowerCase().indexOf(q) === -1) continue;
-      const label = document.createElement("label");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = this.selectedParticles.indexOf(name) >= 0;
-      cb.addEventListener("change", () => {
-        if (cb.checked) { this.selectedParticles.push(name); } else { this.selectedParticles = this.selectedParticles.filter((p) => p !== name); }
-        this.markDirty();
+  /** An NPC's picture: its static image where it has one, a figure otherwise. */
+  private thumbOf(npc: any, size: "" | "lg" | "xl" = ""): HTMLElement {
+    const still = String(npc?.sprite_type ?? "") === "static";
+    return thumb(still ? this.iconImage(npc.sprite_body) : null, { size, fallback: still ? "image" : "user" });
+  }
+
+  // ------------------------------------------------------------------ render
+
+  private renderList(): void {
+    if (!this.ready) return;
+    if (!this.settled) return this.shell.setList({ rows: [], loading: true });
+    this.shell.setCount(this.npcs.length);
+    const q = this.shell.query.toLowerCase();
+    const rows: ListRow[] = [];
+    for (const npc of this.npcs) {
+      const open = !!this.draft && npc.id === this.selectedNpcId;
+      const label = open ? this.liveLabel() : this.npcLabel(npc);
+      if (q && label.toLowerCase().indexOf(q) === -1 && (!npc.name || String(npc.name).toLowerCase().indexOf(q) === -1)) continue;
+      const fresh = npc.id === null || npc.id === undefined;
+      const tags: HTMLElement[] = [];
+      if (fresh) tags.push(tag("New", "warning"));
+      else if (this.unsaved.has(npc.id) || (open && this.dirty)) tags.push(tag("Unsaved", "warning"));
+      if ((open ? this.draft : npc).hidden) tags.push(tag("Hidden", "muted", "eyeOff"));
+      rows.push({
+        id: fresh ? "\u0000new" : String(npc.id), name: label,
+        note: `${fresh ? "Not saved yet" : `#${npc.id}`} · ${this.placeOf(open ? this.draft : npc)}`,
+        thumb: this.thumbOf(open ? this.draft : npc), tags, selected: open,
+        actions: [{ icon: "trash", label: `${fresh ? "Discard" : "Delete"} ${label}`, danger: true, onClick: () => void this.deleteNpc(npc) }],
+        onOpen: () => this.selectNpc(npc),
       });
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(" " + name));
-      this.particleOptionsEl.appendChild(label);
     }
+    this.shell.setList({
+      rows,
+      empty: q
+        ? { icon: "search", title: "No NPCs match that search", text: "Check the spelling, or search for less of the name." }
+        : { title: "No NPCs on this map yet", text: "Place the first one with New NPC: it appears where your character stands." },
+    });
   }
 
-  private getFormData(): any {
-    if (this.selectedNpcData === null && this.selectedNpcId === null) return null;
-    const gv = (id: string) => { const el = document.getElementById(id) as HTMLInputElement | null; return el ? (el.type === "checkbox" ? el.checked : el.value) : null; };
-    const gs = (id: string) => { const el = document.getElementById(id) as HTMLInputElement | null; return el && el.value ? el.value.trim() : null; };
-    return {
-      id: this.selectedNpcId,
-      map: this.selectedNpcData ? this.selectedNpcData.map : "",
-      position: { x: this.selectedNpcData ? (this.selectedNpcData.position?.x || 0) : 0, y: this.selectedNpcData ? (this.selectedNpcData.position?.y || 0) : 0, direction: gs("inp-direction") || "down" },
-      hidden: gv("inp-hidden"),
-      quest_giver: !!gv("inp-quest-giver"),
-      name: gs("inp-name") || null,
-      dialog: gs("inp-dialog") || null,
-      gossip: gs("inp-gossip") || null,
-      script: gs("inp-script") || null,
-      questsGiven: this.selectedOptions("inp-quests-given"),
-      questsEnded: this.selectedOptions("inp-quests-ended"),
-      particles: this.selectedParticles.slice(),
-      // Sprite values are edited in place on the selected NPC by the shared
-      // appearance fields; read them back from there.
-      sprite_type: this.selectedNpcData?.sprite_type || "none",
-      sprite_body: this.selectedNpcData?.sprite_body ?? null,
-      sprite_head: this.selectedNpcData?.sprite_head ?? null,
-      sprite_helmet: this.selectedNpcData?.sprite_helmet ?? null,
-      sprite_shoulderguards: this.selectedNpcData?.sprite_shoulderguards ?? null,
-      sprite_neck: this.selectedNpcData?.sprite_neck ?? null,
-      sprite_hands: this.selectedNpcData?.sprite_hands ?? null,
-      sprite_chest: this.selectedNpcData?.sprite_chest ?? null,
-      sprite_feet: this.selectedNpcData?.sprite_feet ?? null,
-      sprite_legs: this.selectedNpcData?.sprite_legs ?? null,
-      sprite_weapon: this.selectedNpcData?.sprite_weapon ?? null,
+  /** Bring the open NPC's row into view, as when it was picked in the world. */
+  private showSelection(): void {
+    document.querySelector("#tl-side .tl-list-row.is-selected")?.scrollIntoView({ block: "nearest" });
+  }
+
+  /** The top bar, the banner and the tabs: which NPC is open, how it stands, and what can be done to it. */
+  private chrome(): void {
+    const d = this.draft;
+    const { shell } = this;
+    if (!d) {
+      shell.setRecord(null);
+      shell.setState(null);
+      shell.setActions({ open: false });
+      shell.setTabs(null);
+      shell.setBanner(null);
+      return;
+    }
+    const fresh = this.selectedNpcId === null;
+    // The picture is only drawn again when it changes, not at every key typed.
+    const looks = `${d.sprite_type}:${d.sprite_body}`;
+    if (this.headThumb?.key !== looks) this.headThumb = { key: looks, node: this.thumbOf(d, "lg") };
+    shell.setRecord({ title: this.liveLabel(), note: `${fresh ? "Not saved yet" : `NPC #${this.selectedNpcId}`} · ${this.placeOf(d)}`, thumb: this.headThumb.node });
+
+    const saving = !!this.saving && this.saving.id === this.selectedNpcId;
+    const deleting = !fresh && this.deleting.has(this.selectedNpcId!);
+    if (saving) shell.setState("saving");
+    else if (deleting) shell.setState("deleting");
+    else if (this.unconfirmed.has(this.selectedNpcId)) shell.setState("unconfirmed");
+    else shell.setState(fresh ? "new" : this.isUnsaved() ? "unsaved" : "saved");
+
+    shell.setActions({
+      open: true, dirty: fresh || this.isUnsaved(),
+      busy: saving ? "save" : deleting ? "delete" : null,
+      // An NPC that was never saved is discarded, not deleted: the button says which.
+      ...(fresh ? { deleteTip: "Discard this NPC: it was never saved" } : {}),
+    });
+    shell.setTabs(this.tab);
+    shell.setBanner(fresh
+      ? { tone: "info", icon: "pin", text: "This NPC stands where your character stood when you placed it. Drag it in the game window to move it. It is only kept once you save it." }
+      : null);
+  }
+
+  private switchTab(tab: string): void {
+    this.tab = tab;
+    try { localStorage.setItem("ne-tab-preference", tab); } catch { /* storage unavailable */ }
+    this.renderForm();
+  }
+
+  /** Draws the page again, unless a dialog is open over it: then it waits until the dialog has closed. */
+  private redraw(): void {
+    if (dialogOpen()) {
+      this.stale = true;
+      this.chrome();
+    } else this.renderForm();
+  }
+
+  private renderForm(): void {
+    this.stale = false;
+    this.completer.hide();
+    this.chrome();
+    this.summaryEl = this.placeEl = null;
+    if (!this.ready) return;
+    if (!this.draft) {
+      const box = this.shell.idle(
+        "Pick an NPC from the list on the left or click one in the game window, or place a new one where your character stands.",
+        this.npcs.length === 0 ? "This map has none. Place the first one where your character stands." : null,
+      );
+      box.appendChild(button("New NPC", () => void this.createNpc(), { icon: "plus", kind: "primary" }));
+      return;
+    }
+    const { main, aside } = this.shell.page(`${this.opened}:${this.tab}`, { aside: true });
+
+    if (this.tab === "appearance") this.renderAppearance(main);
+    else if (this.tab === "content") this.renderContent(main);
+    else if (this.tab === "quests") this.renderQuests(main);
+    else if (this.tab === "effects") this.renderEffects(main);
+    else this.renderGeneral(main);
+
+    // The NPC in plain words, beside the form on every tab.
+    const { body } = card(aside, "At a glance", "The NPC as players find it");
+    this.summaryEl = el("div", "tl-summary ne-summary");
+    body.appendChild(this.summaryEl);
+    this.paintLive();
+  }
+
+  private renderGeneral(main: HTMLElement): void {
+    const d = this.draft;
+    const who = this.section(main, "NPC", "What it is called");
+    who.appendChild(this.field({ key: "name", label: "Name", type: "text", maxLength: 64, hint: "What players see the NPC called. Leave it empty for an NPC without a name." }, d, "name"));
+
+    const placement = card(main, "Placement", "Where the NPC stands and which way it faces");
+    const facts = el("div", "tl-facts ne-place");
+    const fact = (label: string, value: string, note = "") => {
+      const box = el("div", "tl-fact");
+      const said = el("div", "tl-fact-value", value);
+      box.append(el("div", "tl-fact-label", label), said);
+      if (note) box.appendChild(el("div", "tl-fact-note", note));
+      facts.appendChild(box);
+      return said;
     };
-  }
-
-  private markDirty(): void {
-    this.dirty = true;
-    this.sendFormUpdate();
-    // The page title follows the Name field as it is typed.
-    const title = document.getElementById("ne-display-name");
-    const name = (document.getElementById("inp-name") as HTMLInputElement | null)?.value.trim();
-    if (title && this.selectedNpcData) title.textContent = name || this.npcLabel({ id: this.selectedNpcId });
-    this.updateSaveIcon();
+    fact("Map", d.map ? String(d.map) : "The map you are on", d.map ? "" : "Set when the NPC is saved.");
+    this.placeEl = fact("Position", this.placeOf(d), "Drag the NPC in the game window to move it.");
+    const grid = el("div", "tl-fields");
+    placement.body.append(facts, grid);
+    grid.appendChild(this.field(
+      { key: "direction", label: "Facing", type: "segmented", options: () => FACINGS.map((value) => ({ value, label: FACING_WORDS[value] })) },
+      this.edit, "direction"
+    ));
+    grid.appendChild(this.field({ key: "hidden", label: "Hidden", type: "switch", hint: "Hidden NPCs are not shown to players." }, d, "hidden"));
   }
 
   /**
-   * Form, tabs content and save icon only show while an NPC is open; with
-   * none (e.g. it was deleted) an empty-state message takes their place.
+   * Appearance: the same sprite tools as the creature editor, mapped onto NPC
+   * keys. The body sheet and the static image both live in sprite_body; NPCs
+   * have no scale.
    */
-  private updateChrome(): void {
-    const has = !!this.selectedNpcData;
-    const panels = document.getElementById("ne-panels");
-    const empty = document.getElementById("ne-empty");
-    if (panels) panels.hidden = !has;
-    if (empty) empty.hidden = has;
-    this.saveBtn.hidden = !has;
-    this.updateSaveIcon();
+  private renderAppearance(main: HTMLElement): void {
+    const d = this.draft;
+    const spriteType = String(d.sprite_type ?? "none");
+    const how: Record<string, string> = {
+      animated: "Drawn from sprite sheets, one over the other, as a player is.",
+      static: "Drawn as one still image.",
+      none: "Nothing is drawn where the NPC stands.",
+    };
+    const shape: Field[] = [
+      { key: "sprite_type", label: "Sprite type", type: "segmented", options: () => Object.entries(SPRITE_WORDS).map(([value, label]) => ({ value, label })), rerender: true, wide: true, hint: how[spriteType] ?? "" },
+      ...(spriteType === "static"
+        ? [{
+            key: "sprite_body", label: "Static image", type: "asset", rerender: true,
+            assets: () => [
+              { value: "", label: "None" },
+              ...(this.spriteData.icons ?? []).map((i: any) => ({ value: i.name, label: i.name, image: i.image })),
+            ],
+          } as Field]
+        : []),
+      ...(spriteType === "animated"
+        ? ([
+            { key: "sprite_body", label: "Body sheet", type: "sheet", slot: "body", noIcons: true, rerender: true },
+            { key: "sprite_head", label: "Head sheet", type: "sheet", slot: "head", noIcons: true, rerender: true },
+          ] as Field[])
+        : []),
+    ];
+    const sprite = this.section(main, "Sprite", "How the NPC is drawn in the world");
+    for (const field of orderFields(shape)) sprite.appendChild(this.field(field, d, field.key));
+
+    if (spriteType !== "animated") return;
+    const worn = this.section(main, "Worn", "Sprite sheets drawn over the body and head");
+    for (const piece of WORN) worn.appendChild(this.field({ key: piece.key, label: piece.label, type: "sheet", slot: piece.slot, rerender: true }, d, piece.key));
   }
 
-  /** Save icon: faded with nothing to save, highlighted with unsaved changes. */
-  private updateSaveIcon(): void {
-    // A new NPC counts as unsaved until the server gives it an id.
-    const changes = !!this.selectedNpcData && (this.dirty || this.selectedNpcId === null);
-    this.saveBtn.classList.toggle("has-changes", changes);
-    this.saveBtn.title = changes ? "Save changes (Ctrl+S)" : "No unsaved changes";
+  private renderContent(main: HTMLElement): void {
+    const d = this.draft;
+    const says = this.section(main, "Dialogue", "What the NPC says to players");
+    says.appendChild(this.field(
+      { key: "dialog", label: "Says when clicked", type: "textarea", maxLength: 500, rows: 3, hint: "What the NPC says to a player who clicks it. Up to 500 characters." },
+      d, "dialog"
+    ));
+    says.appendChild(this.completed(
+      { key: "gossip", label: "Gossip chain", type: "textarea", maxLength: 5000, rows: 5, hint: "One line per step; the NPC cycles through them over time. Type ${ to insert a detail of the player, for example ${player.name}." },
+      "gossip", GOSSIP_RULES
+    ));
+
+    const script = this.section(main, "Script", "Code the game runs for this NPC");
+    const code = this.completed(
+      { key: "script", label: "Script", type: "textarea", maxLength: 5000, rows: 6, hint: "Runs with the NPC as `this`, so its own members need no prefix: dialogue(), show(). Up to 5,000 characters." },
+      "script", SCRIPT_RULES
+    );
+    code.querySelector("textarea")!.classList.add("ne-code");
+    script.appendChild(code);
   }
 
-  // ---- Gossip ${player...} autocomplete ----
-  // Popup only ever appears inside an unclosed ${...} expression.
-  private gossipAcEl: HTMLDivElement | null = null;
-  private gossipAcItems: Array<{ insert: string; label: string; hint: string; keepOpen: boolean }> = [];
-  private gossipAcIndex = 0;
-  private gossipAcTokenStart = 0;
+  private renderQuests(main: HTMLElement): void {
+    const quests = this.section(main, "Quests", "Quests this NPC hands out and takes back");
+    quests.appendChild(this.field(
+      { key: "quest_giver", label: "Quest giver", type: "switch", wide: true, hint: "Only quest givers can be given quests, here or in the quest editor." },
+      this.draft, "quest_giver"
+    ));
+    const choices = (): Choice<number>[] => this.availableQuests.map((q) => ({ value: q.id, label: q.name, mark: `#${q.id}`, note: `#${q.id}` }));
+    quests.appendChild(manyField<number>({
+      path: "questsGiven", label: "Gives these quests", noun: "quest", choices, gone: "this quest no longer exists, so it is left out when the NPC is saved",
+      get: () => this.edit.given,
+      set: (next) => {
+        this.edit.given = next;
+        this.touched("questsGiven");
+      },
+    }));
+    quests.appendChild(manyField<number>({
+      path: "questsEnded", label: "Takes these quests back", noun: "quest", choices, gone: "this quest no longer exists, so it is left out when the NPC is saved",
+      get: () => this.edit.ended,
+      set: (next) => {
+        this.edit.ended = next;
+        this.touched("questsEnded");
+      },
+    }));
+  }
 
-  private static readonly GOSSIP_TOP: Array<{ path: string; hint: string; branch?: boolean }> = [
-    { path: "name", hint: "username" },
-    { path: "username", hint: "login name" },
-    { path: "userid", hint: "account id" },
-    { path: "level", hint: "level" },
-    { path: "guild_name", hint: "guild name" },
-    { path: "mounted", hint: "mounted?" },
-    { path: "isAdmin", hint: "admin?" },
-    { path: "isGuest", hint: "guest?" },
-    { path: "stats", hint: "stats…", branch: true },
-    { path: "currency", hint: "currency…", branch: true },
-  ];
+  private renderEffects(main: HTMLElement): void {
+    const particles = this.section(main, "Particles", "Effects that play around the NPC");
+    particles.appendChild(manyField<string>({
+      path: "particles", label: "Particles", noun: "particle", hint: "Made in the particle editor.",
+      choices: () => this.availableParticles.map((name) => ({ value: name, label: name })),
+      gone: "there is no particle of this name",
+      get: () => this.edit.particles,
+      set: (next) => {
+        this.edit.particles = next;
+        this.touched("particles");
+      },
+    }));
+  }
 
-  private static readonly GOSSIP_STATS = [
-    "level", "xp", "max_xp", "health", "max_health", "total_max_health",
-    "stamina", "max_stamina", "total_max_stamina", "stat_damage", "stat_armor",
-    "stat_health", "stat_stamina", "stat_critical_chance", "stat_critical_damage",
-    "stat_avoidance",
-  ];
+  // ------------------------------------------------------------- plain words
 
-  private static readonly GOSSIP_CURRENCY = ["copper", "silver", "gold"];
+  /** The NPC as players find it, in plain words: one sentence to a line. */
+  private summary(): HTMLElement[] {
+    const d = this.draft;
+    const out: HTMLElement[] = [];
+    const say = (text: string) => out.push(el("p", "", text));
+    const fresh = this.selectedNpcId === null;
 
-  private setupGossipAc(): void {
-    const ta = document.getElementById("inp-gossip") as HTMLTextAreaElement | null;
-    if (!ta) return;
-    ta.addEventListener("input", () => this.updateGossipAc());
-    ta.addEventListener("click", () => this.updateGossipAc());
-    ta.addEventListener("blur", () => window.setTimeout(() => this.hideGossipAc(), 150));
-    ta.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (!this.gossipAcEl) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
-        const n = this.gossipAcItems.length;
-        if (n > 0) this.paintGossipAc((this.gossipAcIndex + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
-      } else if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.applyGossipAc();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.hideGossipAc();
+    const head = el("div", "tl-preview-head");
+    const said = el("div", "tl-preview-words");
+    said.append(el("span", "tl-preview-name", this.liveLabel()), el("span", "tl-preview-kind", fresh ? "NPC, not saved yet" : `NPC #${this.selectedNpcId}`));
+    head.append(this.thumbOf(d, "xl"), said);
+    out.push(head);
+
+    const where = `${this.placeOf(d)}${d.map ? ` on ${d.map}` : ""}`;
+    say(`Stands at ${where}, facing ${this.edit.direction}.${d.hidden ? " Hidden: players do not see it." : ""}`);
+
+    const spriteType = String(d.sprite_type ?? "none");
+    if (spriteType === "static") say(d.sprite_body ? `Drawn as the still image ${d.sprite_body}.` : "Set to a still image, but none is picked yet, so nothing is drawn.");
+    else if (spriteType === "animated") {
+      const worn = WORN.filter((piece) => d[piece.key]);
+      if (!d.sprite_body && !d.sprite_head) say("Set to animated, but it has no body or head sheet yet.");
+      else say(`Animated${d.sprite_body ? `, with the body ${d.sprite_body}` : ", with no body sheet"}${d.sprite_head ? ` and the head ${d.sprite_head}` : " and no head sheet"}.`);
+      if (worn.length > 0) {
+        say(`Wears ${count(worn.length, "piece")}:`);
+        const layers = el("div", "ne-layers");
+        for (const piece of worn) {
+          const image = (this.spriteData.spriteSheets?.[piece.slot] ?? []).find((sheet) => sheet.name === d[piece.key])?.image ?? null;
+          const box = thumb(image, { size: "lg", fallback: "layers" });
+          box.removeAttribute("aria-hidden");
+          box.setAttribute("role", "img");
+          box.setAttribute("aria-label", `${piece.label}: ${d[piece.key]}`);
+          tooltip(box, `${piece.label}: ${d[piece.key]}`);
+          layers.appendChild(box);
+        }
+        out.push(layers);
       }
-    });
-  }
+    } else say("Has no sprite, so nothing is drawn where it stands.");
 
-  /** Candidates for the inner text of an unclosed ${...}; [] means no popup. */
-  private gossipAcCandidates(inner: string): Array<{ insert: string; label: string; hint: string; keepOpen: boolean }> {
-    const leaf = (base: string, path: string, hint: string) => ({ insert: `${base}${path}`, label: `${base}${path}`, hint, keepOpen: false });
-    if (!inner || (!inner.includes(".") && "player".startsWith(inner))) {
-      return [{ insert: "player.", label: "player", hint: "current player…", keepOpen: true }];
+    const dialog = String(d.dialog ?? "").trim();
+    if (dialog) {
+      say("When clicked, says:");
+      out.push(el("p", "ne-quote", dialog));
+    } else say("Says nothing when clicked.");
+    const gossip = String(d.gossip ?? "").split("\n").filter((line) => line.trim()).length;
+    if (gossip > 0) say(`Cycles through ${count(gossip, "line")} of gossip.`);
+
+    const quests = (picked: number[]) => this.availableQuests.filter((q) => picked.includes(q.id)).length;
+    const given = quests(this.edit.given);
+    const ended = quests(this.edit.ended);
+    if (given + ended === 0) say(d.quest_giver ? "A quest giver, with no quests yet." : "Not a quest giver.");
+    else {
+      const parts = [given > 0 ? `gives ${count(given, "quest")}` : "", ended > 0 ? `takes ${count(ended, "quest")} back` : ""].filter(Boolean);
+      const does = listed(parts);
+      say(`${does.charAt(0).toUpperCase()}${does.slice(1)}${d.quest_giver ? "." : ", but is not marked as a quest giver."}`);
     }
-    if (inner === "player" || inner.startsWith("player.")) {
-      const rest = inner.startsWith("player.") ? inner.slice("player.".length) : "";
-      if (rest.includes(".")) {
-        const [head, ...tailParts] = rest.split(".");
-        const tail = tailParts.join(".");
-        const pool = head === "stats" ? NpcEditorBridge.GOSSIP_STATS
-          : head === "currency" ? NpcEditorBridge.GOSSIP_CURRENCY
-          : null;
-        if (!pool || tail.includes(".")) return [];
-        return pool
-          .filter((f) => f.toLowerCase().startsWith(tail.toLowerCase()))
-          .map((f) => leaf("player." + head + ".", f, head === "stats" ? "stat" : "coins"));
-      }
-      const out: Array<{ insert: string; label: string; hint: string; keepOpen: boolean }> = [];
-      for (const f of NpcEditorBridge.GOSSIP_TOP) {
-        if (!f.path.toLowerCase().startsWith(rest.toLowerCase())) continue;
-        if (f.branch) out.push({ insert: `player.${f.path}.`, label: `player.${f.path}.`, hint: f.hint, keepOpen: true });
-        else out.push(leaf("player.", f.path, f.hint));
-      }
-      return out;
-    }
-    return [];
-  }
 
-  private updateGossipAc(): void {
-    const ta = document.getElementById("inp-gossip") as HTMLTextAreaElement | null;
-    if (!ta || document.activeElement !== ta) { this.hideGossipAc(); return; }
-    const caret = ta.selectionStart ?? ta.value.length;
-    const before = ta.value.slice(0, caret);
-    const match = before.match(/(\$\{[A-Za-z0-9_.]*)$/);
-    if (!match) { this.hideGossipAc(); return; }
-    const inner = match[1].slice(2);
-    const items = this.gossipAcCandidates(inner);
-    if (items.length === 0) { this.hideGossipAc(); return; }
-    this.gossipAcItems = items;
-    this.gossipAcTokenStart = caret - match[1].length;
-    this.paintGossipAc(0);
-  }
-
-  private paintGossipAc(selected: number): void {
-    this.gossipAcIndex = selected;
-    const ta = document.getElementById("inp-gossip") as HTMLTextAreaElement | null;
-    if (!ta) { this.hideGossipAc(); return; }
-    if (!this.gossipAcEl) {
-      const el = document.createElement("div");
-      el.className = "qe-ac-popup";
-      document.body.appendChild(el);
-      this.gossipAcEl = el;
-    }
-    const el = this.gossipAcEl;
-    el.innerHTML = "";
-    this.gossipAcItems.forEach((item, i) => {
-      const row = document.createElement("div");
-      row.className = "qe-ac-row" + (i === selected ? " active" : "");
-      const name = document.createElement("span");
-      name.className = "qe-ac-name";
-      name.textContent = "${" + item.label + "}";
-      const hint = document.createElement("span");
-      hint.className = "qe-ac-hint";
-      hint.textContent = item.hint;
-      row.appendChild(name);
-      row.appendChild(hint);
-      row.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        this.paintGossipAc(i);
-        this.applyGossipAc();
-      });
-      el.appendChild(row);
-    });
-    const rect = ta.getBoundingClientRect();
-    el.style.left = `${Math.min(rect.left, window.innerWidth - 300)}px`;
-    el.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 200)}px`;
-    el.style.display = "block";
-  }
-
-  private applyGossipAc(): void {
-    const ta = document.getElementById("inp-gossip") as HTMLTextAreaElement | null;
-    const item = this.gossipAcItems[this.gossipAcIndex];
-    if (!ta || !item) { this.hideGossipAc(); return; }
-    const caret = ta.selectionStart ?? ta.value.length;
-    // Branch picks (player, stats…) leave the expression open for the next
-    // level; leaves close it.
-    const suffix = item.keepOpen ? "" : "}";
-    ta.value = ta.value.slice(0, this.gossipAcTokenStart) + "${" + item.insert + suffix + ta.value.slice(caret);
-    const after = this.gossipAcTokenStart + item.insert.length + 2 + suffix.length;
-    ta.focus();
-    ta.setSelectionRange(after, after);
-    this.markDirty();
-    if (item.keepOpen) this.updateGossipAc();
-    else this.hideGossipAc();
-  }
-
-  private hideGossipAc(): void {
-    if (this.gossipAcEl) this.gossipAcEl.style.display = "none";
-    this.gossipAcItems = [];
-    this.gossipAcIndex = 0;
-  }
-
-  // ---- Script identifier autocomplete (inp-script) ----
-  // Same popup behavior as the gossip autocomplete, but scripts run with
-  // `with(this)` on the NPC object, so candidates are plain NPC members and
-  // no ${} wrapper is required or added.
-  private static readonly SCRIPT_TOP: Array<{ path: string; hint: string; branch?: boolean; fn?: boolean }> = [
-    { path: "id", hint: "npc id" },
-    { path: "name", hint: "name" },
-    { path: "dialog", hint: "dialog line" },
-    { path: "gossip", hint: "gossip chain" },
-    { path: "hidden", hint: "hidden?" },
-    { path: "direction", hint: "facing" },
-    { path: "position", hint: "position…", branch: true },
-    { path: "particles", hint: "particles" },
-    { path: "sprite_type", hint: "sprite type" },
-    { path: "quest_giver", hint: "quest giver?" },
-    { path: "dialogue", hint: "draw bubble()", fn: true },
-    { path: "show", hint: "draw sprite()", fn: true },
-    { path: "updateParticle", hint: "emit particle()", fn: true },
-  ];
-
-  private static readonly SCRIPT_POSITION = ["x", "y"];
-
-  private scriptAcEl: HTMLDivElement | null = null;
-  private scriptAcItems: Array<{ insert: string; label: string; hint: string; keepOpen: boolean; caretBack?: number }> = [];
-  private scriptAcIndex = 0;
-  private scriptAcTokenStart = 0;
-
-  private setupScriptAc(): void {
-    const ta = document.getElementById("inp-script") as HTMLTextAreaElement | null;
-    if (!ta) return;
-    ta.addEventListener("input", () => this.updateScriptAc());
-    ta.addEventListener("click", () => this.updateScriptAc());
-    ta.addEventListener("blur", () => window.setTimeout(() => this.hideScriptAc(), 150));
-    ta.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (!this.scriptAcEl) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
-        const n = this.scriptAcItems.length;
-        if (n > 0) this.paintScriptAc((this.scriptAcIndex + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
-      } else if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.applyScriptAc();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.hideScriptAc();
-      }
-    });
-  }
-
-  /** Candidates for a trailing bare identifier; [] means no popup. */
-  private scriptAcCandidates(token: string): Array<{ insert: string; label: string; hint: string; keepOpen: boolean; caretBack?: number }> {
-    const leaf = (insert: string, label: string, hint: string, extra?: { keepOpen?: boolean; caretBack?: number }) =>
-      ({ insert, label, hint, keepOpen: extra?.keepOpen ?? false, caretBack: extra?.caretBack });
-    if (token.includes(".")) {
-      const [head, ...tailParts] = token.split(".");
-      const tail = tailParts.join(".");
-      if (head !== "position" || tail.includes(".")) return [];
-      return NpcEditorBridge.SCRIPT_POSITION
-        .filter((f) => f.toLowerCase().startsWith(tail.toLowerCase()))
-        .map((f) => leaf(`position.${f}`, `position.${f}`, head === "position" ? "coord" : ""));
-    }
-    const out: Array<{ insert: string; label: string; hint: string; keepOpen: boolean; caretBack?: number }> = [];
-    for (const f of NpcEditorBridge.SCRIPT_TOP) {
-      if (!f.path.toLowerCase().startsWith(token.toLowerCase())) continue;
-      if (f.branch) out.push({ insert: `${f.path}.`, label: `${f.path}.`, hint: f.hint, keepOpen: true });
-      else if (f.fn) out.push(leaf(`${f.path}()`, f.path, f.hint, { caretBack: 1 }));
-      else out.push(leaf(f.path, f.path, f.hint));
-    }
+    if (this.edit.particles.length > 0) say(`Plays ${listed(this.edit.particles)} around it.`);
+    if (String(d.script ?? "").trim()) say("Runs a script.");
     return out;
   }
 
-  private updateScriptAc(): void {
-    const ta = document.getElementById("inp-script") as HTMLTextAreaElement | null;
-    if (!ta || document.activeElement !== ta) { this.hideScriptAc(); return; }
-    const caret = ta.selectionStart ?? ta.value.length;
-    // Only at a word end: typing mid-word must not pop up or rewrite text.
-    if (caret < ta.value.length && /[A-Za-z0-9_]/.test(ta.value[caret])) { this.hideScriptAc(); return; }
-    const before = ta.value.slice(0, caret);
-    const match = before.match(/([A-Za-z_][A-Za-z0-9_.]*)$/);
-    if (!match || match[1].length === 0) { this.hideScriptAc(); return; }
-    const items = this.scriptAcCandidates(match[1]);
-    if (items.length === 0) { this.hideScriptAc(); return; }
-    this.scriptAcItems = items;
-    this.scriptAcTokenStart = caret - match[1].length;
-    this.paintScriptAc(0);
+  /** The parts that follow the fields and the world as they change: where the NPC stands, and the summary. */
+  private paintLive(): void {
+    if (!this.draft) return;
+    if (this.placeEl) this.placeEl.textContent = this.placeOf(this.draft);
+    if (this.summaryEl) this.summaryEl.replaceChildren(...this.summary());
   }
 
-  private paintScriptAc(selected: number): void {
-    this.scriptAcIndex = selected;
-    const ta = document.getElementById("inp-script") as HTMLTextAreaElement | null;
-    if (!ta) { this.hideScriptAc(); return; }
-    if (!this.scriptAcEl) {
-      const el = document.createElement("div");
-      el.className = "qe-ac-popup";
-      document.body.appendChild(el);
-      this.scriptAcEl = el;
-    }
-    const el = this.scriptAcEl;
-    el.innerHTML = "";
-    this.scriptAcItems.forEach((item, i) => {
-      const row = document.createElement("div");
-      row.className = "qe-ac-row" + (i === selected ? " active" : "");
-      const name = document.createElement("span");
-      name.className = "qe-ac-name";
-      name.textContent = item.label;
-      const hint = document.createElement("span");
-      hint.className = "qe-ac-hint";
-      hint.textContent = item.hint;
-      row.appendChild(name);
-      row.appendChild(hint);
-      row.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        this.paintScriptAc(i);
-        this.applyScriptAc();
-      });
-      el.appendChild(row);
+  // ------------------------------------------------------------------ fields
+
+  /** A titled card appended to `parent`; returns its field grid. */
+  private section(parent: HTMLElement, title: string, lead = ""): HTMLElement {
+    const grid = el("div", "tl-fields");
+    card(parent, title, lead).body.appendChild(grid);
+    return grid;
+  }
+
+  /** One form field editing `target[field.key]`. Every change is told to the game window, which shows it in the world. */
+  private field(field: Field, target: any, path: string): HTMLElement {
+    return this.fields.renderField({ ...field, path }, target, () => this.touched(path));
+  }
+
+  /** A text box of the NPC with suggestions as it is typed in: a gossip line's player details, a script's NPC members. */
+  private completed(field: Field, path: string, rules: CompleterRules): HTMLElement {
+    const wrap = this.field(field, this.draft, path);
+    const area = wrap.querySelector("textarea")!;
+    this.completer.attach(area, rules, () => {
+      this.draft[field.key] = area.value;
+      this.touched(path);
     });
-    const rect = ta.getBoundingClientRect();
-    el.style.left = `${Math.min(rect.left, window.innerWidth - 300)}px`;
-    el.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 200)}px`;
-    el.style.display = "block";
+    return wrap;
   }
 
-  private applyScriptAc(): void {
-    const ta = document.getElementById("inp-script") as HTMLTextAreaElement | null;
-    const item = this.scriptAcItems[this.scriptAcIndex];
-    if (!ta || !item) { this.hideScriptAc(); return; }
-    const caret = ta.selectionStart ?? ta.value.length;
-    ta.value = ta.value.slice(0, this.scriptAcTokenStart) + item.insert + ta.value.slice(caret);
-    const after = this.scriptAcTokenStart + item.insert.length - (item.caretBack ?? 0);
-    ta.focus();
-    ta.setSelectionRange(after, after);
-    this.markDirty();
-    if (item.keepOpen) this.updateScriptAc();
-    else this.hideScriptAc();
+  /**
+   * What the game window is sent: the NPC as the form has it now. The game
+   * window keeps the position (it is dragged there) and the map.
+   */
+  private formData(): any {
+    if (this.draft === null && this.selectedNpcId === null) return null;
+    const d = this.draft;
+    // Text is trimmed, and nothing at all is sent as null.
+    const text = (value: unknown) => (value ? String(value).trim() : null) || null;
+    // Only quests that exist are sent, in the order of their ids.
+    const quests = (picked: number[]) => this.availableQuests.filter((q) => picked.includes(q.id)).map((q) => q.id);
+    return {
+      id: this.selectedNpcId,
+      map: d ? d.map : "",
+      position: { x: d ? (d.position?.x || 0) : 0, y: d ? (d.position?.y || 0) : 0, direction: this.edit.direction || "down" },
+      hidden: !!d?.hidden,
+      quest_giver: !!d?.quest_giver,
+      name: text(d?.name),
+      dialog: text(d?.dialog),
+      gossip: text(d?.gossip),
+      script: text(d?.script),
+      questsGiven: quests(this.edit.given),
+      questsEnded: quests(this.edit.ended),
+      particles: this.edit.particles.slice(),
+      sprite_type: d?.sprite_type || "none",
+      sprite_body: d?.sprite_body ?? null,
+      sprite_head: d?.sprite_head ?? null,
+      sprite_helmet: d?.sprite_helmet ?? null,
+      sprite_shoulderguards: d?.sprite_shoulderguards ?? null,
+      sprite_neck: d?.sprite_neck ?? null,
+      sprite_hands: d?.sprite_hands ?? null,
+      sprite_chest: d?.sprite_chest ?? null,
+      sprite_feet: d?.sprite_feet ?? null,
+      sprite_legs: d?.sprite_legs ?? null,
+      sprite_weapon: d?.sprite_weapon ?? null,
+    };
   }
 
-  private hideScriptAc(): void {
-    if (this.scriptAcEl) this.scriptAcEl.style.display = "none";
-    this.scriptAcItems = [];
-    this.scriptAcIndex = 0;
+  /** Something was changed: there is something to save, and the game window is told, so the world shows it. */
+  private touched(path: string): void {
+    this.dirty = true;
+    const marked = this.unsaved.has(this.selectedNpcId);
+    this.unsaved.add(this.selectedNpcId);
+    this.unconfirmed.delete(this.selectedNpcId);
+    const data = this.formData();
+    if (data) this.send({ type: "fieldUpdate", npc: data });
+    this.chrome();
+    this.paintLive();
+    // The list follows the name as it is typed, and marks the NPC as changed.
+    if (!marked || path === "name" || path === "hidden") this.renderList();
   }
 
-  private sendFormUpdate(): void { const data = this.getFormData(); if (data) this.send({ type: "fieldUpdate", npc: data }); }
+  // ----------------------------------------------------------------- actions
+
+  private selectNpc(npc: any): void {
+    this.selectedNpcId = npc.id;
+    this.setDraft(npc);
+    this.opened++;
+    this.renderList();
+    this.renderForm();
+    this.send({ type: "selectNpc", id: npc.id });
+    this.showSelection();
+  }
+
+  /** Place a new NPC where the admin's character stands. The game window makes it, and opens it here. */
+  private async createNpc(): Promise<void> {
+    if (this.draft && this.isUnsaved() && this.selectedNpcId !== null) {
+      const label = this.liveLabel();
+      const agreed = await confirmDialog({
+        title: `Leave ${label} unsaved?`,
+        body: [
+          `What you changed in ${label} has not been saved.`,
+          "It stays as you left it while this editor is open, and is lost if the editor is closed before it is saved.",
+        ],
+        okLabel: "Place a new NPC", cancelLabel: "Keep editing", danger: false,
+      });
+      if (!agreed) return;
+    }
+    this.send({ type: "createNpc" });
+    // The game window places one new NPC at a time, and does nothing while one is waiting to be saved.
+    const waiting = this.npcs.find((n: any) => n.id === null);
+    if (waiting) toast(`${this.npcLabel(waiting)} has not been saved yet. Save or discard it before placing another.`, "warning");
+  }
 
   private saveNpc(): void {
-    if (this.selectedNpcId === null && !this.selectedNpcData) return;
-    const data = this.getFormData();
+    if (this.selectedNpcId === null && !this.draft) return;
+    if (this.saving) return;
+    const data = this.formData();
     if (!data) return;
+    const id = this.selectedNpcId;
+    const label = this.liveLabel();
     this.dirty = false;
+    this.unsaved.delete(id);
+    this.unconfirmed.delete(id);
     this.send({ type: "saveNpc", npc: data });
-    this.updateSaveIcon();
-    this.status("Saving...");
-    this.statusOnListUpdate = "Saved";
+    const asked = {
+      id, label,
+      timer: setTimeout(() => {
+        if (this.saving !== asked) return;
+        this.saving = null;
+        this.unconfirmed.add(asked.id);
+        this.chrome();
+        toast(`The server did not answer in time, so the save of ${label} was not confirmed.`, "error");
+      }, ANSWER_MS),
+    };
+    this.saving = asked;
+    this.chrome();
+    this.renderList();
   }
 
-  /** Delete an NPC from its list row (an unsaved one is just discarded). */
-  private deleteNpc(npc: any): void {
+  /** Delete an NPC, from its list row or the top bar. One that was never saved is just discarded. */
+  private async deleteNpc(npc: any): Promise<void> {
     if (!npc) return;
-    const overlay = document.createElement("div"); overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div"); box.className = "editor-modal-box";
-    const label = this.npcLabel(npc);
-    const unsaved = npc.id === null || npc.id === undefined;
-    box.innerHTML = '<h3></h3><p></p><div class="editor-modal-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger"></button></div>';
-    box.querySelector("h3")!.textContent = unsaved ? "Discard NPC" : "Delete NPC";
-    box.querySelector("p")!.textContent = unsaved ? `Discard ${label}? It was never saved.` : `Delete ${label}? It is removed from the world.`;
-    box.querySelector(".btn-danger")!.textContent = unsaved ? "Discard" : "Delete";
-    overlay.appendChild(box); document.body.appendChild(overlay);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-    const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey); };
-    document.addEventListener("keydown", onKey);
-    box.querySelector(".btn-danger")!.addEventListener("click", () => {
-      close();
-      // The game window only discards the unsaved NPC it has selected.
-      if (unsaved && this.selectedNpcId !== null) this.selectNpc(npc);
-      this.send({ type: "deleteNpc", id: unsaved ? null : npc.id });
-      this.status(unsaved ? "Discarded" : "Deleting...");
-      if (!unsaved) this.statusOnListUpdate = "Deleted";
-    });
-    box.querySelector(".btn-cancel")!.addEventListener("click", close);
+    const fresh = npc.id === null || npc.id === undefined;
+    if (!fresh && this.deleting.has(npc.id)) return;
+    const label = npc.id === this.selectedNpcId && this.draft ? this.liveLabel() : this.npcLabel(npc);
+    const agreed = await confirmDialog(fresh
+      ? { title: `Discard ${label}?`, body: "It was never saved. It is taken out of the world and nothing of it is kept.", okLabel: "Discard NPC" }
+      : { title: `Delete ${label}?`, body: ["This cannot be undone.", "It is removed from the world for every player."], okLabel: "Delete NPC" });
+    // It may have gone, or its delete may have been asked for elsewhere, while the question was open.
+    const still = this.npcs.find((n: any) => n.id === npc.id);
+    if (!agreed || !still || (!fresh && this.deleting.has(npc.id))) return;
+    // The game window only discards the unsaved NPC it has selected.
+    if (fresh && this.selectedNpcId !== null) this.selectNpc(still);
+    this.discarding = fresh ? label : this.discarding;
+    this.send({ type: "deleteNpc", id: fresh ? null : npc.id });
+    if (fresh) return;
+    const asked = {
+      label,
+      timer: setTimeout(() => {
+        if (this.deleting.get(npc.id) !== asked) return;
+        this.deleting.delete(npc.id);
+        this.chrome();
+        toast(`The server did not answer in time, so ${label} was not deleted as far as this editor can tell.`, "error");
+      }, ANSWER_MS),
+    };
+    this.deleting.set(npc.id, asked);
+    this.chrome();
   }
 }
 

@@ -47,7 +47,9 @@ function normalizeParticle(particle: any): any {
     glow_intensity: particle.glow_intensity !== undefined ? particle.glow_intensity : 0,
     glow_radius: particle.glow_radius !== undefined ? Number(particle.glow_radius) || 0 : 0,
     static_light: particle.static_light === true || particle.static_light === 1,
-    brightness: particle.brightness !== undefined && particle.brightness !== null && Number.isFinite(Number(particle.brightness)) ? Math.max(0, Number(particle.brightness)) : 1
+    brightness: particle.brightness !== undefined && particle.brightness !== null && Number.isFinite(Number(particle.brightness)) ? Math.max(0, Number(particle.brightness)) : 1,
+    // the sprite emitted in place of the round dot (particleimages.ts); null = the dot
+    image: typeof particle.image === "string" && particle.image.trim() ? particle.image.trim() : null
   };
 }
 
@@ -126,8 +128,6 @@ import {
   equipmentBottomCenter,
   setupInventorySlotHandlers,
   updateCurrencyDisplay,
-  updateAdminMapInput,
-  updateAdminPlayerListWithData,
   updateBuffBar,
   startSpellCooldown,
   startSpellLockout,
@@ -837,7 +837,6 @@ function initializeConnection() {
     cache.players.clear();
   }
 
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
   sessionActive = false;
   cachedPlayerId = null;
 
@@ -1766,13 +1765,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       updatePartyMemberOnlineStatus(data.username, data.online);
       break;
     }
-    case "ONLINE_PLAYERS_LIST": {
-
-      if (data && Array.isArray(data)) {
-        updateAdminPlayerListWithData(data);
-      }
-      break;
-    }
     case "UPDATE_PARTY": {
       const currentPlayer = cache.players.size
         ? Array.from(cache.players).find((p) => p.id === cachedPlayerId)
@@ -2016,8 +2008,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             if (cache.pendingPlayers && cache.pendingPlayers.has(data.id)) {
               cache.pendingPlayers.delete(data.id);
               cache.players.add(player);
-
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
             }
           } else {
             await new Promise((resolve) => setTimeout(resolve, 100));
@@ -2133,8 +2123,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             }
           }
         }
-
-        sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
       } catch (error) {
         console.error("Error handling sprite sheet animation update:", error);
       }
@@ -2181,10 +2169,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           }
         }
         await createPlayer(data);
-        if (data.id === cachedPlayerId && data.isAdmin) {
-          document.querySelectorAll(".radial-item.admin-only").forEach(el => el.classList.add("visible"));
-          import("./mobileui.js").then(m => m.calculateRadialPositions());
-        }
       } else if (existingByUsername) {
         cache.onlinePlayers.add(data.username.toLowerCase());
         updateGuildMemberOnlineStatus(data.username, true);
@@ -2277,8 +2261,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         }
       }
 
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
-
       if (data.id === cachedPlayerId) {
         updateCurrencyDisplay();
 
@@ -2296,25 +2278,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // Ghosts resume with their persisted corpse marker.
         if ((data.isDead || data.isGhost) && data.corpse && typeof data.corpse.x === "number") {
           setCorpseMarker(String(data.corpse.map || ""), data.corpse.x, data.corpse.y);
-        }
-
-        const noclipButton = document.getElementById("admin-noclip");
-        const stealthButton = document.getElementById("admin-stealth");
-
-        if (noclipButton) {
-          if (data.isNoclip) {
-            noclipButton.classList.add("active");
-          } else {
-            noclipButton.classList.remove("active");
-          }
-        }
-
-        if (stealthButton) {
-          if (data.isStealth) {
-            stealthButton.classList.add("active");
-          } else {
-            stealthButton.classList.remove("active");
-          }
         }
       }
       break;
@@ -2338,8 +2301,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           cache.players.delete(player);
         }
       });
-
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
       break;
     }
     case "DISCONNECT_PLAYER": {
@@ -2355,8 +2316,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       );
       if (player) {
         cache.players.delete(player);
-
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
       }
 
       break;
@@ -2374,8 +2333,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         updateFriendOnlineStatus(player.username, false);
         cache.players.delete(player);
       }
-
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
 
       break;
     }
@@ -2397,8 +2354,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           cache.players.delete(player);
         }
       });
-
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
       break;
     }
     case "CREATURE_SPAWN": {
@@ -2439,6 +2394,58 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "ITEM_EDITOR_UPDATED": {
       import("./itemeditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "TOGGLE_SPELL_EDITOR": {
+      import("./spelleditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "SPELL_EDITOR_DATA": {
+      import("./spelleditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "SPELL_EDITOR_RESULTS": {
+      import("./spelleditor.js").then((m) => m.default.onResults(data));
+      break;
+    }
+    case "SPELL_EDITOR_RESULT": {
+      import("./spelleditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "SPELL_EDITOR_UPDATED": {
+      import("./spelleditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "PLAYER_EDITOR_OPEN": {
+      if (typeof data?.target === "string") import("./playereditor.js").then((m) => m.default.open(data.target));
+      break;
+    }
+    case "PLAYER_EDITOR_DATA": {
+      import("./playereditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "PLAYER_EDITOR_RESULTS": {
+      import("./playereditor.js").then((m) => m.default.onResults(data));
+      break;
+    }
+    case "PLAYER_EDITOR_RESULT": {
+      import("./playereditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "TOGGLE_CONTROL_PANEL": {
+      import("./controlpanel.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "CONTROL_PANEL_DATA": {
+      import("./controlpanel.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "CONTROL_PANEL_RESULTS": {
+      import("./controlpanel.js").then((m) => m.default.onResults(data));
+      break;
+    }
+    case "CONTROL_PANEL_RESULT": {
+      import("./controlpanel.js").then((m) => m.default.onResult(data));
       break;
     }
     case "TOGGLE_CREATURE_EDITOR": {
@@ -2847,8 +2854,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         }
 
         if (loaded) {
-          updateAdminMapInput();
-
           if (teWasActive) await te.toggle();
 
           const ne = (window as any).npcEditor;
@@ -2878,8 +2883,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         // Fresh login: drop any stale death UI. The spawn snapshot below
         // re-applies the persisted phase, if any.
         clearSelfDeath();
-
-  sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
 
         snapshotRevision = null;
         snapshotApplied = false;
@@ -3806,6 +3809,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       import('./looteditor.js').then((module) => { module.default.handleTableList(d.tables); });
       break;
     }
+    case "LOOT_EDITOR_RESULT": {
+      import('./looteditor.js').then((module) => { module.default.handleResult(data); });
+      break;
+    }
     case "QUEST_LOG": {
       import("./quest.js").then((m) => m.handleQuestLog(data));
       break;
@@ -4027,21 +4034,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       break;
     }
     case "NOCLIP": {
-      const currentPlayer = Array.from(cache.players).find(
-        (player) => player.id === cachedPlayerId || player.id === cachedPlayerId
-      );
-
-      if (currentPlayer && data.id === currentPlayer.id) {
-        const noclipButton = document.getElementById("admin-noclip");
-        if (noclipButton) {
-          if (data.isNoclip) {
-            noclipButton.classList.add("active");
-          } else {
-            noclipButton.classList.remove("active");
-          }
-        }
-      }
-
+      // Nothing to draw: the control panel shows the switch, from the server's answer to it.
       break;
     }
     case "STEALTH": {
@@ -4054,15 +4047,6 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           type: "MOVEXY",
           data: "ABORT",
         });
-
-        const stealthButton = document.getElementById("admin-stealth");
-        if (stealthButton) {
-          if (data.isStealth) {
-            stealthButton.classList.add("active");
-          } else {
-            stealthButton.classList.remove("active");
-          }
-        }
       }
 
       cache.players.forEach((player) => {

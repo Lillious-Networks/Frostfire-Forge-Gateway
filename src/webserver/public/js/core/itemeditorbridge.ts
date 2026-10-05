@@ -1,26 +1,12 @@
 // Item editor popup. Talks to the game window over postMessage; the game
 // window forwards everything to the server, which validates and persists.
-import { applyItemFrame } from "./itemframe.js";
-
-type FieldType = "text" | "textarea" | "number" | "select" | "checkbox" | "asset";
-
-interface AssetOption {
-  value: string | number;
-  label: string;
-  /** Preview image URL, when the asset has one. */
-  image?: string | null;
-}
-
-interface Field {
-  key: string;
-  label: string;
-  type: FieldType;
-  options?: () => AssetOption[];
-  assets?: () => AssetOption[];
-  hint?: string;
-  /** Re-render the form after this field changes (fields that reveal others). */
-  rerender?: boolean;
-}
+// The window itself is the shared workbench (tooleditor.ts); this file holds
+// what is the item editor's own: its fields, its rules and its conversation
+// with the server.
+import { qualityOf } from "./itemframe.js";
+import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
+import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
+import { button, card, count, el, note, noticeDialog, shown, tag, thumb, toast, words } from "./toolkit.js";
 
 // Fallbacks so the dropdowns are never empty, even if the server's option lists
 // arrive late or an item carries a value that is no longer offered.
@@ -31,86 +17,107 @@ const DEFAULT_SLOTS = [
   "belt", "pants", "boots", "ring_1", "ring_2", "trinket_1", "trinket_2", "weapon", "bag",
 ];
 
-const TRASH_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
-const COPY_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "equipment", label: "Equipment" },
+  { id: "stats", label: "Stats" },
+];
 
-const QUALITY_COLORS: Record<string, string> = {
-  common: "#ffffff",
-  uncommon: "#1eff00",
-  rare: "#0070dd",
-  epic: "#a335ee",
-  legendary: "#ff8000",
-};
+/** The stats an item can give, in the order they are listed, with what each is counted in. */
+const STATS: Array<[key: string, label: string, unit?: string]> = [
+  ["stat_armor", "Armor"],
+  ["stat_damage", "Damage"],
+  ["stat_health", "Health"],
+  ["stat_stamina", "Stamina"],
+  ["stat_critical_chance", "Critical chance", "%"],
+  ["stat_critical_damage", "Critical damage", "%"],
+  ["stat_avoidance", "Avoidance"],
+];
+
+/**
+ * The server answers a refused save in sentences, not by field. Each of its
+ * sentences is about one field: this says which, so that field can be marked
+ * and its tab pointed at. A sentence that matches nothing is still shown at
+ * the top of the page.
+ */
+const PROBLEM_FIELDS: Array<[RegExp, string]> = [
+  [/^(Name |An item with that name)/, "name"],
+  [/^Type /, "type"],
+  [/^Quality /, "quality"],
+  [/^Description /, "description"],
+  [/^Equipable items need/, "equipment_slot"],
+  [/^Only equipment can be equipable/, "equipable"],
+  [/^Level requirement /, "level_requirement"],
+  [/^Bag slots /, "bag_slots"],
+  [/^Minimum damage /, "damage_min"],
+  [/^Maximum damage /, "damage_max"],
+  [/^Attack speed /, "attack_speed_ms"],
+  [/^Weapon damage and speed only apply/, "equipment_slot"],
+];
+
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 
 class ItemEditorBridge {
   private data: any = { types: [], qualities: [], slots: [], icons: [], itemCount: 0 };
+  /** The server's first answer has arrived. */
+  private ready = false;
   private tab = "general";
   /** Name of the item being edited, or null for a new one. */
   private originalName: string | null = null;
   private draft: any = null;
+  /** Counts the records opened, so the page knows a redraw from a different record. */
+  private opened = 0;
   /** Last search results; the editor never holds the whole item table. */
   private results: any[] = [];
   private truncated = 0;
   private searched = false;
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
+  /** The last save was refused and nothing has been changed since. */
+  private refused = false;
+  /** What the server said was wrong with the last save, sentence by sentence: the summary at the top of the page. */
+  private problems: string[] = [];
+  /** The same by field, for the sentences that are about one field. */
+  private fieldErrors: Record<string, string> = {};
 
-  private listEl = document.getElementById("ie-list")!;
-  private fieldsEl = document.getElementById("ie-form-fields")!;
-  private extraEl = document.getElementById("ie-extra")!;
-  private errorsEl = document.getElementById("ie-errors")!;
-  private statusEl = document.getElementById("ie-status")!;
-  private searchInput = document.getElementById("ie-search") as HTMLInputElement;
+  /** How many items there are in all: the server's count when the editor opened, kept in step with what is saved and deleted here. */
+  private total = 0;
+
+  /** The save/delete waiting for its result; a second one waits too. `adds` is a save of an item that was not there before. */
+  private pending: { kind: "save" | "delete"; packet: string; name: string; adds: boolean } | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The parts of the page that follow the fields as they are typed in. */
+  private asideEl: HTMLElement | null = null;
+  private weaponEl: HTMLElement | null = null;
+  private headThumb: { key: string; node: HTMLElement } | null = null;
+
+  private shell = new EditorShell({
+    tool: "Item Editor", noun: "item", icon: "box", tabs: TABS,
+    // Searching asks the server; the client never holds every item.
+    onSearch: () => this.runSearch(),
+    onNew: () => void this.newEntry(),
+    onSave: () => this.save(),
+    onDuplicate: () => void this.duplicate(this.openRow()),
+    onDelete: () => void this.deleteEntry(this.openRow()),
+    onTab: (id) => this.switchTab(id),
+  });
+
+  private fields = new FieldRenderer({ rerender: () => this.renderForm() });
 
   constructor() {
-    document.getElementById("btn-save")!.addEventListener("click", () => this.save());
-    // Field edits flag changes without re-rendering; refresh the save icon
-    // after any edit (the field's own handler has run by the time this does).
-    for (const type of ["input", "change", "click"]) {
-      document.addEventListener(type, () => queueMicrotask(() => this.updateSaveIcon()));
-    }
-    // Searching asks the server; the client never holds every item.
-    this.searchInput.addEventListener("input", () => this.queueSearch());
-    this.searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") this.runSearch();
-    });
-    document.querySelectorAll(".editor-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => this.switchTab(btn.getAttribute("data-tab")!));
-    });
-    window.addEventListener("message", (e) => this.onMessage(e));
-    window.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        this.save();
-      }
-    });
-    window.addEventListener("beforeunload", () => this.send({ type: "editorClosed" }));
-    // Backup for the game page closing us on unload: if the game tab is gone,
-    // this editor has nothing to talk to, so close.
-    if (window.opener) {
-      setInterval(() => {
-        if (!window.opener || window.opener.closed) window.close();
-      }, 1000);
-    }
-    this.send({ type: "bridgeReady" });
+    this.shell.waiting(() => this.shell.send({ type: "request", packet: "ITEM_EDITOR_LIST", data: null }));
+    this.shell.connect((msg) => this.onMessage(msg));
   }
 
-  private send(msg: any): void {
-    if (window.opener) window.opener.postMessage(msg, "*");
-  }
-
-  private onMessage(event: MessageEvent): void {
-    const msg = event.data;
-    if (!msg?.type) return;
+  private onMessage(msg: any): void {
     if (msg.type === "data") {
       this.data = msg.data;
+      this.ready = true;
+      this.shell.arrived();
+      this.total = Number(this.data.itemCount) || 0;
+      this.shell.setCount(this.total);
       this.renderList();
       this.renderForm();
-      this.status(`${this.data.itemCount ?? 0} items - search to edit one`);
     } else if (msg.type === "results") {
       this.results = Array.isArray(msg.data?.items) ? msg.data.items : [];
       this.truncated = Number(msg.data?.truncated) || 0;
@@ -118,96 +125,143 @@ class ItemEditorBridge {
       // A save re-runs the search; keep editing the item that came back.
       if (this.originalName && !this.dirty) {
         const fresh = this.results.find((i: any) => i.name === this.originalName);
-        if (fresh) this.draft = JSON.parse(JSON.stringify(fresh));
+        if (fresh) this.draft = clone(fresh);
       }
       this.renderList();
       if (this.draft) this.renderForm();
     } else if (msg.type === "result") {
       // Only the pending save/delete's own result counts.
       if (!this.pending || (msg.action && msg.action !== this.pending.packet)) {
-        if (!msg.ok) this.showErrors(msg.errors || ["Action failed."]);
+        if (!msg.ok) this.report(msg.errors?.length ? msg.errors : ["The server refused that."]);
         return;
       }
-      const kind = this.pending.kind;
+      const { kind, name, adds } = this.pending;
       this.endRequest();
-      if (msg.ok) {
-        this.showErrors([]);
-        if (kind === "delete") {
-          // The reply names the deleted item: never adopt it as the open one,
-          // and leave the open item's unsaved edits alone.
-          this.status("Deleted");
-        } else {
-          this.dirty = false;
-          this.status("Saved");
-          if (msg.name) this.originalName = msg.name;
-        }
-        this.updateSaveIcon();
-        this.runSearch();
-      } else {
-        this.showErrors(msg.errors || ["Save failed."]);
-        this.status("Not saved");
-      }
+      if (kind === "delete") this.onDeleteResult(msg, name);
+      else this.onSaveResult(msg, adds);
     } else if (msg.type === "updated") {
-      this.status(`Updated by ${msg.by}`);
+      toast(`${shown(msg.by)} changed an item. The list shows it as it is now.`);
       if (this.searched) this.runSearch();
     }
   }
 
-  private status(text: string): void {
-    this.statusEl.textContent = text;
+  private onSaveResult(msg: any, added: boolean): void {
+    if (!msg.ok) {
+      this.problems = msg.errors?.length ? msg.errors : ["The server refused the save."];
+      this.refused = true;
+      this.fieldErrors = this.fieldsOf(this.problems);
+      // Show a tab that has a problem, unless the one in view already does.
+      const tabs = [...new Set(Object.keys(this.fieldErrors).map((key) => this.tabOf(key)))];
+      if (tabs.length && !tabs.includes(this.tab)) this.tab = tabs[0];
+      this.shell.setProblems(this.problems);
+      this.renderForm();
+      return;
+    }
+    this.dirty = false;
+    this.refused = false;
+    this.clearProblems();
+    if (msg.name) this.originalName = msg.name;
+    if (added) this.shell.setCount(++this.total);
+    toast(`Saved ${this.originalName ?? "the item"}.`);
+    this.renderForm();
+    this.runSearch();
   }
 
-  private showErrors(errors: string[]): void {
-    this.errorsEl.hidden = errors.length === 0;
-    this.errorsEl.innerHTML = errors.map(() => `<div class="editor-error-line"></div>`).join("");
-    this.errorsEl.querySelectorAll(".editor-error-line").forEach((el, i) => {
-      el.textContent = errors[i];
-    });
+  private onDeleteResult(msg: any, name: string): void {
+    // The reply names the deleted item: never adopt it as the open one, and
+    // leave the open item's unsaved edits alone.
+    // Why it was refused is something to read, so it stays until it is closed.
+    if (!msg.ok) return void noticeDialog(`${name} was not deleted`, msg.errors?.length ? msg.errors : ["The server refused to delete it."]);
+    this.total = Math.max(0, this.total - 1);
+    this.shell.setCount(this.total);
+    toast(`Deleted ${name}.`);
+    this.runSearch();
+  }
+
+  /** Something the server refused that no request here was waiting for: said on the open item, or in the corner. */
+  private report(lines: string[]): void {
+    if (!this.draft) return toast(lines.join("\n"), "error");
+    this.problems = lines;
+    this.shell.setProblems(lines);
+  }
+
+  /** Nothing is wrong any more: a save went through, or another item is opened. */
+  private clearProblems(): void {
+    this.problems = [];
+    this.fieldErrors = {};
+    this.shell.setProblems([]);
+  }
+
+  // ------------------------------------------------------------------- rules
+
+  /** Which field each of the server's sentences is about. */
+  private fieldsOf(lines: string[]): Record<string, string> {
+    const fields: Record<string, string> = {};
+    for (const line of lines) {
+      const field = PROBLEM_FIELDS.find(([pattern]) => pattern.test(line))?.[1];
+      if (field) fields[field] ??= line;
+    }
+    return fields;
+  }
+
+  /** Which tab a field is edited on. */
+  private tabOf(key: string): string {
+    if (key.startsWith("stat_")) return "stats";
+    if (key === "level_requirement") return this.draft?.type === "equipment" ? "equipment" : "general";
+    return ["equipable", "equipment_slot", "damage_min", "damage_max", "attack_speed_ms", "bag_slots"].includes(key) ? "equipment" : "general";
+  }
+
+  private problemsByTab(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const key of Object.keys(this.fieldErrors)) counts[this.tabOf(key)] = (counts[this.tabOf(key)] ?? 0) + 1;
+    return counts;
   }
 
   // ------------------------------------------------------------------ fields
 
+  /**
+   * The icons to pick from. The one the item has is framed in the quality
+   * being edited, as it will look in game, and is offered even when it is not
+   * in the list (different case, an extension, or the list failed to load).
+   */
   private iconAssets(): AssetOption[] {
-    return [
+    const current = String(this.draft?.icon ?? "");
+    const quality = this.draft?.quality;
+    const options: AssetOption[] = [
       { value: "", label: "None" },
-      ...(this.data.icons ?? []).map((i: any) => ({ value: i.name, label: i.name, image: i.image })),
+      ...(this.data.icons ?? []).map((i: any) => ({ value: i.name, label: i.name, image: i.image, ...(i.name === current ? { quality } : {}) })),
     ];
+    if (current && !options.some((o) => o.value === current)) options.push({ value: current, label: current, image: this.iconFor(current), quality });
+    return options;
   }
 
-  private pick(values: string[], fallback: string[] = []): () => AssetOption[] {
+  /** The words of the game written for reading: "ring_1" is listed as "Ring 1", and stored as it was. */
+  private choices(values: string[], fallback: string[] = []): () => Array<{ value: string; label: string }> {
     const list = values?.length ? values : fallback;
-    return () => list.map((v) => ({ value: v, label: v }));
+    return () => list.map((v) => ({ value: v, label: words(v) }));
   }
 
-  private fields(): Field[] {
+  private tabFields(): Field[] {
     const isEquipment = this.draft?.type === "equipment";
     switch (this.tab) {
       case "equipment":
         return [
-          { key: "equipable", label: "Equipable", type: "checkbox", rerender: true, hint: "Can be worn from the inventory." },
+          { key: "equipable", label: "Equipable", type: "switch", rerender: true, hint: "Can be worn from the inventory." },
           ...(this.draft?.equipable
             ? ([
-                { key: "equipment_slot", label: "Slot", type: "select", options: this.pick(this.data.slots ?? [], DEFAULT_SLOTS), rerender: true },
+                { key: "equipment_slot", label: "Slot", type: "select", options: this.choices(this.data.slots ?? [], DEFAULT_SLOTS), rerender: true },
                 { key: "level_requirement", label: "Level requirement", type: "number", hint: "Players below this level can't equip it." },
               ] as Field[])
             : []),
         ];
       case "stats":
-        return [
-          { key: "stat_armor", label: "Armor", type: "number" },
-          { key: "stat_damage", label: "Damage", type: "number" },
-          { key: "stat_health", label: "Health", type: "number" },
-          { key: "stat_stamina", label: "Stamina", type: "number" },
-          { key: "stat_critical_chance", label: "Critical chance %", type: "number" },
-          { key: "stat_critical_damage", label: "Critical damage %", type: "number" },
-          { key: "stat_avoidance", label: "Avoidance", type: "number" },
-        ];
+        return STATS.map(([key, label, unit]) => ({ key, label, type: "number", unit }) as Field);
       default:
         return [
           { key: "name", label: "Name", type: "text", hint: "Must be unique: items are looked up by name." },
-          { key: "type", label: "Type", type: "select", options: this.pick(this.data.types ?? [], DEFAULT_TYPES), rerender: true },
-          { key: "quality", label: "Quality", type: "select", options: this.pick(this.data.qualities ?? [], DEFAULT_QUALITIES), rerender: true, hint: "Sets the colour of its name and icon frame." },
-          { key: "icon", label: "Icon", type: "asset", assets: () => this.iconAssets() },
+          { key: "type", label: "Type", type: "select", options: this.choices(this.data.types ?? [], DEFAULT_TYPES), rerender: true },
+          { key: "quality", label: "Quality", type: "select", options: this.choices(this.data.qualities ?? [], DEFAULT_QUALITIES), rerender: true, hint: "Sets the colour of its name and icon frame." },
+          { key: "icon", label: "Icon", type: "asset", assets: () => this.iconAssets(), fallback: "box" },
           ...(isEquipment ? [] : ([{ key: "level_requirement", label: "Level requirement", type: "number" }] as Field[])),
           { key: "description", label: "Description", type: "textarea", hint: "Shown in the item's tooltip." },
         ];
@@ -215,20 +269,21 @@ class ItemEditorBridge {
   }
 
   /** Weapon / bag fields, shown in their own card under the slot. */
-  private slotFields(): { title: string; fields: Field[] } | null {
+  private slotFields(): { title: string; lead: string; fields: Field[] } | null {
     if (this.tab !== "equipment" || !this.draft?.equipable) return null;
     if (this.draft.equipment_slot === "weapon") {
       return {
         title: "Weapon",
+        lead: "What a swing of it does",
         fields: [
-          { key: "damage_min", label: "Damage min (per swing)", type: "number", hint: "Leave both empty to use the Damage stat instead." },
-          { key: "damage_max", label: "Damage max (per swing)", type: "number" },
-          { key: "attack_speed_ms", label: "Swing speed (ms)", type: "number", hint: "Time between swings. Lower is faster." },
+          { key: "damage_min", label: "Minimum damage per swing", type: "number", hint: "Leave both empty to use the Damage stat instead." },
+          { key: "damage_max", label: "Maximum damage per swing", type: "number" },
+          { key: "attack_speed_ms", label: "Swing speed", type: "number", unit: "ms", hint: "Its attack speed: milliseconds between swings. Lower is faster." },
         ],
       };
     }
     if (this.draft.equipment_slot === "bag") {
-      return { title: "Bag", fields: [{ key: "bag_slots", label: "Bag slots", type: "number", hint: "Extra inventory slots it gives." }] };
+      return { title: "Bag", lead: "", fields: [{ key: "bag_slots", label: "Bag slots", type: "number", hint: "Extra inventory slots it gives." }] };
     }
     return null;
   }
@@ -243,13 +298,7 @@ class ItemEditorBridge {
     };
   }
 
-  // ------------------------------------------------------------------ render
-
-  private switchTab(tab: string): void {
-    this.tab = tab;
-    document.querySelectorAll(".editor-tab-btn").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === tab));
-    this.renderForm();
-  }
+  // ------------------------------------------------------------------ search
 
   /**
    * Icon URL for a stored icon name. The listed icons win, but an item whose
@@ -266,469 +315,291 @@ class ItemEditorBridge {
     return base ? `${base}/icon?name=${encodeURIComponent(bare)}` : null;
   }
 
-  /** Debounced so typing does not send a packet per keystroke. */
-  private queueSearch(): void {
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => this.runSearch(), 200);
+  private runSearch(): void {
+    // With no query the server returns only the item being edited.
+    this.shell.send({ type: "request", packet: "ITEM_EDITOR_SEARCH", data: { query: this.shell.takeQuery(), name: this.originalName } });
   }
 
-  private runSearch(): void {
-    if (this.searchTimer) {
-      clearTimeout(this.searchTimer);
-      this.searchTimer = null;
-    }
-    const query = this.searchInput.value.trim();
-    // With no query the server returns only the item being edited.
-    this.send({ type: "request", packet: "ITEM_EDITOR_SEARCH", data: { query, name: this.originalName } });
+  /** "Rare equipment": what kind of item it is, in two words. */
+  private kindOf(item: any): string {
+    return `${words(item?.quality || "common")} ${String(item?.type || "item")}`;
   }
+
+  /** What the open item is called while its name field may be empty. */
+  private titleOf(item: any): string {
+    return String(item?.name ?? "").trim() || (this.originalName === null ? "New item" : "Unnamed item");
+  }
+
+  /** The row of the open item as the list holds it, or the open item itself where the search does not list it. */
+  private openRow(): any {
+    return this.results.find((i: any) => i.name === this.originalName) ?? this.draft;
+  }
+
+  // ------------------------------------------------------------------ render
 
   private renderList(): void {
-    const items = this.results;
-    this.listEl.innerHTML = "";
-    // New items start from a pinned row at the top of the list.
-    const newRow = document.createElement("div");
-    newRow.className = "editor-item ce-new-row" + (this.draft && this.originalName === null ? " active" : "");
-    newRow.title = "New item";
-    const newLabel = document.createElement("span");
-    newLabel.className = "editor-item-label";
-    newLabel.textContent = "+ New item";
-    newRow.appendChild(newLabel);
-    newRow.addEventListener("click", () => this.newEntry());
-    this.listEl.appendChild(newRow);
-    if (items.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "editor-empty";
-      empty.textContent = this.searched ? "No items match that search." : "Search for an item to edit it.";
-      this.listEl.appendChild(empty);
+    if (!this.ready) return;
+    const rows: ListRow[] = [];
+    // An item that has never been saved is not in the server's list yet: it heads this one.
+    if (this.draft && this.originalName === null) {
+      rows.push({
+        id: "\u0000new", name: this.titleOf(this.draft), note: "Not saved yet", selected: true,
+        thumb: thumb(this.iconFor(this.draft.icon), { quality: this.draft.quality, fallback: "box" }),
+        tags: [tag("New", "warning")], onOpen: () => undefined,
+      });
+    }
+    for (const item of this.results) {
+      rows.push({
+        id: String(item.name), name: String(item.name), note: this.kindOf(item), selected: item.name === this.originalName,
+        thumb: thumb(this.iconFor(item.icon), { quality: item.quality, fallback: "box" }),
+        actions: [
+          { icon: "copy", label: `Duplicate ${item.name}`, onClick: () => void this.duplicate(item) },
+          { icon: "trash", label: `Delete ${item.name}`, danger: true, onClick: () => void this.deleteEntry(item) },
+        ],
+        onOpen: () => void this.select(item.name),
+      });
+    }
+    this.shell.setList({
+      rows,
+      empty: this.searched && this.shell.query
+        ? { icon: "search", title: "No items match that search", text: "Check the spelling, or search for less of the name." }
+        : { icon: "search", title: "Search for an item to edit it", text: "Type part of its name above. Only the items that match are listed." },
+      foot: this.truncated > 0 ? `${count(this.truncated, "more item matches", "more items match")}. Narrow the search to see them.` : "",
+    });
+  }
+
+  /** The top bar and the tabs: what is open, how it stands, and what can be done to it. */
+  private chrome(): void {
+    const d = this.draft;
+    const { shell } = this;
+    if (!d) {
+      shell.setRecord(null);
+      shell.setState(null);
+      shell.setActions({ open: false, busy: this.pending ? "other" : null });
+      shell.setTabs(null);
       return;
     }
-    for (const item of items) {
-      const row = document.createElement("div");
-      row.className = "editor-item" + (item.name === this.originalName ? " active" : "");
-      row.title = `${item.name} (${item.type})`;
-
-      const thumb = document.createElement("span");
-      thumb.className = "ce-asset-thumb";
-      applyItemFrame(thumb, item.quality);
-      const image = this.iconFor(item.icon);
-      if (image) {
-        const img = document.createElement("img");
-        img.src = image;
-        img.alt = "";
-        img.loading = "lazy";
-        thumb.appendChild(img);
-      }
-
-      const label = document.createElement("span");
-      label.className = "editor-item-label";
-      label.textContent = item.name;
-      // Quality colours match the in-game item tooltips.
-      label.style.color = QUALITY_COLORS[item.quality] || "#ffffff";
-
-      row.appendChild(thumb);
-      row.appendChild(label);
-      row.appendChild(this.rowAction("ce-row-copy", COPY_ICON, `Duplicate ${item.name}`, () => this.duplicate(item)));
-      row.appendChild(this.rowAction("ce-row-delete", TRASH_ICON, `Delete ${item.name}`, () => this.deleteEntry(item)));
-      row.addEventListener("click", () => this.select(item.name));
-      this.listEl.appendChild(row);
-    }
-    if (this.truncated > 0) {
-      const more = document.createElement("div");
-      more.className = "editor-empty";
-      more.textContent = `${this.truncated} more match - narrow the search.`;
-      this.listEl.appendChild(more);
-    }
-  }
-
-  private select(name: string): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    const item = this.results.find((i: any) => i.name === name);
-    if (!item) return;
-    this.originalName = name;
-    this.draft = JSON.parse(JSON.stringify(item));
-    this.dirty = false;
-    this.showErrors([]);
-    this.renderList();
-    this.renderForm();
-  }
-
-  private newEntry(): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    this.originalName = null;
-    this.draft = this.blank();
-    this.dirty = true;
-    this.showErrors([]);
-    this.renderList();
-    this.renderForm();
-    this.status("New item - fill it in and save");
-  }
-
-  /** Icon button on a list row; acts on that row's item without selecting it. */
-  private rowAction(className: string, icon: string, title: string, onClick: () => void): HTMLElement {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = className;
-    btn.title = title;
-    btn.setAttribute("aria-label", title);
-    btn.innerHTML = icon;
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onClick();
+    // The picture is only drawn again when it changes, not at every key typed.
+    const key = `${d.icon}|${d.quality}`;
+    if (this.headThumb?.key !== key) this.headThumb = { key, node: thumb(this.iconFor(d.icon), { size: "lg", quality: d.quality, fallback: "box" }) };
+    shell.setRecord({ title: this.titleOf(d), note: this.kindOf(d), thumb: this.headThumb.node });
+    const state: RecordState = this.pending?.kind === "save" ? "saving" : this.refused ? "error" : this.originalName === null ? "new" : this.dirty ? "unsaved" : "saved";
+    shell.setState(state);
+    const saved = this.originalName !== null;
+    shell.setActions({
+      open: true, dirty: this.dirty, busy: this.pending ? (this.pending.kind === "save" ? "save" : "other") : null, canDuplicate: saved, canDelete: saved,
+      why: { duplicate: "Save it first, then it can be copied", delete: "It has not been saved, so there is nothing to delete" },
     });
-    return btn;
+    shell.setTabs(this.tab, this.problemsByTab());
   }
 
-  /** Start a new, unsaved item copied from a list row. */
-  private duplicate(item: any): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    const copy = JSON.parse(JSON.stringify(item));
-    copy.name = `${copy.name} copy`;
-    this.originalName = null;
-    this.draft = copy;
-    this.dirty = true;
-    this.showErrors([]);
-    this.renderList();
+  private switchTab(tab: string): void {
+    this.tab = tab;
     this.renderForm();
-    this.status("Copy made - rename it and save");
   }
 
   private renderForm(): void {
-    this.fieldsEl.innerHTML = "";
-    this.extraEl.innerHTML = "";
-    document.getElementById("btn-save")!.hidden = !this.draft;
-    this.updateSaveIcon();
+    this.chrome();
+    this.asideEl = this.weaponEl = null;
+    if (!this.ready) return;
     if (!this.draft) {
-      this.fieldsEl.innerHTML = `<div class="editor-empty">Search for an item, or create one from the top of the list.</div>`;
+      const box = this.shell.idle("Search for an item on the left to edit it, or start a new one.", this.total === 0 ? "Start the first one." : null);
+      box.appendChild(button("New item", () => void this.newEntry(), { icon: "plus", kind: "primary" }));
       return;
     }
-
-    // Which item this is, in its quality colour, above every tab.
-    const heading = document.createElement("div");
-    heading.className = "editor-page-title";
-    heading.textContent = this.draft.name || "New item";
-    heading.style.color = QUALITY_COLORS[this.draft.quality] || "#ffffff";
-    const sub = document.createElement("span");
-    sub.className = "editor-page-sub";
-    sub.textContent = `${this.draft.quality || "common"} ${this.draft.type || "item"}${this.originalName === null ? " · not saved yet" : ""}`;
-    heading.appendChild(sub);
-    this.fieldsEl.appendChild(heading);
+    const { main, aside } = this.shell.page(`${this.opened}:${this.tab}`, { aside: true });
 
     const titles: Record<string, [string, string?]> = {
       general: ["Item"],
       equipment: ["Equipping"],
       stats: ["Stats", "Bonuses the wearer gets while it is equipped"],
     };
-    const [title, subtitle] = titles[this.tab] ?? ["Details"];
-    const grid = this.card(this.fieldsEl, title, subtitle);
-    for (const field of this.fields()) grid.appendChild(this.renderField(field));
+    const [title, lead] = titles[this.tab] ?? ["Details"];
+    const grid = this.section(main, title, lead);
+    for (const field of this.tabFields()) grid.appendChild(this.field(field));
 
     const slot = this.slotFields();
     if (slot) {
-      const slotGrid = this.card(this.fieldsEl, slot.title);
-      for (const field of slot.fields) slotGrid.appendChild(this.renderField(field));
-      if (slot.title === "Weapon") this.renderWeaponSummary(slotGrid);
+      const slotGrid = this.section(main, slot.title, slot.lead);
+      for (const field of slot.fields) slotGrid.appendChild(this.field(field));
+      if (slot.title === "Weapon") {
+        this.weaponEl = el("div", "tl-field-wide");
+        slotGrid.appendChild(this.weaponEl);
+        this.paintWeapon();
+      }
     }
+
+    this.asideEl = aside;
+    this.paintAside();
   }
 
   /** A titled card appended to `parent`; returns its field grid. */
-  private card(parent: HTMLElement, title: string, sub?: string): HTMLElement {
-    const card = document.createElement("div");
-    card.className = "editor-card";
-    const head = document.createElement("div");
-    head.className = "editor-card-head";
-    const titleEl = document.createElement("span");
-    titleEl.className = "editor-card-title";
-    titleEl.textContent = title;
-    head.appendChild(titleEl);
-    if (sub) {
-      const subEl = document.createElement("span");
-      subEl.className = "editor-card-sub";
-      subEl.textContent = sub;
-      head.appendChild(subEl);
-    }
-    card.appendChild(head);
-    const grid = document.createElement("div");
-    grid.className = "editor-card-grid";
-    card.appendChild(grid);
-    parent.appendChild(card);
+  private section(parent: HTMLElement, title: string, lead = ""): HTMLElement {
+    const grid = el("div", "tl-fields");
+    card(parent, title, lead).body.appendChild(grid);
     return grid;
   }
 
-  private renderField(field: Field): HTMLElement {
-    const wrap = this.renderFieldBody(field);
-    if (field.hint) {
-      const hint = document.createElement("div");
-      hint.className = "editor-field-hint";
-      hint.textContent = field.hint;
-      wrap.appendChild(hint);
-    }
+  /** One field of the open item, with the problem the server reported for it. */
+  private field(field: Field): HTMLElement {
+    const wrap = this.fields.renderField(field, this.draft, () => this.touched(field.key, wrap), { error: this.fieldErrors[field.key] });
     return wrap;
   }
 
-  private renderFieldBody(field: Field): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field" + (field.type === "textarea" ? " ce-field-wide" : "");
-    const value = this.draft[field.key];
-
-    if (field.type === "checkbox") {
-      wrap.classList.add("ce-field-check");
-      const line = document.createElement("label");
-      line.className = "editor-form-check";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !!value;
-      cb.addEventListener("change", () => {
-        this.draft[field.key] = cb.checked;
-        this.dirty = true;
-        if (field.rerender) this.renderForm();
-      });
-      line.appendChild(cb);
-      line.appendChild(document.createTextNode(` ${field.label}`));
-      wrap.appendChild(line);
-      return wrap;
+  /** A field was edited: there is something to save, and its old problem no longer describes it. */
+  private touched(key: string, wrap: HTMLElement): void {
+    this.dirty = true;
+    this.refused = false;
+    const fixed = this.fieldErrors[key];
+    if (fixed) {
+      // Its sentence leaves the summary with its mark.
+      delete this.fieldErrors[key];
+      setFieldError(wrap, null);
+      this.problems = this.problems.filter((line) => line !== fixed);
+      this.shell.setProblems(this.problems, false);
     }
-
-    const label = document.createElement("label");
-    label.className = "editor-form-label";
-    label.textContent = field.label;
-    wrap.appendChild(label);
-
-    if (field.type === "asset") {
-      wrap.appendChild(this.renderAssetField(field));
-      return wrap;
-    }
-
-    if (field.type === "select") {
-      const select = document.createElement("select");
-      select.className = "editor-form-input";
-      const options = field.options?.() ?? [];
-      const current = String(value ?? "");
-      // Show the stored value even if it is not one of the offered options,
-      // so an unexpected value is visible instead of silently blank.
-      if (current && !options.some((o) => String(o.value) === current)) {
-        options.unshift({ value: current, label: current });
-      }
-      for (const option of options) {
-        const el = document.createElement("option");
-        el.value = String(option.value);
-        el.textContent = option.label;
-        select.appendChild(el);
-      }
-      select.value = current;
-      select.addEventListener("change", () => {
-        this.draft[field.key] = select.value;
-        this.dirty = true;
-        if (field.rerender) this.renderForm();
-      });
-      wrap.appendChild(select);
-      return wrap;
-    }
-
-    const input = field.type === "textarea" ? document.createElement("textarea") : document.createElement("input");
-    input.className = "editor-form-input";
-    input.spellcheck = false;
-    if (input instanceof HTMLInputElement) input.type = field.type === "number" ? "number" : "text";
-    else input.rows = 3;
-    input.value = value === null || value === undefined ? "" : String(value);
-    input.addEventListener("input", () => {
-      if (field.type === "number") this.draft[field.key] = input.value === "" ? null : Number(input.value);
-      else this.draft[field.key] = input.value;
-      this.dirty = true;
-    });
-    wrap.appendChild(input);
-    return wrap;
-  }
-
-  /** Asset fields open a searchable popup so icons can be seen, not typed. */
-  private renderAssetField(field: Field): HTMLElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ce-asset-button";
-
-    const paint = () => {
-      const current = this.draft[field.key];
-      button.innerHTML = "";
-      const thumb = document.createElement("span");
-      thumb.className = "ce-asset-thumb";
-      // Framed in the quality being edited, as it will look in game.
-      applyItemFrame(thumb, this.draft.quality);
-      const image = this.iconFor(current);
-      if (image) {
-        const img = document.createElement("img");
-        img.src = image;
-        img.alt = "";
-        thumb.appendChild(img);
-      }
-      const text = document.createElement("span");
-      text.className = "ce-asset-name";
-      text.textContent = current ? String(current) : "None";
-      button.appendChild(thumb);
-      button.appendChild(text);
-    };
-    paint();
-
-    button.addEventListener("click", () => {
-      this.openAssetPicker(field.label, field.assets?.() ?? [], (option) => {
-        this.draft[field.key] = option.value;
-        this.dirty = true;
-        paint();
-        this.renderList();
-      });
-    });
-    return button;
-  }
-
-  private openAssetPicker(title: string, options: AssetOption[], onPick: (option: AssetOption) => void): void {
-    const overlay = document.createElement("div");
-    overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div");
-    box.className = "editor-modal-box ce-asset-picker";
-    const heading = document.createElement("h3");
-    heading.textContent = title;
-    const search = document.createElement("input");
-    search.type = "text";
-    search.placeholder = "Search...";
-    search.spellcheck = false;
-    const list = document.createElement("div");
-    list.className = "ce-asset-list";
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    const close = () => {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
-    };
-
-    const paintList = () => {
-      const query = search.value.toLowerCase();
-      list.innerHTML = "";
-      const matches = options.filter((o) => !query || o.label.toLowerCase().includes(query));
-      if (matches.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "editor-empty";
-        empty.textContent = "Nothing matches that search.";
-        list.appendChild(empty);
-        return;
-      }
-      for (const option of matches) {
-        const row = document.createElement("div");
-        row.className = "ce-asset-row";
-        const thumb = document.createElement("span");
-        thumb.className = "ce-asset-thumb";
-        if (option.image) {
-          const img = document.createElement("img");
-          img.src = option.image;
-          img.alt = "";
-          img.loading = "lazy";
-          thumb.appendChild(img);
-        }
-        const text = document.createElement("span");
-        text.className = "ce-asset-name";
-        text.textContent = option.label;
-        row.appendChild(thumb);
-        row.appendChild(text);
-        row.addEventListener("click", () => {
-          onPick(option);
-          close();
-        });
-        list.appendChild(row);
-      }
-    };
-
-    search.addEventListener("input", paintList);
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) close();
-    });
-    document.addEventListener("keydown", onKey);
-
-    box.appendChild(heading);
-    box.appendChild(search);
-    box.appendChild(list);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    paintList();
-    search.focus();
+    this.chrome();
+    this.paintWeapon();
+    this.paintAside();
   }
 
   /** What the weapon actually does in combat, so the numbers are not abstract. */
-  private renderWeaponSummary(parent: HTMLElement): void {
-    if (this.draft?.equipment_slot !== "weapon") return;
+  private paintWeapon(): void {
+    if (!this.weaponEl || this.draft?.equipment_slot !== "weapon") return;
     const min = Number(this.draft.damage_min) || 0;
     const max = Number(this.draft.damage_max) || 0;
     const speed = Number(this.draft.attack_speed_ms) || 2000;
-    const box = document.createElement("div");
-    box.className = "editor-summary";
-    if (min <= 0 && max <= 0) {
-      box.textContent = "No damage range set: swings fall back to the item's damage stat.";
-    } else {
+    let text: string;
+    if (min <= 0 && max <= 0) text = "No damage range set: swings fall back to the item's damage stat.";
+    else {
       const dps = ((min + max) / 2) / (speed / 1000);
-      box.textContent =
-        `${min}-${max} damage every ${(speed / 1000).toFixed(1)}s (${dps.toFixed(1)} per second before stats). ` +
-        `Damage stats are scaled by swing speed, so this weapon gets ${(speed / 2000).toFixed(2)}x of them.`;
+      text = `${min} to ${max} damage every ${(speed / 1000).toFixed(1)} seconds: ${dps.toFixed(1)} per second before stats. `
+        + `Damage stats are scaled by swing speed, so this weapon gets ${(speed / 2000).toFixed(2)} times their value.`;
     }
-    box.classList.add("ce-field-wide");
-    parent.appendChild(box);
+    this.weaponEl.replaceChildren(note(text, "plain", "sword"));
+  }
+
+  /** The item at a glance, beside the form: its icon in its frame, its name in its colour, and what it gives. */
+  private paintAside(): void {
+    const d = this.draft;
+    if (!this.asideEl || !d) return;
+    this.asideEl.replaceChildren();
+    const { body } = card(this.asideEl, "At a glance", "The item as its fields describe it");
+    const box = el("div", "tl-preview");
+    const head = el("div", "tl-preview-head");
+    const said = el("div", "tl-preview-words");
+    const name = el("span", "tl-preview-name tl-quality-text", this.titleOf(d));
+    name.dataset.quality = qualityOf(d.quality);
+    const slot = d.equipable && d.equipment_slot ? ` · ${words(d.equipment_slot)}` : "";
+    said.append(name, el("span", "tl-preview-kind", `${this.kindOf(d)}${slot}`));
+    head.append(thumb(this.iconFor(d.icon), { size: "xl", quality: d.quality, fallback: "box" }), said);
+    box.appendChild(head);
+
+    const line = (text: string, kind = "") => box.appendChild(el("div", "tl-preview-line" + (kind ? ` tl-preview-line-${kind}` : ""), text));
+    const min = Number(d.damage_min) || 0;
+    const max = Number(d.damage_max) || 0;
+    if (d.equipable && d.equipment_slot === "weapon" && (min > 0 || max > 0)) {
+      line(`${min} to ${max} damage, one swing every ${((Number(d.attack_speed_ms) || 2000) / 1000).toFixed(1)} seconds`);
+    }
+    if (d.equipable && d.equipment_slot === "bag" && Number(d.bag_slots) > 0) line(`${count(Number(d.bag_slots), "extra inventory slot")}`);
+    for (const [key, label, unit] of STATS) {
+      const value = Number(d[key]);
+      if (d[key] === null || d[key] === undefined || d[key] === "" || !value) continue;
+      line(`${value > 0 ? "+" : "−"}${Math.abs(value)}${unit ?? ""} ${label}`, value > 0 ? "good" : "bad");
+    }
+    if (Number(d.level_requirement) > 1) line(`Requires level ${Number(d.level_requirement)}`, "faint");
+    if (String(d.description ?? "").trim()) box.appendChild(el("div", "tl-preview-text", String(d.description).trim()));
+    body.appendChild(box);
+  }
+
+  // ----------------------------------------------------------------- opening
+
+  /** True when the open item can be left: it has no unsaved changes, or the admin agreed to lose them. */
+  private async mayLeave(): Promise<boolean> {
+    return !this.dirty || !this.draft || this.shell.discard(this.titleOf(this.draft));
+  }
+
+  private open(draft: any, originalName: string | null, dirty: boolean): void {
+    this.originalName = originalName;
+    this.draft = draft;
+    this.dirty = dirty;
+    this.refused = false;
+    this.clearProblems();
+    this.opened++;
+    this.renderList();
+    this.renderForm();
+  }
+
+  private async select(name: string): Promise<void> {
+    if (!(await this.mayLeave())) return;
+    const item = this.results.find((i: any) => i.name === name);
+    if (!item) return;
+    this.open(clone(item), name, false);
+  }
+
+  private async newEntry(): Promise<void> {
+    if (!(await this.mayLeave())) return;
+    this.tab = "general";
+    this.open(this.blank(), null, true);
+    this.shell.focusField("name");
+  }
+
+  /** Start a new, unsaved item copied from a list row. */
+  private async duplicate(item: any): Promise<void> {
+    if (!item || !(await this.mayLeave())) return;
+    const copy = clone(item);
+    copy.name = `${copy.name} copy`;
+    this.tab = "general";
+    this.open(copy, null, true);
+    // The copy needs a name of its own before it can be saved.
+    this.shell.focusField("name");
   }
 
   // ----------------------------------------------------------------- actions
 
-  /** The save/delete waiting for its result; a second one waits too. */
-  private pending: { kind: "save" | "delete"; packet: string } | null = null;
-  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
-
   private save(): void {
-    if (!this.draft) return;
-    if (this.pending) return this.status("Saving...");
-    this.beginRequest("save", "ITEM_EDITOR_SAVE", { ...this.draft, originalName: this.originalName });
-    this.status("Saving...");
+    if (!this.draft || this.pending) return;
+    this.beginRequest("save", "ITEM_EDITOR_SAVE", { ...this.draft, originalName: this.originalName }, String(this.draft.name ?? ""));
   }
 
-  /** Delete an item from its list row. Closes it if it is the open one. */
-  private deleteEntry(item: any): void {
+  /** Delete an item, from its list row or the top bar. Closes it if it is the open one. */
+  private async deleteEntry(item: any): Promise<void> {
     const name = String(item?.name ?? "");
-    if (!name) return;
-    if (this.pending) return this.status("Saving...");
-    if (!confirm(`Delete ${name}? Players holding it keep a broken reference.`)) return;
+    if (!name || this.pending) return;
+    if (!(await this.shell.confirmDelete(name, "It is removed from the game for good. Players who are holding one are left with a broken item."))) return;
+    if (this.pending) return;
     if (this.originalName === name) {
       this.draft = null;
       this.originalName = null;
       this.dirty = false;
+      this.refused = false;
+      this.clearProblems();
       this.renderForm();
     }
-    this.beginRequest("delete", "ITEM_EDITOR_DELETE", { name });
-    this.status("Deleting...");
+    this.beginRequest("delete", "ITEM_EDITOR_DELETE", { name }, name);
   }
 
-  private beginRequest(kind: "save" | "delete", packet: string, data: any): void {
-    this.pending = { kind, packet };
+  private beginRequest(kind: "save" | "delete", packet: string, data: any, name: string): void {
+    this.pending = { kind, packet, name, adds: kind === "save" && this.originalName === null };
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
     // No result ever comes back if the server rejects the packet outright
     // (e.g. permissions): don't leave Save blocked forever.
     this.pendingTimer = setTimeout(() => {
       if (this.pending?.packet !== packet) return;
       this.endRequest();
-      this.status("No response from the server - try again");
+      if (kind === "save") this.refused = true;
+      this.chrome();
+      toast("The server did not answer in time, so nothing was confirmed.", "error");
     }, 15000);
-    this.send({ type: "request", packet, data });
-    this.updateSaveIcon();
+    this.shell.send({ type: "request", packet, data });
+    this.chrome();
   }
 
   private endRequest(): void {
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
     this.pendingTimer = null;
     this.pending = null;
-    this.updateSaveIcon();
-  }
-
-  /** Save icon: faded with nothing to save, highlighted with unsaved changes. */
-  private updateSaveIcon(): void {
-    const btn = document.getElementById("btn-save");
-    if (!btn) return;
-    const changes = !!this.draft && this.dirty;
-    btn.classList.toggle("has-changes", changes);
-    btn.classList.toggle("saving", !!this.pending);
-    btn.title = this.pending ? "Saving..." : changes ? "Save changes (Ctrl+S)" : "No unsaved changes";
+    this.chrome();
   }
 }
 

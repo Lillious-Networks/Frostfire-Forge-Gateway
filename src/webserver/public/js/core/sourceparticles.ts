@@ -103,7 +103,8 @@ export function updateSourceParticle(particle: Particle, entity: any, context: C
 
       // The gradient + glow are identical for every particle of this config, so
       // look the sprite up once per frame instead of per particle.
-      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle));
+      const particleSprite = getParticleSprite(particleColor, (particle.size || 5) / 2, glowIntensity, Number(particle.glow_radius) || 0, particleBrightness(particle), particle.image);
+      context.globalCompositeOperation = particleSprite.blend; // an image is drawn as it is, not added as light
       // glowing: queued for the light layer to draw again above the ambience (glowqueue.ts) with the transform they were drawn with
       let glowMatrix: DOMMatrix | null = null;
 

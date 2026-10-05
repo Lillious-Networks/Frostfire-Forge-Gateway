@@ -1,148 +1,359 @@
 // Quest editor popup. Talks to the game window over postMessage; the game
 // window forwards everything to the server, which validates and persists.
-// Mirrors itemeditorbridge.ts; quests are edited by search, never browsed.
-import { FieldRenderer, type AssetOption } from "./editorfields.js";
+// The window itself is the shared workbench (tooleditor.ts); this file holds
+// what is the quest editor's own: its fields, the objectives and the item
+// rewards of a quest as lists of cards, the quest said in plain words as a
+// player meets it, and its conversation with the server. Quests are edited by
+// search: the editor never holds the whole quest table.
+import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
+import { coins, FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
+import { button, card, count, el, empty, icon, iconButton, listed, noticeDialog, num, shown, tag, thumb, toast, words, type IconName } from "./toolkit.js";
+import { manyField, type Choice } from "./questnpcparts.js";
 
-const TRASH_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
-const COPY_ICON =
-  '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-  '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "texts", label: "Texts" },
+  { id: "objectives", label: "Objectives" },
+  { id: "rewards", label: "Rewards" },
+];
+const TAB_TITLES: Record<string, string> = { general: "General", texts: "Texts", objectives: "Objectives", rewards: "Rewards" };
+
+/** What the server offers when it has not said: the kinds of objective, and how often a quest can be done. */
+const OBJECTIVE_TYPES = ["kill", "collect", "talk", "explore"];
+const REPEATABLE_VALUES = ["none", "repeatable", "daily"];
+const REPEATABLE_WORDS: Record<string, string> = { none: "Not repeatable", repeatable: "Repeatable", daily: "Daily" };
+/** What each kind of objective points at, and the icon that stands for it. */
+const TARGETS: Record<string, { label: string; icon: IconName }> = {
+  kill: { label: "Creature to kill", icon: "sword" },
+  collect: { label: "Item to collect", icon: "bag" },
+  talk: { label: "NPC to talk to", icon: "user" },
+  explore: { label: "Map to reach", icon: "map" },
+};
+/** How many matches the item field lists under itself. */
+const SUGGEST_LIMIT = 40;
+
+const lower = (s: unknown): string => String(s ?? "").toLowerCase();
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+const filled = (value: unknown): boolean => value !== null && value !== undefined && value !== "";
+/** The ids in a list, as numbers. */
+const idList = (list: unknown): number[] => (Array.isArray(list) ? list : []).map(Number).filter((n) => Number.isFinite(n));
+/** "a", "a or b", "a, b or c". */
+const either = (names: string[]): string => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`);
+
+/** A problem the server found: its own line, the field it is about when that can be told, and the words shown under that field. */
+interface Problem {
+  line: string;
+  path: string | null;
+  said: string;
+}
+
+/**
+ * The server reports what is wrong with a quest as lines of text ("Objective
+ * 2: target is required."). Each is shown as it is; this works out which
+ * field a line is about, so the field can be marked and its tab can say how
+ * many problems it has. A line it does not know stays in the summary only.
+ */
+function placeOf(line: string): Problem {
+  const part = /^(Objective|Reward) (\d+): (.*)$/.exec(line);
+  if (part) {
+    const [, kind, number, rest] = part;
+    const at = `${kind === "Objective" ? "objectives" : "rewards"}.${Number(number) - 1}`;
+    const key =
+      kind === "Objective"
+        ? /^type\b/.test(rest) ? "type" : /required count/.test(rest) ? "required_count" : /radius/.test(rest) ? "target_radius" : /target/.test(rest) ? "target" : null
+        : /quantity/.test(rest) ? "quantity" : /item/.test(rest) ? "item_name" : null;
+    return { line, path: key ? `${at}.${key}` : at, said: rest.charAt(0).toUpperCase() + rest.slice(1) };
+  }
+  const path =
+    /^Name\b/.test(line) ? "name"
+    : /^Required level\b/.test(line) ? "required_level"
+    : /^Repeatable\b/.test(line) ? "repeatable"
+    : /^Next quest\b|chain into itself/.test(line) ? "next_quest_id"
+    : /^Prerequisite|cannot require itself/.test(line) ? "prerequisites"
+    : /\bin givers\b|^Quests given\b/.test(line) ? "givers"
+    : /\bin enders\b|^Quests ended\b/.test(line) ? "enders"
+    : null;
+  return { line, path, said: line };
+}
+
+/** A request the server has been sent and has not answered yet. */
+interface Asked {
+  kind: "save" | "delete";
+  /** The quest it is about; null for one that has never been saved. */
+  id: number | null;
+  name: string;
+  /** A save of a quest that was not there before. */
+  adds: boolean;
+  /** Which opening of a record it was sent from, and how much had been changed in it by then. */
+  opened: number;
+  edits: number;
+}
+
+let comboIds = 0;
 
 class QuestEditorBridge {
   private data: any = { objectiveTypes: [], repeatableValues: [], creatures: [], items: [], npcs: [], maps: [], questCount: 0, quests: [] };
-  private itemPicker = new FieldRenderer({
-    assetOptions: () => this.itemRewardOptions(),
-    rerender: () => this.renderForm(),
-  });
+  /** The server's first answer has arrived. */
+  private ready = false;
   private tab = "general";
   /** Id of the quest being edited, or null for a new one. */
   private editingId: number | null = null;
   private draft: any = null;
+  /** Counts the records opened, so the page knows a redraw from a different record. */
+  private opened = 0;
+  /** Counts the changes made, so a save knows whether more was changed while it was on its way. */
+  private edits = 0;
   /** Last search results; the editor never holds the whole quest table. */
   private results: any[] = [];
   private truncated = 0;
   private searched = false;
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
+  /** The last save was refused and nothing has been changed since. */
+  private refused = false;
+  /** What the server found wrong at the last save, less what has been changed since. */
+  private problems: Problem[] = [];
+  /** The problems are those of a refused save (the summary then says so), not something else the server refused. */
+  private problemsOfSave = false;
+  /** How many quests there are in all: the server's count, kept in step with what is saved and deleted here. */
+  private total = 0;
+  /** The page was not drawn again because a dialog was open over it; it is once the dialog has closed. */
+  private stale = false;
 
-  private listEl = document.getElementById("qe-list")!;
-  private fieldsEl = document.getElementById("qe-form-fields")!;
-  private extraEl = document.getElementById("qe-extra")!;
-  private errorsEl = document.getElementById("qe-errors")!;
-  private statusEl = document.getElementById("qe-status")!;
-  private searchInput = document.getElementById("qe-search") as HTMLInputElement;
+  // A second save while one is on its way would interleave delete and insert
+  // cycles on the server and duplicate every objective and reward. The result
+  // does not name its request, so the one that is waiting is remembered.
+  private pending: Asked | null = null;
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A request given up on after 15 seconds: its answer may still come. */
+  private late: Asked | null = null;
+
+  /** The parts of the page that follow the fields as they are typed in. */
+  private summaryEl: HTMLElement | null = null;
+  private live: Array<() => void> = [];
+  private headThumb: { key: string; node: HTMLElement } | null = null;
+
+  private shell = new EditorShell({
+    tool: "Quest Editor", noun: "quest", icon: "scroll", tabs: TABS,
+    onSearch: () => this.runSearch(),
+    onNew: () => void this.newEntry(),
+    onSave: () => this.save(),
+    onDuplicate: () => void this.duplicate(this.openRow()),
+    onDelete: () => void this.deleteEntry(this.openRow()),
+    onTab: (id) => this.switchTab(id),
+  });
+
+  private fields = new FieldRenderer({
+    rerender: () => this.renderForm(),
+    missingImage: () => this.missingIcon(),
+  });
 
   constructor() {
-    document.getElementById("btn-save")!.addEventListener("click", () => this.save());
-    // Field edits flag changes without re-rendering; refresh the save icon
-    // after any edit (the field's own handler has run by the time this does).
-    for (const type of ["input", "change", "click"]) {
-      document.addEventListener(type, () => queueMicrotask(() => this.updateSaveIcon()));
-    }
-    // Searching asks the server; the client never holds every quest.
-    this.searchInput.addEventListener("input", () => this.queueSearch());
-    this.searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") this.runSearch();
-    });
-    document.querySelectorAll(".editor-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => this.switchTab(btn.getAttribute("data-tab")!));
-    });
-    window.addEventListener("message", (e) => this.onMessage(e));
-    window.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        this.save();
-      }
-    });
-    window.addEventListener("beforeunload", () => this.send({ type: "editorClosed" }));
-    // Backup for the game page closing us on unload: if the game tab is gone,
-    // this editor has nothing to talk to, so close.
-    if (window.opener) {
-      setInterval(() => {
-        if (!window.opener || window.opener.closed) window.close();
-      }, 1000);
-    }
-    this.send({ type: "bridgeReady" });
+    // A dialog that closes leaves the page free to be drawn again, if it was waiting to be.
+    new MutationObserver(() => {
+      if (this.stale && !document.querySelector("dialog[open]")) this.renderForm();
+    }).observe(document.body, { childList: true });
+    this.shell.waiting(() => this.askForLists());
+    this.shell.connect((msg) => this.onMessage(msg));
   }
 
-  private send(msg: any): void {
-    if (window.opener) window.opener.postMessage(msg, "*");
+  /**
+   * The game window asks for the lists the fields pick from when it opens the
+   * editor. This asks again, from the page that says the server is not answering.
+   */
+  private askForLists(): void {
+    this.shell.send({ type: "request", packet: "QUEST_EDITOR_DATA", data: null });
   }
 
-  private onMessage(event: MessageEvent): void {
-    const msg = event.data;
-    if (!msg?.type) return;
+  private onMessage(msg: any): void {
     if (msg.type === "data") {
       this.data = { ...this.data, ...msg.data };
+      this.ready = true;
+      this.shell.arrived();
+      this.total = Number(this.data.questCount) || 0;
+      this.shell.setCount(this.total);
       this.renderList();
-      this.renderForm();
-      this.status(`${this.data.questCount ?? 0} quests - select one or search to narrow down`);
-      // Populate the list immediately; an empty query browses everything.
+      this.redraw();
+      // Fill the list at once; an empty search lists every quest.
       this.runSearch();
     } else if (msg.type === "results") {
       this.results = Array.isArray(msg.data?.quests) ? msg.data.quests : [];
       this.truncated = Number(msg.data?.truncated) || 0;
       this.searched = true;
-      // A save re-runs the search; keep editing the quest that came back.
-      if (this.editingId !== null && !this.dirty) {
+      // A save runs the search again; go on editing the quest as it came back.
+      // Not under an open picker: what is picked there goes into the draft it was opened on.
+      if (this.editingId !== null && !this.dirty && !document.querySelector("dialog[open]")) {
         const fresh = this.results.find((q: any) => Number(q.id) === this.editingId);
-        if (fresh) this.draft = JSON.parse(JSON.stringify(fresh));
+        if (fresh) {
+          this.draft = clone(fresh);
+          this.renderForm();
+        }
       }
       this.renderList();
-      if (this.draft) this.renderForm();
     } else if (msg.type === "result") {
-      const kind = this.pending;
-      this.endRequest();
-      if (msg.ok) {
-        this.showErrors([]);
-        if (kind === "delete") {
-          // Deleting a row leaves the open quest's unsaved edits alone.
-          this.status("Deleted");
-        } else {
-          this.dirty = false;
-          this.status("Saved");
-          if (msg.id !== undefined && msg.id !== null) this.editingId = Number(msg.id);
-        }
-        this.updateSaveIcon();
-        this.runSearch();
-      } else {
-        this.showErrors(msg.errors || ["Save failed."]);
-        this.status("Not saved");
+      const asked = this.pending ?? this.late;
+      const wasLate = !this.pending && !!this.late;
+      this.late = null;
+      if (this.pending) this.endRequest();
+      if (!asked) {
+        if (!msg.ok) this.report(msg.errors?.length ? msg.errors : ["The server refused that."]);
+        return;
       }
+      if (asked.kind === "save") this.onSaveResult(msg, asked, wasLate);
+      else this.onDeleteResult(msg, asked);
     } else if (msg.type === "updated") {
-      this.status(`Updated by ${msg.by}`);
+      toast(`${shown(msg.by)} changed a quest. The list shows it as it is now.`);
       if (this.searched) this.runSearch();
     }
   }
 
-  private status(text: string): void {
-    this.statusEl.textContent = text;
+  private onSaveResult(msg: any, asked: Asked, wasLate: boolean): void {
+    // The save was sent from the record that is open, and no other has been opened since.
+    const here = asked.opened === this.opened && !!this.draft;
+    if (!msg.ok) {
+      const lines: string[] = msg.errors?.length ? msg.errors : ["The server refused the save."];
+      if (!here) return toast([`${asked.name} was not saved.`, ...lines].join("\n"), "error");
+      this.refused = true;
+      this.problems = lines.map(placeOf);
+      this.problemsOfSave = true;
+      this.showProblems();
+      return;
+    }
+    if (asked.adds) this.shell.setCount(++this.total);
+    toast(wasLate ? `Saved ${asked.name}. The server took a while to answer.` : `Saved ${asked.name}.`);
+    if (here) {
+      // What was changed while the save was on its way is still to be saved.
+      this.dirty = this.edits !== asked.edits;
+      this.refused = false;
+      this.clearProblems();
+      if (msg.id !== undefined && msg.id !== null) this.editingId = Number(msg.id);
+      this.renderForm();
+    }
+    this.runSearch();
   }
 
-  private showErrors(errors: string[]): void {
-    this.errorsEl.hidden = errors.length === 0;
-    this.errorsEl.innerHTML = errors.map(() => `<div class="editor-error-line"></div>`).join("");
-    this.errorsEl.querySelectorAll(".editor-error-line").forEach((el, i) => {
-      el.textContent = errors[i];
-    });
+  private onDeleteResult(msg: any, asked: Asked): void {
+    if (!msg.ok) {
+      const lines: string[] = msg.errors?.length ? msg.errors : ["The server refused to delete it."];
+      void noticeDialog(`${asked.name} was not deleted`, lines);
+      return;
+    }
+    // Close it if it is the open one. Another open quest's unsaved changes are left alone.
+    if (this.editingId !== null && this.editingId === asked.id) {
+      this.draft = null;
+      this.editingId = null;
+      this.dirty = false;
+      this.refused = false;
+      this.clearProblems();
+      this.renderForm();
+    }
+    this.total = Math.max(0, this.total - 1);
+    this.shell.setCount(this.total);
+    toast(`Deleted ${asked.name}.`);
+    this.runSearch();
   }
 
-  // ------------------------------------------------------------------ data
-
-  private creatureOptions(): Array<{ value: string; label: string }> {
-    return (this.data.creatures ?? []).map((c: any) => ({ value: String(c.id), label: `#${c.id} ${c.name}` }));
+  /**
+   * Something the server refused that no request here was waiting for. Before
+   * its first answer, that is the editor itself being refused: the page says
+   * so. After, it is said on the open quest, or in the corner.
+   */
+  private report(lines: string[]): void {
+    if (!this.ready) this.shell.refused(lines, () => this.askForLists());
+    else if (this.draft) {
+      this.problems = lines.map((line) => ({ line, path: null, said: line }));
+      this.problemsOfSave = false;
+      this.shell.setProblems(this.problemLines());
+    } else toast(lines.join("\n"), "error");
   }
 
-  // Only NPCs flagged as quest givers can have quests assigned to them.
-  private npcOptions(questGiversOnly = false): Array<{ value: string; label: string }> {
+  // ---------------------------------------------------------------- problems
+
+  /** Which tab a field path is edited on. */
+  private tabOf(path: string): string {
+    return path.startsWith("objectives") ? "objectives" : path.startsWith("rewards") ? "rewards" : "general";
+  }
+
+  private problemsByTab(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const { path } of this.problems) if (path) counts[this.tabOf(path)] = (counts[this.tabOf(path)] ?? 0) + 1;
+    return counts;
+  }
+
+  /** The problem to show under the field at `path`: the first the server reported for it. */
+  private errorAt(path: string): string | undefined {
+    return this.problems.find((p) => p.path === path)?.said;
+  }
+
+  /**
+   * The summary at the top of the page: how many things the server found
+   * wrong and on which tabs, then its own lines. It is worked out again as
+   * fields are put right.
+   */
+  private problemLines(): string[] {
+    if (this.problems.length === 0) return [];
+    const lines = this.problems.map((p) => p.line);
+    if (!this.problemsOfSave) return lines;
+    const tabs = [...new Set(this.problems.flatMap((p) => (p.path ? [this.tabOf(p.path)] : [])))];
+    const where = tabs.length ? `, on ${listed(tabs.map((t) => TAB_TITLES[t]))}` : "";
+    return [`The quest was not saved. ${count(lines.length, "thing needs", "things need")} fixing${where}:`, ...lines];
+  }
+
+  /** Nothing is wrong any more: a save went through, or another quest is opened. */
+  private clearProblems(): void {
+    this.problems = [];
+    this.shell.setProblems([]);
+  }
+
+  /** A save was refused: say so at the top, and show a tab that has a problem. */
+  private showProblems(): void {
+    const tabs = Object.keys(this.problemsByTab());
+    // Show a tab that has a problem, unless the one in view already does.
+    if (tabs.length && !tabs.includes(this.tab)) this.tab = TABS.map((t) => t.id).find((id) => tabs.includes(id)) ?? this.tab;
+    this.shell.setProblems(this.problemLines());
+    this.renderForm();
+  }
+
+  /** The problems reported by position in a list no longer line up once the list is reordered or shortened. */
+  private dropProblemsOf(root: string): void {
+    this.problems = this.problems.filter((p) => !p.path?.startsWith(root));
+  }
+
+  // ------------------------------------------------------------------- lists
+
+  private creatureName(id: unknown): string {
+    const found = (this.data.creatures ?? []).find((c: any) => String(c.id) === String(id));
+    const name = String(found?.name ?? "").trim();
+    return !found ? `creature #${id}` : !name || name === `#${found.id}` ? `Unnamed creature #${found.id}` : name;
+  }
+
+  private creatureOptions(): AssetOption[] {
+    return (this.data.creatures ?? []).map((c: any) => ({ value: String(c.id), label: `${this.creatureName(c.id)} (#${c.id})` }));
+  }
+
+  /** An NPC's name as it is shown; the server sends "#12" for one that has none. */
+  private npcNameOf(npc: any): string {
+    const name = String(npc?.name ?? "").trim();
+    return !name || name === `#${npc?.id}` ? "Unnamed NPC" : name;
+  }
+
+  private npcName(id: unknown): string {
+    const found = (this.data.npcs ?? []).find((n: any) => String(n.id) === String(id));
+    return found ? this.npcNameOf(found) : `NPC #${id}`;
+  }
+
+  /** Every NPC, for an objective to talk to one. */
+  private npcOptions(): AssetOption[] {
+    return (this.data.npcs ?? []).map((n: any) => ({ value: String(n.id), label: `${this.npcNameOf(n)} (#${n.id}${n.map ? `, ${n.map}` : ""})` }));
+  }
+
+  /** Only NPCs marked as quest givers can have quests assigned to them. */
+  private questGivers(): Choice<number>[] {
     return (this.data.npcs ?? [])
-      .filter((n: any) => !questGiversOnly || n.quest_giver === true || n.quest_giver === 1)
-      .map((n: any) => ({ value: String(n.id), label: `#${n.id} ${n.name} (${n.map})` }));
+      .filter((n: any) => n.quest_giver === true || n.quest_giver === 1)
+      .map((n: any) => ({ value: Number(n.id), label: this.npcNameOf(n), mark: `#${n.id}`, note: n.map ? `#${n.id} · ${n.map}` : `#${n.id}` }));
   }
 
-  /** The draft itself can never be its own prerequisite or chain target. */
+  /** The draft itself can never be its own prerequisite or the quest that follows it. */
   private selfQuestId(): number | null {
     const fromTracker = this.editingId === null || this.editingId === undefined ? null : Number(this.editingId);
     if (Number.isFinite(fromTracker)) return fromTracker as number;
@@ -150,13 +361,22 @@ class QuestEditorBridge {
     return Number.isFinite(fromDraft) ? (fromDraft as number) : null;
   }
 
-  private questOptions(includeIds: number[] = []): Array<{ value: string; label: string }> {
+  /** Every quest the editor knows by name: the server's list, and what the last search found that is not in it. */
+  private knownQuests(): any[] {
+    const listed: any[] = this.data.quests ?? [];
+    return [...listed, ...this.results.filter((q: any) => !listed.some((k: any) => Number(k.id) === Number(q.id)))];
+  }
+
+  /** The quests another quest can be picked from: all but the open one, unless it is already picked. */
+  private questsToPick(includeIds: number[] = []): any[] {
     const excludeId = this.selfQuestId();
-    const include = new Set(includeIds.map(Number).filter((n) => Number.isFinite(n)));
-    const all = [...(this.data.quests ?? []), ...this.results.filter((q: any) => !(this.data.quests ?? []).some((k: any) => Number(k.id) === Number(q.id)))];
-    return all
-      .filter((q: any) => include.has(Number(q.id)) || excludeId === null || Number(q.id) !== excludeId)
-      .map((q: any) => ({ value: String(q.id), label: `#${q.id} ${q.name}` }));
+    const include = new Set(includeIds);
+    return this.knownQuests().filter((q: any) => include.has(Number(q.id)) || excludeId === null || Number(q.id) !== excludeId);
+  }
+
+  private questName(id: unknown): string {
+    const found = this.knownQuests().find((q: any) => Number(q.id) === Number(id));
+    return found ? String(found.name) : `quest #${id}`;
   }
 
   private iconUrlFor(name: unknown): string | null {
@@ -167,21 +387,38 @@ class QuestEditorBridge {
     return base ? `${base}/icon?name=${encodeURIComponent(bare)}` : null;
   }
 
-  /** Item entries are { name, icon }; older payloads may carry bare names. */
+  /** Tried once when an item's own icon will not load. */
+  private missingIcon(): string | null {
+    return this.data.assetServerUrl ? `${this.data.assetServerUrl}/icon?name=missing_icon` : null;
+  }
+
+  /** Item entries are { name, icon, quality }; older payloads may carry bare names. */
   private itemNameOf(entry: unknown): string {
     if (typeof entry === "string") return entry;
     return String((entry as any)?.name ?? "");
   }
 
-  private itemRewardOptions(): AssetOption[] {
+  private itemOptions(): AssetOption[] {
     return (this.data.items ?? []).map((entry: unknown) => {
       const name = this.itemNameOf(entry);
-      const icon = typeof entry === "string" ? null : ((entry as any)?.icon ?? null);
+      const iconName = typeof entry === "string" ? null : ((entry as any)?.icon ?? null);
       // No quality from the server (an older server build) leaves the icon unframed
       // rather than showing every item as common.
       const quality = typeof entry === "string" ? null : ((entry as any)?.quality ?? null);
-      return { value: name, label: name, image: icon ? this.iconUrlFor(icon) : null, quality };
+      return { value: name, label: name, image: iconName ? this.iconUrlFor(iconName) : null, quality };
     });
+  }
+
+  /** The item of that name, whatever its capitals: the server matches names that way too. */
+  private itemNamed(name: unknown): AssetOption | undefined {
+    const wanted = lower(name).trim();
+    return wanted ? this.itemOptions().find((o) => lower(o.label) === wanted) : undefined;
+  }
+
+  /** An item's icon in its quality frame, or a box where it has none or is not a known item. */
+  private itemThumb(name: unknown, size: "" | "lg" = ""): HTMLElement {
+    const item = this.itemNamed(name);
+    return thumb(item?.image, { size, fallback: "box", missing: this.missingIcon(), ...(item?.quality ? { quality: item.quality } : {}) });
   }
 
   private newClientKey(): string {
@@ -216,104 +453,9 @@ class QuestEditorBridge {
     };
   }
 
-  // ------------------------------------------------------------------ form
-
-  private switchTab(tab: string): void {
-    this.tab = tab;
-    document.querySelectorAll(".editor-tab-btn").forEach((b) => b.classList.toggle("active", b.getAttribute("data-tab") === tab));
-    this.renderForm();
-  }
-
-  /** Debounced so typing does not send a packet per keystroke. */
-  private queueSearch(): void {
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => this.runSearch(), 200);
-  }
-
-  private runSearch(): void {
-    if (this.searchTimer) {
-      clearTimeout(this.searchTimer);
-      this.searchTimer = null;
-    }
-    const query = this.searchInput.value.trim();
-    // With no query the server returns nothing; the list only fills on search.
-    this.send({ type: "request", packet: "QUEST_EDITOR_SEARCH", data: { query } });
-  }
-
-  private renderList(): void {
-    const quests = this.results;
-    this.listEl.innerHTML = "";
-    // New quests start from a pinned row at the top of the list.
-    const newRow = document.createElement("div");
-    newRow.className = "editor-item ce-new-row" + (this.draft && this.editingId === null ? " active" : "");
-    newRow.title = "New quest";
-    const newLabel = document.createElement("span");
-    newLabel.className = "editor-item-label";
-    newLabel.textContent = "+ New quest";
-    newRow.appendChild(newLabel);
-    newRow.addEventListener("click", () => this.newEntry());
-    this.listEl.appendChild(newRow);
-    if (quests.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "editor-empty";
-      empty.textContent = "No quests match that search.";
-      this.listEl.appendChild(empty);
-      return;
-    }
-    for (const quest of quests) {
-      const row = document.createElement("div");
-      row.className = "editor-item" + (Number(quest.id) === this.editingId ? " active" : "");
-      row.title = `#${quest.id} ${quest.name}`;
-      const label = document.createElement("span");
-      label.className = "editor-item-label";
-      label.textContent = `#${quest.id} ${quest.name}`;
-      row.appendChild(label);
-      row.appendChild(this.rowAction("ce-row-copy", COPY_ICON, `Duplicate #${quest.id} ${quest.name}`, () => this.duplicate(quest)));
-      row.appendChild(this.rowAction("ce-row-delete", TRASH_ICON, `Delete #${quest.id} ${quest.name}`, () => this.deleteEntry(quest)));
-      row.addEventListener("click", () => this.select(Number(quest.id)));
-      this.listEl.appendChild(row);
-    }
-    if (this.truncated > 0) {
-      const more = document.createElement("div");
-      more.className = "editor-empty";
-      more.textContent = `${this.truncated} more match - narrow the search.`;
-      this.listEl.appendChild(more);
-    }
-  }
-
-  private select(id: number): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    // Kill a pending debounced search: its results would re-render the list
-    // mid-click and swallow the selection.
-    if (this.searchTimer) {
-      clearTimeout(this.searchTimer);
-      this.searchTimer = null;
-    }
-    const quest = this.results.find((q: any) => Number(q.id) === id)
-      ?? (this.data.quests ?? []).find((q: any) => Number(q.id) === id);
-    if (!quest) return;
-    this.editingId = id;
-    this.draft = this.editableCopy(quest);
-    this.dirty = false;
-    this.showErrors([]);
-    this.renderList();
-    this.renderForm();
-  }
-
-  private newEntry(): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
-    this.editingId = null;
-    this.draft = this.blank();
-    this.dirty = true;
-    this.showErrors([]);
-    this.renderList();
-    this.renderForm();
-    this.status("New quest - fill it in and save");
-  }
-
   /** A detached, fully-shaped copy of a quest for the form to edit. */
   private editableCopy(quest: any): any {
-    const draft = JSON.parse(JSON.stringify(quest));
+    const draft = clone(quest);
     draft.objectives = draft.objectives || [];
     draft.rewards = draft.rewards || [];
     draft.prerequisites = (draft.prerequisites || []).map(Number);
@@ -324,679 +466,767 @@ class QuestEditorBridge {
     return draft;
   }
 
-  /** Icon button on a list row; acts on that row's quest without selecting it. */
-  private rowAction(className: string, icon: string, title: string, onClick: () => void): HTMLElement {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = className;
-    btn.title = title;
-    btn.setAttribute("aria-label", title);
-    btn.innerHTML = icon;
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onClick();
+  // ------------------------------------------------------------------ search
+
+  private runSearch(): void {
+    this.shell.send({ type: "request", packet: "QUEST_EDITOR_SEARCH", data: { query: this.shell.takeQuery() } });
+  }
+
+  /** The row of the open quest as the list holds it, or the open quest itself where the search does not list it. */
+  private openRow(): any {
+    return this.results.find((q: any) => Number(q.id) === this.editingId) ?? this.draft;
+  }
+
+  /** The level a quest asks for, in the square a record's picture goes in: what tells quests apart at a glance. */
+  private levelThumb(quest: any, size: "" | "lg" | "xl" = ""): HTMLElement {
+    const level = Math.floor(Number(quest?.required_level));
+    if (!Number.isFinite(level) || level < 1) return thumb(null, { size, fallback: "scroll" });
+    const box = el("span", "tl-thumb qe-level" + (size ? ` tl-thumb-${size}` : ""), level > 999 ? "999+" : String(level));
+    box.setAttribute("role", "img");
+    box.setAttribute("aria-label", `Level ${num(level)}`);
+    box.title = `For players of level ${num(level)} and up`;
+    return box;
+  }
+
+  // ------------------------------------------------------------------ render
+
+  private renderList(): void {
+    if (!this.ready) return;
+    if (!this.searched) return this.shell.setList({ rows: [], loading: true });
+    const rows: ListRow[] = [];
+    // A quest that has never been saved is not in the server's list yet: it heads this one.
+    if (this.draft && this.editingId === null) {
+      rows.push({
+        id: "\u0000new", name: this.titleOf(this.draft), note: "Not saved yet", selected: true,
+        thumb: this.levelThumb(this.draft), tags: [tag("New", "warning")], onOpen: () => undefined,
+      });
+    }
+    for (const quest of this.results) {
+      const label = `#${quest.id} ${quest.name}`;
+      const repeats = String(quest.repeatable ?? "none");
+      rows.push({
+        id: String(quest.id), name: String(quest.name), note: quest.zone ? `#${quest.id} · ${quest.zone}` : `#${quest.id}`,
+        selected: Number(quest.id) === this.editingId, thumb: this.levelThumb(quest),
+        tags: repeats === "none" ? [] : [tag(REPEATABLE_WORDS[repeats] ?? words(repeats), "muted", "refresh")],
+        actions: [
+          { icon: "copy", label: `Duplicate ${label}`, onClick: () => void this.duplicate(quest) },
+          { icon: "trash", label: `Delete ${label}`, danger: true, onClick: () => void this.deleteEntry(quest) },
+        ],
+        onOpen: () => void this.select(Number(quest.id)),
+      });
+    }
+    this.shell.setList({
+      rows,
+      empty: this.shell.query
+        ? { icon: "search", title: "No quests match that search", text: "Check the spelling, or search for less of the name." }
+        : { title: "There are no quests yet", text: "Start the first one with New quest." },
+      foot: this.truncated > 0 ? `${count(this.truncated, "more quest matches", "more quests match")}. Narrow the search to see them.` : "",
     });
-    return btn;
+  }
+
+  /** The top bar and the tabs: what is open, how it stands, and what can be done to it. */
+  private chrome(): void {
+    const d = this.draft;
+    const { shell } = this;
+    if (!d) {
+      shell.setRecord(null);
+      shell.setState(null);
+      shell.setActions({ open: false, busy: this.pending ? "other" : null });
+      shell.setTabs(null);
+      shell.setBanner(null);
+      return;
+    }
+    const saved = this.editingId !== null;
+    // The square is only drawn again when the level changes, not at every key typed.
+    const level = String(d.required_level);
+    if (this.headThumb?.key !== level) this.headThumb = { key: level, node: this.levelThumb(d, "lg") };
+    const zone = String(d.zone ?? "").trim();
+    shell.setRecord({
+      title: this.titleOf(d),
+      note: [saved ? `Quest #${this.editingId}` : "New quest", zone].filter(Boolean).join(" · "),
+      thumb: this.headThumb.node,
+    });
+    const saving = this.pending?.kind === "save" && this.pending.opened === this.opened;
+    const state: RecordState = saving ? "saving" : this.refused ? "error" : !saved ? "new" : this.dirty ? "unsaved" : "saved";
+    shell.setState(state);
+    const deleting = this.pending?.kind === "delete" && this.pending.id === this.editingId;
+    shell.setActions({
+      open: true, dirty: this.dirty,
+      busy: this.pending ? (saving ? "save" : deleting ? "delete" : "other") : null,
+      canDuplicate: saved, canDelete: saved,
+      why: {
+        duplicate: "Save it first, then it can be copied",
+        delete: "It has not been saved, so there is nothing to delete",
+      },
+    });
+    shell.setTabs(this.tab, this.problemsByTab());
+    shell.setBanner(null);
+  }
+
+  /** What the open quest is called while its name field may be empty. */
+  private titleOf(quest: any): string {
+    return String(quest?.name ?? "").trim() || (this.editingId === null ? "New quest" : "Unnamed quest");
+  }
+
+  private switchTab(tab: string): void {
+    this.tab = tab;
+    this.renderForm();
+  }
+
+  /** Draws the page again, unless a dialog is open over it: then it waits until the dialog has closed. */
+  private redraw(): void {
+    if (document.querySelector("dialog[open]")) {
+      this.stale = true;
+      this.chrome();
+    } else this.renderForm();
+  }
+
+  private renderForm(): void {
+    this.stale = false;
+    this.chrome();
+    this.summaryEl = null;
+    this.live = [];
+    if (!this.ready) return;
+    if (!this.draft) {
+      const box = this.shell.idle("Pick a quest from the list on the left, or start a new one.", this.total === 0 ? "Start the first one." : null);
+      box.appendChild(button("New quest", () => void this.newEntry(), { icon: "plus", kind: "primary" }));
+      return;
+    }
+    this.shell.setProblems(this.problemLines(), false);
+    const { main, aside } = this.shell.page(`${this.opened}:${this.tab}`, { aside: true });
+
+    if (this.tab === "objectives") this.renderObjectives(main);
+    else if (this.tab === "rewards") this.renderRewards(main);
+    else if (this.tab === "texts") this.renderTexts(main);
+    else this.renderGeneral(main);
+
+    // The quest as a player meets it, beside the form on every tab.
+    const { body } = card(aside, "As a player meets it", "What the quest asks for and what it gives");
+    this.summaryEl = el("div", "tl-summary qe-summary");
+    body.appendChild(this.summaryEl);
+    this.paintLive();
+  }
+
+  private renderGeneral(main: HTMLElement): void {
+    const d = this.draft;
+    const repeatables: string[] = this.data.repeatableValues?.length ? this.data.repeatableValues : REPEATABLE_VALUES;
+
+    const quest = this.section(main, "Quest", "What it is called and who it is for");
+    quest.appendChild(this.field({ key: "name", label: "Name", type: "text" }, d, "name"));
+    quest.appendChild(this.field({ key: "zone", label: "Zone", type: "text", hint: "Groups the quest in the player's log." }, d, "zone"));
+    quest.appendChild(this.field({ key: "required_level", label: "Required level", type: "number", min: 1, step: 1, hint: "Players below it are not offered the quest." }, d, "required_level"));
+    quest.appendChild(this.field({ key: "quest_level", label: "Quest level", type: "number", min: 0, step: 1, hint: "Sets its difficulty colour. 0 uses the required level." }, d, "quest_level"));
+    quest.appendChild(this.field(
+      { key: "repeatable", label: "Repeatable", type: "select", options: () => repeatables.map((v) => ({ value: v, label: REPEATABLE_WORDS[v] ?? words(v) })), hint: "Whether a player who has finished it can take it again." },
+      d, "repeatable"
+    ));
+    quest.appendChild(this.field({ key: "sort_order", label: "Sort order", type: "number", step: 1, hint: "Lower numbers are listed first." }, d, "sort_order"));
+
+    const chain = this.section(main, "Quest chain", "What comes before this quest and what follows it");
+    chain.appendChild(this.field(
+      {
+        key: "next_quest_id", label: "Next quest", type: "asset", noIcons: true, hint: "Offered right after this one is turned in.",
+        assets: () => {
+          const quests = this.questsToPick().map((q: any) => ({ value: String(q.id), label: `${q.name} (#${q.id})` }));
+          // A quest that is kept here and cannot be picked says why, in place of a bare number.
+          const kept = filled(d.next_quest_id) && !quests.some((q) => q.value === String(d.next_quest_id));
+          const why = Number(d.next_quest_id) === this.selfQuestId() ? "a quest cannot follow itself" : "no longer exists";
+          return [{ value: "", label: "None" }, ...(kept ? [{ value: String(d.next_quest_id), label: `Quest #${d.next_quest_id} (${why})` }] : []), ...quests];
+        },
+      },
+      d, "next_quest_id",
+      // Kept as the server keeps it: a quest's id as a number, or nothing.
+      () => {
+        d.next_quest_id = d.next_quest_id === "" ? null : Number(d.next_quest_id);
+      }
+    ));
+    chain.appendChild(this.many("prerequisites", "Prerequisites", "quest", "Quests that must be completed before this one is offered.", "this quest no longer exists",
+      () => this.questsToPick(idList(d.prerequisites)).map((q: any) => ({ value: Number(q.id), label: String(q.name), mark: `#${q.id}`, note: `#${q.id}` }))));
+
+    const npcs = this.section(main, "NPCs", "Only NPCs marked as quest givers can be picked");
+    npcs.appendChild(this.many("givers", "Given by", "NPC", "The NPCs that offer the quest.", "this NPC no longer exists, or is no longer a quest giver", () => this.questGivers()));
+    npcs.appendChild(this.many("enders", "Turned in to", "NPC", "The NPCs the finished quest is handed in to.", "this NPC no longer exists, or is no longer a quest giver", () => this.questGivers()));
+  }
+
+  private renderTexts(main: HTMLElement): void {
+    const d = this.draft;
+    const texts = this.section(main, "What the player reads", "The quest in its own words, at each step");
+    texts.appendChild(this.field({ key: "offer_text", label: "Offer text", type: "textarea", rows: 4, hint: "Shown when the NPC offers the quest." }, d, "offer_text"));
+    texts.appendChild(this.field({ key: "description", label: "Log description", type: "textarea", rows: 3, hint: "Shown in the quest log while the quest is active." }, d, "description"));
+    texts.appendChild(this.field({ key: "progress_text", label: "Progress text", type: "textarea", rows: 3, hint: "Shown when talking to the NPC before the objectives are done." }, d, "progress_text"));
+    texts.appendChild(this.field({ key: "completion_text", label: "Completion text", type: "textarea", rows: 3, hint: "Shown when the quest is turned in." }, d, "completion_text"));
+  }
+
+  /** The quest's objectives, one card each, in the order the quest log lists them. */
+  private renderObjectives(main: HTMLElement): void {
+    const d = this.draft;
+    d.objectives = d.objectives || [];
+    const objectives: any[] = d.objectives;
+    const types: string[] = this.data.objectiveTypes?.length ? this.data.objectiveTypes : OBJECTIVE_TYPES;
+
+    if (objectives.length === 0) {
+      const none = el("section", "tl-card");
+      empty(none, "target", "No objectives", "The quest can be turned in straight away. Add an objective below to give the player something to do.");
+      main.appendChild(none);
+    }
+
+    objectives.forEach((objective, index) => {
+      const at = `objectives.${index}`;
+      const type = String(objective.type ?? "");
+      // An objective that names a creature or an NPC always holds one that exists: the first, until another is picked.
+      if (type === "kill" || type === "talk") {
+        const options = type === "kill" ? this.creatureOptions() : this.npcOptions();
+        const current = String(objective.target ?? "");
+        objective.target = options.some((o) => o.value === current) ? current : options.length ? String(options[0].value) : "";
+      }
+
+      const part = card(main, `Objective ${index + 1} · ${words(type) || "No type"}`, this.objectiveLine(objective));
+      part.root.classList.add("qe-entry");
+      const lead = part.root.querySelector<HTMLElement>(".tl-card-lead");
+      const picture = el("span", "qe-entry-thumb");
+      part.root.querySelector(".tl-card-head")!.prepend(picture);
+      // The card's own line and picture follow its fields as they change.
+      const repaint = () => {
+        if (lead) lead.textContent = this.objectiveLine(objective);
+        const shownFor = objective.type === "collect" ? `item:${lower(objective.target).trim()}` : `type:${objective.type}`;
+        if (picture.dataset.shows === shownFor) return;
+        picture.dataset.shows = shownFor;
+        picture.replaceChildren(objective.type === "collect" && this.itemNamed(objective.target) ? this.itemThumb(objective.target, "lg") : thumb(null, { size: "lg", fallback: TARGETS[type]?.icon ?? "target" }));
+      };
+      repaint();
+      this.live.push(repaint);
+      part.tools.append(...this.entryActions(objectives, index, "objective", "objectives"));
+      const wrong = this.errorAt(at);
+      if (wrong) part.body.appendChild(this.entryError(wrong));
+
+      const grid = el("div", "tl-fields tl-fields-2");
+      part.body.appendChild(grid);
+      grid.appendChild(this.field(
+        { key: "type", label: "Type", type: "select", options: () => types.map((v) => ({ value: v, label: words(v) })), rerender: true },
+        objective, `${at}.type`,
+        // A different type points at a different kind of thing: start with nothing picked.
+        () => {
+          objective.target = "";
+          this.dropProblemsOf(`${at}.`);
+        }
+      ));
+
+      const target = TARGETS[type]?.label ?? "Target";
+      if (type === "kill" || type === "talk") {
+        grid.appendChild(this.field(
+          { key: "target", label: target, type: "asset", noIcons: true, assets: () => (type === "kill" ? this.creatureOptions() : this.npcOptions()) },
+          objective, `${at}.target`
+        ));
+      } else if (type === "explore") {
+        const maps: string[] = this.data.maps ?? [];
+        grid.appendChild(this.field(
+          // A map's name stays text, even one made of digits.
+          { key: "target", label: target, type: "select", asText: true, options: () => maps.map((map) => ({ value: map, label: map })) },
+          objective, `${at}.target`
+        ));
+      } else {
+        grid.appendChild(this.itemField(objective, `${at}.target`, target));
+      }
+      const required = this.field({ key: "required_count", label: "Required count", type: "number", min: 1, step: 1 }, objective, `${at}.required_count`);
+      if (type === "explore") {
+        // An optional spot: leave all three empty to complete on entering the map.
+        grid.appendChild(this.field({ key: "target_x", label: "X", type: "number" }, objective, `${at}.target_x`));
+        grid.appendChild(this.field({ key: "target_y", label: "Y", type: "number" }, objective, `${at}.target_y`));
+        grid.appendChild(this.field({ key: "target_radius", label: "Radius", type: "number", min: 1, unit: "pixels" }, objective, `${at}.target_radius`));
+        grid.appendChild(required);
+        grid.appendChild(el("p", "tl-field-hint tl-field-wide qe-fields-note", "Leave X, Y and Radius empty to complete the objective on entering the map. A radius needs both X and Y."));
+      } else grid.appendChild(required);
+      grid.appendChild(this.field(
+        { key: "description", label: "Display text (optional)", type: "text", wide: type === "explore", hint: 'Replaces the generated line in the quest log, for example "Wolf pelts collected".' },
+        objective, `${at}.description`
+      ));
+    });
+
+    main.appendChild(button("Add objective", () => {
+      objectives.push({ type: "kill", target: "", required_count: 1, target_x: null, target_y: null, target_radius: null, description: null });
+      this.changed();
+      this.renderForm();
+      this.focusLater(`objectives.${objectives.length - 1}.type`);
+    }, { icon: "plus", add: true }));
+  }
+
+  private renderRewards(main: HTMLElement): void {
+    const d = this.draft;
+    d.rewards = d.rewards || [];
+    const rewards: any[] = d.rewards;
+    // XP and money are rewards, not quest metadata: they live here next to
+    // the item rewards so authors set the whole payout in one place.
+    const payout = this.section(main, "Experience and money", "What every player who turns the quest in is given");
+    payout.appendChild(this.field({ key: "xp_reward", label: "XP reward", type: "number", min: 0, step: 1, unit: "XP" }, d, "xp_reward"));
+    payout.appendChild(this.field({ key: "copper_reward", label: "Money reward", type: "money", hint: "Gold, silver and copper." }, d, "copper_reward"));
+
+    if (rewards.length === 0) {
+      const none = el("section", "tl-card");
+      empty(none, "bag", "No item rewards", "The quest pays its experience and money only. Add an item below to give more.");
+      main.appendChild(none);
+    }
+
+    rewards.forEach((reward, index) => {
+      const at = `rewards.${index}`;
+      const name = this.itemNameOf(reward.item_name ?? reward);
+      const part = card(main, `Item reward ${index + 1} · ${name || "No item picked"}`, this.rewardLine(reward));
+      part.root.classList.add("qe-entry");
+      const lead = part.root.querySelector<HTMLElement>(".tl-card-lead");
+      const picture = el("span", "qe-entry-thumb");
+      picture.appendChild(this.itemThumb(name, "lg"));
+      part.root.querySelector(".tl-card-head")!.prepend(picture);
+      this.live.push(() => {
+        if (lead) lead.textContent = this.rewardLine(reward);
+      });
+      part.tools.append(...this.entryActions(rewards, index, "item reward", "rewards"));
+      const wrong = this.errorAt(at);
+      if (wrong) part.body.appendChild(this.entryError(wrong));
+
+      const grid = el("div", "tl-fields tl-fields-2");
+      part.body.appendChild(grid);
+      grid.appendChild(this.field(
+        { key: "item_name", label: "Item", type: "asset", assets: () => this.itemOptions(), searchFirst: true, fallback: "box", rerender: true },
+        reward, `${at}.item_name`
+      ));
+      grid.appendChild(this.field({ key: "quantity", label: "Quantity", type: "number", min: 1, step: 1 }, reward, `${at}.quantity`));
+      grid.appendChild(this.field(
+        { key: "is_choice", label: "Player's choice", type: "switch", rerender: true, wide: true, hint: "The player picks one of the rewards marked as a choice. All others are always given." },
+        reward, `${at}.is_choice`
+      ));
+    });
+
+    main.appendChild(button("Add item reward", () => {
+      rewards.push({ item_name: "", quantity: 1, is_choice: false });
+      this.changed();
+      this.renderForm();
+      this.focusLater(`rewards.${rewards.length - 1}.item_name`);
+    }, { icon: "plus", add: true }));
+  }
+
+  /** Move up, move down and remove, in the header of an objective's or an item reward's card. */
+  private entryActions(list: any[], index: number, noun: string, root: string): HTMLElement[] {
+    const act = (name: "arrowUp" | "arrowDown" | "trash", label: string, enabled: boolean, change: () => void) => {
+      const btn = iconButton(name, label, () => {
+        change();
+        // Positions changed, so the problems reported by position no longer line up.
+        this.dropProblemsOf(root);
+        this.changed();
+        this.renderForm();
+      }, { danger: name === "trash", size: 15 });
+      btn.disabled = !enabled;
+      return btn;
+    };
+    const swap = (a: number, b: number) => {
+      [list[a], list[b]] = [list[b], list[a]];
+    };
+    return [
+      act("arrowUp", `Move ${noun} ${index + 1} up`, index > 0, () => swap(index, index - 1)),
+      act("arrowDown", `Move ${noun} ${index + 1} down`, index < list.length - 1, () => swap(index, index + 1)),
+      act("trash", `Remove ${noun} ${index + 1}`, true, () => list.splice(index, 1)),
+    ];
+  }
+
+  /** What the server found wrong with a card as a whole, at its top. */
+  private entryError(message: string): HTMLElement {
+    const line = el("p", "tl-field-error qe-entry-error");
+    line.setAttribute("role", "alert");
+    line.append(icon("alert", 13), el("span", "", message));
+    return line;
+  }
+
+  // ------------------------------------------------------------- plain words
+
+  /** "Kill Rat × 3": what an objective asks for, under its card's title and in the summary. */
+  private objectiveLine(objective: any): string {
+    const type = String(objective?.type ?? "");
+    const target = String(objective?.target ?? "").trim();
+    const wanted = Number(objective?.required_count);
+    const times = Number.isFinite(wanted) && wanted > 1 ? ` × ${num(wanted)}` : "";
+    if (type === "kill") return target ? `Kill ${this.creatureName(target)}${times}` : "No creature picked yet";
+    if (type === "talk") return target ? `Talk to ${this.npcName(target)}${times}` : "No NPC picked yet";
+    if (type === "collect") return target ? `Collect ${this.itemNamed(target)?.label ?? target}${times}` : "No item named yet";
+    if (type === "explore") {
+      if (!target) return "No map picked yet";
+      if (!filled(objective.target_x) || !filled(objective.target_y)) return `Enter ${target}${times}`;
+      const within = filled(objective.target_radius) ? `, to within ${count(Number(objective.target_radius), "pixel")}` : "";
+      return `Reach x ${objective.target_x}, y ${objective.target_y} on ${target}${within}${times}`;
+    }
+    return target ? `${words(type)} ${target}${times}` : "The game does not know this kind of objective";
+  }
+
+  /** How an item reward is given, under its card's title. */
+  private rewardLine(reward: any): string {
+    const quantity = Number(reward?.quantity);
+    const times = Number.isFinite(quantity) && quantity > 1 ? `${num(quantity)} of them. ` : "";
+    return `${times}${reward?.is_choice ? "One of the choices the player picks from." : "Always given."}`;
+  }
+
+  /** The quest as a player meets it, in plain words: who offers it, what it asks, where it ends and what it pays. */
+  private summary(): HTMLElement[] {
+    const d = this.draft;
+    const out: HTMLElement[] = [];
+    const say = (text: string, className = "") => out.push(el("p", className, text));
+    const named = (ids: unknown, name: (id: number) => string) => idList(ids).map(name);
+
+    const head = el("div", "tl-preview-head");
+    const said = el("div", "tl-preview-words");
+    const zone = String(d.zone ?? "").trim();
+    said.append(el("span", "tl-preview-name", this.titleOf(d)), el("span", "tl-preview-kind", zone ? `Quest in ${zone}` : "Quest"));
+    head.append(this.levelThumb(d, "xl"), said);
+    out.push(head);
+
+    const level = Math.max(1, Math.floor(Number(d.required_level) || 1));
+    const givers = named(d.givers, (id) => this.npcName(id));
+    const before = named(d.prerequisites, (id) => `“${this.questName(id)}”`);
+    const whom = `players of level ${num(level)} and up${before.length ? ` who have finished ${listed(before)}` : ""}`;
+    say(givers.length ? `${listed(givers)} ${givers.length === 1 ? "offers" : "offer"} it to ${whom}.` : `No NPC offers it yet, so nobody can start it. It is for ${whom}.`);
+
+    const objectives: any[] = Array.isArray(d.objectives) ? d.objectives : [];
+    if (objectives.length === 0) say("It has no objectives, so it can be turned in straight away.");
+    else {
+      say(`To finish it they must:`);
+      const steps = el("ol", "qe-steps");
+      for (const objective of objectives) {
+        const step = el("li", "", this.objectiveLine(objective));
+        const shownAs = String(objective.description ?? "").trim();
+        if (shownAs) step.appendChild(el("span", "qe-steps-note", `Shown in the log as “${shownAs}”`));
+        steps.appendChild(step);
+      }
+      out.push(steps);
+    }
+
+    const enders = named(d.enders, (id) => this.npcName(id));
+    say(enders.length ? `They turn it in to ${either(enders)}.` : "No NPC takes it back yet, so it cannot be turned in.");
+
+    const xp = Math.max(0, Math.floor(Number(d.xp_reward) || 0));
+    const money = coins(d.copper_reward);
+    const pay = el("p");
+    if (xp === 0 && !money) pay.textContent = "It pays no experience and no money.";
+    else {
+      pay.append(xp > 0 ? `It pays ${num(xp)} XP` : "It pays ");
+      if (money) pay.append(xp > 0 ? " and " : "", money);
+      pay.append(".");
+    }
+    out.push(pay);
+
+    const rewards: any[] = Array.isArray(d.rewards) ? d.rewards : [];
+    const loot = (heading: string, picked: any[]) => {
+      if (picked.length === 0) return;
+      say(heading);
+      const list = el("ul", "qe-loot");
+      for (const reward of picked) {
+        const name = this.itemNameOf(reward.item_name ?? reward);
+        const row = el("li");
+        row.append(this.itemThumb(name), el("span", "qe-loot-name", name || "No item picked"));
+        if (Number(reward.quantity) > 1) row.appendChild(el("span", "qe-loot-count", `× ${num(Number(reward.quantity))}`));
+        list.appendChild(row);
+      }
+      out.push(list);
+    };
+    loot("Every player also gets:", rewards.filter((r) => !r.is_choice));
+    loot("They pick one of:", rewards.filter((r) => r.is_choice));
+
+    const repeats = String(d.repeatable ?? "none");
+    if (repeats === "daily") say("It can be done again once a day.");
+    else if (repeats !== "none") say("It can be done again as often as they like.");
+    if (filled(d.next_quest_id)) say(`Turning it in offers “${this.questName(d.next_quest_id)}” next.`);
+
+    const unwritten = [["offer_text", "offer text"], ["description", "log description"], ["progress_text", "progress text"], ["completion_text", "completion text"]]
+      .filter(([key]) => !String(d[key] ?? "").trim())
+      .map(([, label]) => label);
+    if (unwritten.length) say(`Not written yet: ${listed(unwritten)}.`, "qe-faint");
+    return out;
+  }
+
+  /** The parts that follow the fields as they change: the cards' own lines, and the summary beside the form. */
+  private paintLive(): void {
+    if (!this.draft) return;
+    for (const repaint of this.live) repaint();
+    if (this.summaryEl) this.summaryEl.replaceChildren(...this.summary());
+  }
+
+  // ------------------------------------------------------------------ fields
+
+  /** A titled card appended to `parent`; returns its field grid. */
+  private section(parent: HTMLElement, title: string, lead = ""): HTMLElement {
+    const grid = el("div", "tl-fields");
+    card(parent, title, lead).body.appendChild(grid);
+    return grid;
+  }
+
+  /**
+   * One form field editing `target[field.key]`, with any problem reported
+   * under `path` shown beneath it. `onChange` runs before the form is told.
+   */
+  private field(field: Field, target: any, path: string, onChange?: () => void): HTMLElement {
+    const wrap = this.fields.renderField({ ...field, path }, target, () => {
+      onChange?.();
+      this.touched(path, wrap);
+    }, { error: this.errorAt(path) });
+    return wrap;
+  }
+
+  /** A field of the quest itself that holds several picks: the quests before it, the NPCs that give it and take it. */
+  private many(key: string, label: string, noun: string, hint: string, gone: string, choices: () => Choice<number>[]): HTMLElement {
+    const d = this.draft;
+    const wrap = manyField<number>({
+      path: key, label, noun, hint, gone, choices,
+      get: () => idList(d[key]),
+      set: (next) => {
+        d[key] = next;
+        this.touched(key, wrap);
+      },
+      error: this.errorAt(key),
+    });
+    return wrap;
+  }
+
+  /**
+   * The item an objective collects: its name as free text, as the server
+   * keeps it, with the items that match listed under the field to pick from.
+   */
+  private itemField(objective: any, path: string, label: string): HTMLElement {
+    const id = `qe-item-${++comboIds}`;
+    const wrap = el("div", "tl-field");
+    wrap.dataset.field = path;
+    const title = el("label", "tl-field-label", label);
+    title.htmlFor = id;
+    const box = el("div", "tl-suggest-wrap qe-combo");
+    const picture = el("span", "qe-combo-thumb");
+    const input = el("input", "tl-input");
+    input.id = id;
+    input.type = "text";
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-controls", `${id}-list`);
+    input.setAttribute("aria-describedby", `${id}-hint`);
+    input.value = String(objective.target ?? "");
+    const list = el("div", "tl-suggest");
+    list.id = `${id}-list`;
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+    const hint = el("span", "tl-field-hint");
+    hint.id = `${id}-hint`;
+    box.append(picture, input, list);
+    wrap.append(title, box, hint);
+
+    const items = this.itemOptions();
+    let matches: AssetOption[] = [];
+    let active = -1;
+
+    const paintState = () => {
+      const typed = input.value.trim();
+      const known = this.itemNamed(typed);
+      picture.replaceChildren(this.itemThumb(typed));
+      hint.classList.toggle("qe-combo-unknown", !!typed && !known && items.length > 0);
+      hint.textContent = !typed ? "Type part of an item's name and pick it from the matches."
+        : known ? "An item of this name exists."
+        : items.length === 0 ? "The list of items did not arrive, so the name cannot be checked here."
+        : "No item has this name. Pick one of the matches.";
+    };
+    const close = () => {
+      list.hidden = true;
+      active = -1;
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    };
+    const mark = (index: number) => {
+      active = index;
+      [...list.querySelectorAll<HTMLElement>(".tl-suggest-row")].forEach((row, i) => {
+        row.classList.toggle("is-active", i === index);
+        row.setAttribute("aria-selected", String(i === index));
+        if (i === index) {
+          input.setAttribute("aria-activedescendant", row.id);
+          row.scrollIntoView({ block: "nearest" });
+        }
+      });
+    };
+    const take = (option: AssetOption) => {
+      input.value = String(option.value);
+      objective.target = input.value;
+      close();
+      paintState();
+      this.touched(path, wrap);
+    };
+    const open = () => {
+      const typed = lower(input.value).trim();
+      // Names that start with what was typed come first, then those that hold it.
+      const found = items.filter((o) => !typed || lower(o.label).includes(typed));
+      found.sort((a, b) => Number(lower(b.label).startsWith(typed)) - Number(lower(a.label).startsWith(typed)));
+      matches = found.slice(0, SUGGEST_LIMIT);
+      list.replaceChildren();
+      // Nothing to offer, or only the name that is already there in full.
+      if (matches.length === 0 || (matches.length === 1 && lower(matches[0].label) === typed)) return close();
+      matches.forEach((option, index) => {
+        const row = el("button", "tl-suggest-row");
+        row.type = "button";
+        row.id = `${id}-option-${index}`;
+        row.tabIndex = -1;
+        row.setAttribute("role", "option");
+        row.append(thumb(option.image, { fallback: "box", missing: this.missingIcon(), ...(option.quality ? { quality: option.quality } : {}) }), el("span", "tl-suggest-name", option.label));
+        // The field keeps the keyboard: the row is picked without taking the focus.
+        row.addEventListener("mousedown", (e) => e.preventDefault());
+        row.addEventListener("click", () => take(option));
+        list.appendChild(row);
+      });
+      if (found.length > matches.length) list.appendChild(el("div", "tl-suggest-none", `${count(found.length - matches.length, "more match", "more matches")}. Type more of the name.`));
+      list.hidden = false;
+      active = -1;
+      input.setAttribute("aria-expanded", "true");
+    };
+
+    input.addEventListener("input", () => {
+      objective.target = input.value;
+      paintState();
+      this.touched(path, wrap);
+      open();
+    });
+    input.addEventListener("focus", open);
+    input.addEventListener("click", () => {
+      if (list.hidden) open();
+    });
+    input.addEventListener("blur", close);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        if (list.hidden) open();
+        if (matches.length === 0) return;
+        e.preventDefault();
+        mark((active + (e.key === "ArrowDown" ? 1 : matches.length - (active < 0 ? 0 : 1))) % matches.length);
+      } else if (e.key === "Enter" && !list.hidden && active >= 0) {
+        e.preventDefault();
+        take(matches[active]);
+      } else if (e.key === "Escape" && !list.hidden) {
+        e.preventDefault();
+        close();
+      }
+    });
+    input.setAttribute("aria-expanded", "false");
+    paintState();
+    const wrong = this.errorAt(path);
+    if (wrong) setFieldError(wrap, wrong);
+    return wrap;
+  }
+
+  /** Something was changed that is not one field: an entry added, moved or removed. */
+  private changed(): void {
+    this.dirty = true;
+    this.refused = false;
+    this.edits++;
+  }
+
+  /** The field was edited: there is something to save, and its old problem no longer describes it. */
+  private touched(path: string, wrap: HTMLElement | null): void {
+    this.changed();
+    if (this.problems.some((p) => p.path === path)) {
+      this.problems = this.problems.filter((p) => p.path !== path);
+      setFieldError(wrap, null);
+    }
+    this.shell.setProblems(this.problemLines(), false);
+    this.chrome();
+    this.paintLive();
+  }
+
+  /** Puts the keyboard in a field once the page drawn just now has settled. */
+  private focusLater(path: string): void {
+    queueMicrotask(() => this.shell.focusField(path));
+  }
+
+  // ----------------------------------------------------------------- opening
+
+  /** True when the open quest can be left: it has no unsaved changes, or the admin agreed to lose them. */
+  private async mayLeave(): Promise<boolean> {
+    return !this.dirty || !this.draft || this.shell.discard(this.titleOf(this.draft));
+  }
+
+  private open(draft: any, id: number | null, dirty: boolean): void {
+    this.editingId = id;
+    this.draft = draft;
+    this.dirty = dirty;
+    this.refused = false;
+    this.clearProblems();
+    this.opened++;
+    this.renderList();
+    this.renderForm();
+  }
+
+  private async select(id: number): Promise<void> {
+    if (!(await this.mayLeave())) return;
+    // A search still waiting on the typing is forgotten: its results would
+    // redraw the list in the middle of the click.
+    this.shell.takeQuery();
+    const quest = this.results.find((q: any) => Number(q.id) === id) ?? (this.data.quests ?? []).find((q: any) => Number(q.id) === id);
+    if (!quest) return;
+    this.open(this.editableCopy(quest), id, false);
+  }
+
+  private async newEntry(): Promise<void> {
+    if (!(await this.mayLeave())) return;
+    this.tab = "general";
+    this.open(this.blank(), null, true);
+    this.shell.focusField("name");
   }
 
   /** Start a new, unsaved quest copied from a list row. */
-  private duplicate(quest: any): void {
-    if (this.dirty && !confirm("Discard unsaved changes?")) return;
+  private async duplicate(quest: any): Promise<void> {
+    if (!quest || !(await this.mayLeave())) return;
     const copy = this.editableCopy(quest);
     copy.id = null;
     copy.clientKey = this.newClientKey();
     copy.name = `${copy.name} copy`;
-    this.editingId = null;
-    this.draft = copy;
-    this.dirty = true;
-    this.showErrors([]);
-    this.renderList();
-    this.renderForm();
-    this.status("Copy made - rename it and save");
-  }
-
-  private renderForm(): void {
-    this.fieldsEl.innerHTML = "";
-    this.extraEl.innerHTML = "";
-    document.getElementById("btn-save")!.hidden = !this.draft;
-    this.updateSaveIcon();
-    if (!this.draft) {
-      this.fieldsEl.innerHTML = `<div class="editor-empty">Select a quest, or create one from the top of the list.</div>`;
-      return;
-    }
-    if (this.tab === "objectives") this.renderObjectivesTab();
-    else if (this.tab === "rewards") this.renderRewardsTab();
-    else this.renderGeneralTab();
-  }
-
-  private textRow(label: string, value: any, onInput: (v: string) => void, rows = 1): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field" + (rows > 1 ? " ce-field-wide" : "");
-    const lab = document.createElement("label");
-    lab.className = "editor-form-label";
-    lab.textContent = label;
-    wrap.appendChild(lab);
-    const input = rows > 1 ? document.createElement("textarea") : document.createElement("input");
-    input.className = "editor-form-input";
-    input.spellcheck = false;
-    if (input instanceof HTMLTextAreaElement) input.rows = rows;
-    input.value = value === null || value === undefined ? "" : String(value);
-    input.addEventListener("input", () => {
-      onInput(input.value);
-      this.dirty = true;
-    });
-    wrap.appendChild(input);
-    return wrap;
-  }
-
-  // Gold, silver and copper inputs for an amount stored as a single copper
-  // total, mirroring the creature editor's money fields and coin icons.
-  private moneyRow(label: string, value: any, onInput: (v: number) => void): HTMLElement {
-    const total = Math.max(0, Math.floor(Number(value) || 0));
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field ce-field-wide";
-    const lab = document.createElement("label");
-    lab.className = "editor-form-label";
-    lab.textContent = label;
-    wrap.appendChild(lab);
-    const row = document.createElement("div");
-    row.className = "ce-money";
-    const coins = [
-      { name: "Gold", cls: "gold", amount: Math.floor(total / 10000), max: null as number | null },
-      { name: "Silver", cls: "silver", amount: Math.floor((total % 10000) / 100), max: 99 as number | null },
-      { name: "Copper", cls: "copper", amount: total % 100, max: 99 as number | null },
-    ];
-    const inputs: HTMLInputElement[] = [];
-    const write = () => {
-      const [gold, silver, copper] = inputs.map((input) => Math.max(0, Math.floor(Number(input.value) || 0)));
-      onInput(gold * 10000 + silver * 100 + copper);
-      this.dirty = true;
-    };
-    for (const coin of coins) {
-      const part = document.createElement("label");
-      part.className = `ce-money-part ce-money-${coin.cls}`;
-      const input = document.createElement("input");
-      input.className = "editor-form-input";
-      input.type = "number";
-      input.min = "0";
-      if (coin.max !== null) input.max = String(coin.max);
-      input.step = "1";
-      input.value = String(coin.amount);
-      input.setAttribute("aria-label", `${label} ${coin.name.toLowerCase()}`);
-      input.addEventListener("input", write);
-      input.addEventListener("change", () => {
-        const n = Math.max(0, Math.floor(Number(input.value) || 0));
-        input.value = String(coin.max === null ? n : Math.min(coin.max, n));
-        write();
-      });
-      inputs.push(input);
-      part.appendChild(input);
-      const unit = document.createElement("span");
-      unit.className = `currency-icon currency-icon-${coin.cls} ce-money-icon`;
-      part.title = coin.name;
-      part.appendChild(unit);
-      row.appendChild(part);
-    }
-    wrap.appendChild(row);
-    return wrap;
-  }
-
-  private numberRow(label: string, value: any, onInput: (v: number | null) => void): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field";
-    const lab = document.createElement("label");
-    lab.className = "editor-form-label";
-    lab.textContent = label;
-    wrap.appendChild(lab);
-    const input = document.createElement("input");
-    input.className = "editor-form-input";
-    input.type = "number";
-    input.value = value === null || value === undefined ? "" : String(value);
-    input.addEventListener("input", () => {
-      onInput(input.value === "" ? null : Number(input.value));
-      this.dirty = true;
-    });
-    wrap.appendChild(input);
-    return wrap;
-  }
-
-  private selectRow(label: string, value: any, options: Array<{ value: string; label: string }>, onChange: (v: string) => void, allowEmpty = false, emptyLabel = "None"): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field";
-    const lab = document.createElement("label");
-    lab.className = "editor-form-label";
-    lab.textContent = label;
-    wrap.appendChild(lab);
-    const select = document.createElement("select");
-    select.className = "editor-form-input";
-    const current = String(value ?? "");
-    const opts = [...options];
-    if (allowEmpty) opts.unshift({ value: "", label: emptyLabel });
-    if (current && !opts.some((o) => String(o.value) === current)) {
-      opts.unshift({ value: current, label: current });
-    }
-    for (const option of opts) {
-      const el = document.createElement("option");
-      el.value = String(option.value);
-      el.textContent = option.label;
-      select.appendChild(el);
-    }
-    select.value = current;
-    select.addEventListener("change", () => {
-      onChange(select.value);
-      this.dirty = true;
-    });
-    wrap.appendChild(select);
-    return wrap;
-  }
-
-  // Multi-pick as click-to-open searchable popup with toggle rows. A native
-  // multi-select cannot be used here: select.editor-form-input is pinned to
-  // 29px height, which collapses it into a broken single row.
-  private pickerSummary(selected: number[], options: Array<{ value: string; label: string }>): string {
-    if (selected.length === 0) return "None - click to pick";
-    const names = selected.map((id) => options.find((o) => Number(o.value) === id)?.label || `#${id}`);
-    const text = names.join(", ");
-    return `${selected.length} selected: ${text.length > 64 ? text.slice(0, 64) + "…" : text}`;
-  }
-
-  private pickerRow(label: string, selected: number[], options: Array<{ value: string; label: string }>, onChange: (v: number[]) => void): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field ce-field-wide";
-    const lab = document.createElement("label");
-    lab.className = "editor-form-label";
-    lab.textContent = label;
-    wrap.appendChild(lab);
-    let current = (selected || []).map(Number).filter((n) => Number.isFinite(n));
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "ce-asset-button";
-    const paint = () => {
-      button.innerHTML = "";
-      const text = document.createElement("span");
-      text.className = "ce-asset-name";
-      text.textContent = this.pickerSummary(current, options);
-      button.appendChild(text);
-    };
-    paint();
-    button.addEventListener("click", () => {
-      this.openMultiPicker(label, options, current, (next) => {
-        current = next;
-        onChange([...next]);
-        this.dirty = true;
-        paint();
-      });
-    });
-    wrap.appendChild(button);
-    return wrap;
-  }
-
-  private openMultiPicker(title: string, options: Array<{ value: string; label: string }>, selectedIn: number[], onPick: (selected: number[]) => void): void {
-    let selected = [...selectedIn];
-    const overlay = document.createElement("div");
-    overlay.className = "editor-modal-overlay";
-    const box = document.createElement("div");
-    box.className = "editor-modal-box ce-asset-picker";
-    const heading = document.createElement("h3");
-    heading.textContent = title;
-    const search = document.createElement("input");
-    search.type = "text";
-    search.placeholder = "Search...";
-    search.spellcheck = false;
-    const list = document.createElement("div");
-    list.className = "ce-asset-list";
-    const footer = document.createElement("div");
-    footer.className = "editor-modal-actions";
-    const count = document.createElement("span");
-    count.style.marginRight = "auto";
-    const done = document.createElement("button");
-    done.type = "button";
-    done.textContent = "Done";
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    const close = () => {
-      document.removeEventListener("keydown", onKey);
-      overlay.remove();
-    };
-
-    const paintCount = () => {
-      count.textContent = `${selected.length} selected`;
-    };
-
-    const paintList = () => {
-      const query = search.value.toLowerCase();
-      list.innerHTML = "";
-      const matches = options.filter((o) => !query || o.label.toLowerCase().includes(query));
-      if (matches.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "editor-empty";
-        empty.textContent = options.length === 0 ? "Nothing to pick yet." : "Nothing matches that search.";
-        list.appendChild(empty);
-        return;
-      }
-      const chosen = new Set(selected);
-      for (const option of matches) {
-        const row = document.createElement("div");
-        row.className = "ce-asset-row";
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.checked = chosen.has(Number(option.value));
-        cb.addEventListener("click", (e) => e.stopPropagation());
-        cb.addEventListener("change", () => {
-          const id = Number(option.value);
-          if (cb.checked) {
-            if (!selected.includes(id)) selected.push(id);
-          } else {
-            selected = selected.filter((n) => n !== id);
-          }
-          onPick([...selected]);
-          paintCount();
-        });
-        const text = document.createElement("span");
-        text.className = "ce-asset-name";
-        text.textContent = option.label;
-        row.appendChild(cb);
-        row.appendChild(text);
-        row.addEventListener("click", () => {
-          cb.checked = !cb.checked;
-          cb.dispatchEvent(new Event("change"));
-        });
-        list.appendChild(row);
-      }
-    };
-
-    search.addEventListener("input", paintList);
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) close();
-    });
-    document.addEventListener("keydown", onKey);
-    done.addEventListener("click", close);
-
-    box.appendChild(heading);
-    box.appendChild(search);
-    box.appendChild(list);
-    footer.appendChild(count);
-    footer.appendChild(done);
-    box.appendChild(footer);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    paintCount();
-    paintList();
-    search.focus();
-  }
-
-  /**
-   * A titled card holding a grid of fields. `subtitle` summarises the card;
-   * `onRemove` adds a × to the header (objectives, item rewards).
-   */
-  private card(title: string, subtitle?: string, onRemove?: { title: string; run: () => void }): HTMLElement {
-    const card = document.createElement("div");
-    card.className = "editor-card";
-    const head = document.createElement("div");
-    head.className = "editor-card-head";
-    const titleEl = document.createElement("span");
-    titleEl.className = "editor-card-title";
-    titleEl.textContent = title;
-    head.appendChild(titleEl);
-    if (subtitle) {
-      const sub = document.createElement("span");
-      sub.className = "editor-card-sub";
-      sub.textContent = subtitle;
-      sub.title = subtitle;
-      head.appendChild(sub);
-    }
-    if (onRemove) {
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "ce-card-btn-x";
-      remove.textContent = "×";
-      remove.title = onRemove.title;
-      remove.setAttribute("aria-label", onRemove.title);
-      remove.addEventListener("click", onRemove.run);
-      head.appendChild(remove);
-    }
-    card.appendChild(head);
-    const grid = document.createElement("div");
-    grid.className = "editor-card-grid";
-    card.appendChild(grid);
-    this.fieldsEl.appendChild(card);
-    return grid;
-  }
-
-  /** A short explanation under a field. */
-  private hinted(field: HTMLElement, hint: string): HTMLElement {
-    const el = document.createElement("div");
-    el.className = "editor-field-hint";
-    el.textContent = hint;
-    field.appendChild(el);
-    return field;
-  }
-
-  private wide(field: HTMLElement): HTMLElement {
-    field.classList.add("ce-field-wide");
-    return field;
-  }
-
-  private addButton(label: string, onClick: () => void): void {
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "ce-card-btn editor-add-btn";
-    add.textContent = `+ ${label}`;
-    add.addEventListener("click", onClick);
-    this.fieldsEl.appendChild(add);
-  }
-
-  private renderGeneralTab(): void {
-    const d = this.draft;
-    const repeatables = (this.data.repeatableValues?.length ? this.data.repeatableValues : ["none", "repeatable", "daily"])
-      .map((v: string) => ({ value: v, label: v }));
-
-    const basics = this.card("Basics");
-    basics.appendChild(this.textRow("Name", d.name, (v) => (d.name = v)));
-    basics.appendChild(this.hinted(this.textRow("Zone", d.zone, (v) => (d.zone = v)), "Groups the quest in the player's log."));
-    basics.appendChild(this.numberRow("Required level", d.required_level, (v) => (d.required_level = v)));
-    basics.appendChild(this.hinted(this.numberRow("Quest level", d.quest_level, (v) => (d.quest_level = v)), "Sets its difficulty colour. 0 = same as required level."));
-    basics.appendChild(this.selectRow("Repeatable", d.repeatable, repeatables, (v) => (d.repeatable = v)));
-    basics.appendChild(this.hinted(this.numberRow("Sort order", d.sort_order, (v) => (d.sort_order = v)), "Lower numbers are listed first."));
-
-    const dialogue = this.card("Dialogue", "What the player reads");
-    dialogue.appendChild(this.wide(this.hinted(this.textRow("Offer text", d.offer_text, (v) => (d.offer_text = v), 4), "Shown when the NPC offers the quest.")));
-    dialogue.appendChild(this.wide(this.hinted(this.textRow("Log description", d.description, (v) => (d.description = v), 3), "Shown in the quest log while the quest is active.")));
-    dialogue.appendChild(this.wide(this.hinted(this.textRow("Progress text", d.progress_text, (v) => (d.progress_text = v), 3), "Shown when talking to the NPC before the objectives are done.")));
-    dialogue.appendChild(this.wide(this.hinted(this.textRow("Completion text", d.completion_text, (v) => (d.completion_text = v), 3), "Shown when the quest is turned in.")));
-
-    const chain = this.card("Quest chain");
-    chain.appendChild(this.hinted(
-      this.selectRow("Next quest", d.next_quest_id, this.questOptions(), (v) => (d.next_quest_id = v === "" ? null : Number(v)), true),
-      "Offered right after this one is turned in."
-    ));
-    chain.appendChild(this.wide(this.hinted(
-      this.pickerRow("Prerequisites", d.prerequisites, this.questOptions((d.prerequisites || []).map(Number)), (v) => (d.prerequisites = v)),
-      "Quests that must be completed before this one is offered."
-    )));
-
-    const npcs = this.card("NPCs", "Only NPCs marked as quest givers can be picked");
-    npcs.appendChild(this.wide(this.pickerRow("Given by", d.givers, this.npcOptions(true), (v) => (d.givers = v))));
-    npcs.appendChild(this.wide(this.pickerRow("Turned in to", d.enders, this.npcOptions(true), (v) => (d.enders = v))));
-  }
-
-  private targetEditor(objective: any, onChange: () => void): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "ce-field ce-field-wide";
-    const lab = document.createElement("label");
-    lab.className = "editor-form-label";
-    lab.textContent = "Target";
-    wrap.appendChild(lab);
-    const type = objective.type;
-    if (type === "kill") {
-      const select = document.createElement("select");
-      select.className = "editor-form-input";
-      for (const option of this.creatureOptions()) {
-        const el = document.createElement("option");
-        el.value = option.value;
-        el.textContent = option.label;
-        select.appendChild(el);
-      }
-      select.value = String(objective.target ?? "");
-      if (select.selectedIndex < 0 && select.options.length > 0) select.selectedIndex = 0;
-      objective.target = select.value;
-      select.addEventListener("change", () => {
-        objective.target = select.value;
-        this.dirty = true;
-        onChange();
-      });
-      wrap.appendChild(select);
-    } else if (type === "talk") {
-      const select = document.createElement("select");
-      select.className = "editor-form-input";
-      for (const option of this.npcOptions()) {
-        const el = document.createElement("option");
-        el.value = option.value;
-        el.textContent = option.label;
-        select.appendChild(el);
-      }
-      select.value = String(objective.target ?? "");
-      if (select.selectedIndex < 0 && select.options.length > 0) select.selectedIndex = 0;
-      objective.target = select.value;
-      select.addEventListener("change", () => {
-        objective.target = select.value;
-        this.dirty = true;
-        onChange();
-      });
-      wrap.appendChild(select);
-    } else if (type === "explore") {
-      const select = document.createElement("select");
-      select.className = "editor-form-input";
-      const maps: string[] = this.data.maps ?? [];
-      for (const map of maps) {
-        const el = document.createElement("option");
-        el.value = map;
-        el.textContent = map;
-        select.appendChild(el);
-      }
-      if (objective.target && !maps.includes(objective.target)) {
-        const el = document.createElement("option");
-        el.value = objective.target;
-        el.textContent = objective.target;
-        select.appendChild(el);
-      }
-      select.value = String(objective.target ?? "");
-      select.addEventListener("change", () => {
-        objective.target = select.value;
-        this.dirty = true;
-        onChange();
-      });
-      wrap.appendChild(select);
-      // Optional point: leave all three empty to complete on entering the map.
-      const coords = document.createElement("div");
-      coords.className = "qe-coords";
-      for (const [key, label] of [["target_x", "X"], ["target_y", "Y"], ["target_radius", "Radius"]] as Array<[string, string]>) {
-        coords.appendChild(this.numberRow(label, objective[key], (v) => (objective[key] = v)));
-      }
-      wrap.appendChild(coords);
-      this.hinted(wrap, "Leave X, Y and Radius empty to complete on entering the map. A radius needs both X and Y.");
-    } else {
-      // collect: item names are free text with a datalist of known items.
-      const input = document.createElement("input");
-      input.className = "editor-form-input";
-      input.setAttribute("list", "qe-item-list");
-      input.value = String(objective.target ?? "");
-      input.addEventListener("input", () => {
-        objective.target = input.value;
-        this.dirty = true;
-      });
-      wrap.appendChild(input);
-      let datalist = document.getElementById("qe-item-list") as HTMLDataListElement | null;
-      if (!datalist) {
-        datalist = document.createElement("datalist");
-        datalist.id = "qe-item-list";
-        document.body.appendChild(datalist);
-      }
-      datalist.innerHTML = "";
-      for (const entry of this.data.items ?? []) {
-        const option = document.createElement("option");
-        option.value = this.itemNameOf(entry);
-        datalist.appendChild(option);
-      }
-    }
-    return wrap;
-  }
-
-  private renderObjectivesTab(): void {
-    const d = this.draft;
-    d.objectives = d.objectives || [];
-    const types = (this.data.objectiveTypes?.length ? this.data.objectiveTypes : ["kill", "collect", "talk", "explore"])
-      .map((v: string) => ({ value: v, label: v }));
-    if (d.objectives.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "editor-empty";
-      empty.textContent = "No objectives: the quest can be turned in straight away. Add one below.";
-      this.fieldsEl.appendChild(empty);
-    }
-    d.objectives.forEach((objective: any, index: number) => {
-      const grid = this.card(`Objective ${index + 1}`, this.objectiveSummary(objective), {
-        title: "Remove objective",
-        run: () => {
-          d.objectives.splice(index, 1);
-          this.dirty = true;
-          this.renderForm();
-        },
-      });
-      grid.appendChild(this.selectRow("Type", objective.type, types, (v) => {
-        objective.type = v;
-        objective.target = "";
-        this.dirty = true;
-        this.renderForm();
-      }));
-      grid.appendChild(this.numberRow("Required count", objective.required_count, (v) => (objective.required_count = v)));
-      grid.appendChild(this.targetEditor(objective, () => this.renderForm()));
-      grid.appendChild(this.wide(this.hinted(
-        this.textRow("Display text (optional)", objective.description, (v) => (objective.description = v)),
-        "Replaces the generated line in the quest log, e.g. \"Wolf pelts collected\"."
-      )));
-    });
-    this.addButton("Add objective", () => {
-      d.objectives.push({ type: "kill", target: "", required_count: 1, target_x: null, target_y: null, target_radius: null, description: null });
-      this.dirty = true;
-      this.renderForm();
-    });
-  }
-
-  /** "Kill · Rat × 3": what an objective asks for, for its card header. */
-  private objectiveSummary(objective: any): string {
-    const target = String(objective.target ?? "");
-    const named = (options: Array<{ value: string; label: string }>) =>
-      options.find((o) => o.value === target)?.label.replace(/^#\d+\s*/, "") || target;
-    const what =
-      objective.type === "kill" ? named(this.creatureOptions())
-      : objective.type === "talk" ? named(this.npcOptions())
-      : target;
-    const type = String(objective.type ?? "");
-    const verb = type.charAt(0).toUpperCase() + type.slice(1);
-    const count = Number(objective.required_count) > 1 ? ` × ${objective.required_count}` : "";
-    return what ? `${verb} · ${what}${count}` : verb;
-  }
-
-  private renderRewardsTab(): void {
-    const d = this.draft;
-    d.rewards = d.rewards || [];
-    // XP and currency are rewards, not quest metadata: they live here next to
-    // the item rewards so authors set the whole payout in one place.
-    const payout = this.card("Experience & money");
-    payout.appendChild(this.numberRow("XP reward", d.xp_reward, (v) => (d.xp_reward = v)));
-    payout.appendChild(this.moneyRow("Money reward", d.copper_reward, (v) => (d.copper_reward = v)));
-
-    if (d.rewards.length > 0) {
-      const note = document.createElement("div");
-      note.className = "editor-field-hint";
-      note.textContent = "Item rewards marked as a choice: the player picks one of them. All others are always given.";
-      this.fieldsEl.appendChild(note);
-    }
-    d.rewards.forEach((reward: any, index: number) => {
-      const name = this.itemNameOf(reward.item_name ?? reward);
-      const summary = `${name || "No item picked"}${Number(reward.quantity) > 1 ? ` × ${reward.quantity}` : ""}${reward.is_choice ? " · choice" : ""}`;
-      const grid = this.card(`Item reward ${index + 1}`, summary, {
-        title: "Remove reward",
-        run: () => {
-          d.rewards.splice(index, 1);
-          this.dirty = true;
-          this.renderForm();
-        },
-      });
-      grid.appendChild(this.wide(this.itemPicker.renderField(
-        { key: "item_name", label: "Item", type: "asset", assets: () => this.itemRewardOptions(), searchFirst: true },
-        reward,
-        () => { this.dirty = true; }
-      )));
-      grid.appendChild(this.numberRow("Quantity", reward.quantity, (v) => (reward.quantity = v)));
-      const wrap = document.createElement("div");
-      wrap.className = "ce-field ce-field-check";
-      const line = document.createElement("label");
-      line.className = "editor-form-check";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = !!reward.is_choice;
-      cb.addEventListener("change", () => {
-        reward.is_choice = cb.checked;
-        this.dirty = true;
-        this.renderForm();
-      });
-      line.appendChild(cb);
-      line.appendChild(document.createTextNode("Player's choice"));
-      wrap.appendChild(line);
-      grid.appendChild(wrap);
-    });
-    this.addButton("Add item reward", () => {
-      d.rewards.push({ item_name: "", quantity: 1, is_choice: false });
-      this.dirty = true;
-      this.renderForm();
-    });
+    this.tab = "general";
+    this.open(copy, null, true);
+    // The copy wants a name of its own before it is saved.
+    this.shell.focusField("name");
   }
 
   // ----------------------------------------------------------------- actions
 
-  // A second save while one is in flight would interleave delete+insert
-  // cycles on the server and duplicate every objective and reward. The
-  // result doesn't name its request, so remember which one is pending.
-  private pending: "save" | "delete" | null = null;
-  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
-
   private save(): void {
-    if (!this.draft) return;
-    if (this.pending) return this.status("Saving...");
+    if (!this.draft || this.pending) return;
     const payload = { ...this.draft };
     if (this.editingId !== null) payload.id = this.editingId;
-    this.beginRequest("save", "QUEST_EDITOR_SAVE", payload);
-    this.status("Saving...");
+    this.beginRequest("save", "QUEST_EDITOR_SAVE", payload, this.editingId, this.titleOf(this.draft));
   }
 
-  /** Delete a quest from its list row. Closes it if it is the open one. */
-  private deleteEntry(quest: any): void {
+  /** Delete a quest, from its list row or the top bar. It is closed, if it is the open one, once the server has deleted it. */
+  private async deleteEntry(quest: any): Promise<void> {
     const id = Number(quest?.id);
-    if (!Number.isFinite(id)) return;
-    if (this.pending) return this.status("Saving...");
-    if (!confirm(`Delete quest #${id} ${quest.name}? Players on it lose it.`)) return;
-    if (this.editingId === id) {
-      this.draft = null;
-      this.editingId = null;
-      this.dirty = false;
-      this.renderForm();
-    }
-    this.beginRequest("delete", "QUEST_EDITOR_DELETE", { questId: id });
-    this.status("Deleting...");
+    if (quest?.id === null || quest?.id === undefined || !Number.isFinite(id) || this.pending) return;
+    const name = String(quest.name ?? "").trim() || `quest #${id}`;
+    const agreed = await this.shell.confirmDelete(name, [
+      "This cannot be undone.",
+      "Players who are on it lose it, with what they had done for it. Quests that needed it first, or led to it, are no longer tied to it.",
+    ]);
+    if (!agreed || this.pending) return;
+    this.beginRequest("delete", "QUEST_EDITOR_DELETE", { questId: id }, id, name);
   }
 
-  private beginRequest(kind: "save" | "delete", packet: string, data: any): void {
-    this.pending = kind;
+  private beginRequest(kind: "save" | "delete", packet: string, data: any, id: number | null, name: string): void {
+    const asked: Asked = { kind, id, name, adds: kind === "save" && id === null, opened: this.opened, edits: this.edits };
+    this.pending = asked;
+    this.late = null;
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
     // No result ever comes back if the server rejects the packet outright
-    // (e.g. permissions): don't leave Save blocked forever.
+    // (permissions, for one): do not leave the buttons blocked forever.
     this.pendingTimer = setTimeout(() => {
-      if (this.pending !== kind) return;
+      if (this.pending !== asked) return;
+      this.late = asked;
       this.endRequest();
-      this.status("No response from the server - try again");
+      if (kind === "save" && asked.opened === this.opened) this.refused = true;
+      this.chrome();
+      toast("The server did not answer in time, so nothing was confirmed.", "error");
     }, 15000);
-    this.send({ type: "request", packet, data });
-    this.updateSaveIcon();
+    this.shell.send({ type: "request", packet, data });
+    this.chrome();
   }
 
   private endRequest(): void {
     if (this.pendingTimer) clearTimeout(this.pendingTimer);
     this.pendingTimer = null;
     this.pending = null;
-    this.updateSaveIcon();
-  }
-
-  /** Save icon: faded with nothing to save, highlighted with unsaved changes. */
-  private updateSaveIcon(): void {
-    const btn = document.getElementById("btn-save");
-    if (!btn) return;
-    const changes = !!this.draft && this.dirty;
-    btn.classList.toggle("has-changes", changes);
-    btn.classList.toggle("saving", !!this.pending);
-    btn.title = this.pending ? "Saving..." : changes ? "Save changes (Ctrl+S)" : "No unsaved changes";
+    this.chrome();
   }
 }
 

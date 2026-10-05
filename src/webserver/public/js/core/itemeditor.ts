@@ -21,6 +21,9 @@ function withAssetUrls<T>(value: T): T {
   return value;
 }
 
+const EDITOR_WIDTH = 1280;
+const EDITOR_HEIGHT = 820;
+
 class ItemEditor {
   public isActive = false;
 
@@ -51,7 +54,13 @@ class ItemEditor {
   private open(): void {
     this.isActive = true;
     const url = window.location.origin + "/item-editor";
-    this.editorWindow = window.open(url, "ItemEditor", "width=1000,height=760,left=110,top=70,location=no,toolbar=no,menubar=no,status=no");
+    // The size the editor's workbench is laid out for, where the screen allows, in the middle of the screen.
+    const area = window.screen as Screen & { availLeft?: number; availTop?: number };
+    const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
+    const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
+    const left = (area.availLeft ?? 0) + Math.max(0, Math.round((area.availWidth - width) / 2));
+    const top = (area.availTop ?? 0) + Math.max(0, Math.round((area.availHeight - height) / 2));
+    this.editorWindow = window.open(url, "ItemEditor", `width=${width},height=${height},left=${left},top=${top},location=no,toolbar=no,menubar=no,status=no`);
     if (!this.editorWindow) {
       this.isActive = false;
       return;

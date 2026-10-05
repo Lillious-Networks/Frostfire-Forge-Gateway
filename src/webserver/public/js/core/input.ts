@@ -2,9 +2,10 @@ import { sendRequest, getIsLoaded, cachedPlayerId } from "./socket.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 import { parseCreatureTarget } from "./creature.js";
+import { playerAt } from "./playerpick.js";
 import { toggleWorldMap, isWorldMapOpen, closeWorldMap } from "./worldmap.js";
 const cache = Cache.getInstance();
-import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, adminPanelContainer, spellCooldowns, refreshSpellbookCooldowns, questLogUI, questFrameUI } from "./ui.js";
+import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, spellCooldowns, refreshSpellbookCooldowns, questLogUI, questFrameUI } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
 import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
 import { chatInput } from "./chat.js";
@@ -18,7 +19,6 @@ let toggleSpellBook = false;
 let toggleFriendsList = false;
 let toggleCollectables = false;
 let toggleGuild = false;
-let toggleAdminPanel = false;
 let controllerConnected: boolean = false;
 let contextMenuKeyTriggered = false;
 let isKeyPressed = false;
@@ -47,9 +47,6 @@ function closeOtherPanels(_except: string) {
   }
   if (_except !== "guild" && toggleGuild) {
     toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
-  }
-  if (_except !== "admin" && toggleAdminPanel) {
-    toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
   }
   if (_except !== "questlog" && questLogUI && questLogUI.style.display === "block") {
     questLogUI.style.display = "none";
@@ -154,41 +151,6 @@ export const keyHandlers = {
     if (isKeyOnCooldown("Enter")) return;
     putKeyOnCooldown("Enter");
     handleEnterKey();
-  },
-  Insert: () => {
-    if (toggleSpellBook) {
-      toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
-    }
-
-    if (toggleGuild) {
-      toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
-    }
-
-    if (toggleCollectables) {
-      toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
-    }
-
-    if (toggleFriendsList) {
-      toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
-    }
-
-    if (toggleInventory) {
-      toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
-    }
-
-    if (questLogUI && questLogUI.style.display === "block") {
-      questLogUI.style.display = "none";
-      questLogUI.classList.remove("open");
-    }
-
-    const currentPlayer = Array.from(cache.players).find(p => p.id === cachedPlayerId);
-    if (currentPlayer?.isAdmin) {
-      toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
-
-      if (toggleAdminPanel) {
-        sendRequest({ type: "GET_ONLINE_PLAYERS", data: null });
-      }
-    }
   }
 } as const;
 
@@ -596,7 +558,7 @@ function getCanvas(): HTMLCanvasElement | null {
 
 let canvas: HTMLCanvasElement | null = null;
 
-// Helper function to find player at canvas coordinates (copied from events.ts context menu logic)
+// Helper function to find player at canvas coordinates
 function getPlayerAtCanvasPosition(clientX: number, clientY: number): any | null {
     // Get canvas bounding rect to convert screen coords to canvas coords
     const gameCanvas = getCanvas();
@@ -610,22 +572,8 @@ function getPlayerAtCanvasPosition(clientX: number, clientY: number): any | null
     const worldX = screenX - window.innerWidth / 2 + getCameraX();
     const worldY = screenY - window.innerHeight / 2 + getCameraY();
 
-    // Use same hitbox as context menu
-    const clickedPlayer = Array.from(cache.players || []).find((player: any) => {
-        const playerX = player.position.x;
-        const playerY = player.position.y;
-
-        return (
-            worldX >= playerX - 16 && worldX <= playerX + 32 &&
-            worldY >= playerY - 24 && worldY <= playerY + 48
-        );
-    });
-
-    if (clickedPlayer) {
-        return clickedPlayer;
-    }
-
-    return null;
+    // Same pick as the context menu: the player drawn on top
+    return playerAt(worldX, worldY);
 }
 
 // Setup drag event listeners
@@ -754,9 +702,6 @@ function closeAllPanels() {
   }
   if (toggleGuild) {
     toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
-  }
-  if (toggleAdminPanel) {
-    toggleAdminPanel = toggleUI(adminPanelContainer, toggleAdminPanel, -480);
   }
   if (questLogUI && questLogUI.style.display === "block") {
     questLogUI.style.display = "none";

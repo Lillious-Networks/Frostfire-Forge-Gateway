@@ -1,4 +1,5 @@
 import { sendRequest } from "./socket.js";
+import { config } from "../web/global.js";
 
 interface Particle {
   name: string;
@@ -24,7 +25,13 @@ interface Particle {
   time_on?: string;
   time_off?: string;
   scale?: number;
+  /** the sprite (asset server, assets/sprites) emitted in place of the round dot; none = the dot */
+  image?: string | null;
 }
+
+/** The window the particle editor opens in: room for its form with the preview beside it. */
+const EDITOR_WIDTH = 1100;
+const EDITOR_HEIGHT = 750;
 
 class ParticleEditor {
   public isActive: boolean = false;
@@ -50,8 +57,14 @@ class ParticleEditor {
     this.isActive = true;
 
     const url = window.location.origin + '/particle-editor';
+    // The size the editor is laid out for, where the screen allows, in the middle of the screen: as the other editors open.
+    const area = window.screen as Screen & { availLeft?: number; availTop?: number };
+    const width = Math.min(EDITOR_WIDTH, area.availWidth - 40);
+    const height = Math.min(EDITOR_HEIGHT, area.availHeight - 80);
+    const left = (area.availLeft ?? 0) + Math.max(0, Math.round((area.availWidth - width) / 2));
+    const top = (area.availTop ?? 0) + Math.max(0, Math.round((area.availHeight - height) / 2));
     this.editorWindow = window.open(url, 'ParticleEditor',
-      'width=1100,height=750,left=120,top=80,location=no,toolbar=no,menubar=no,status=no');
+      `width=${width},height=${height},left=${left},top=${top},location=no,toolbar=no,menubar=no,status=no`);
 
     if (!this.editorWindow) {
       this.isActive = false;
@@ -65,6 +78,26 @@ class ParticleEditor {
     }, 500);
 
     this.loadParticles();
+    void this.loadSprites();
+  }
+
+  /**
+   * The sprites a particle can emit in place of its round dot: the asset server's list (names only), for the editor's
+   * Image field. The editor fetches each image itself from /sprite?name=.
+   */
+  private sprites: string[] = [];
+  private async loadSprites() {
+    try {
+      const res = await fetch(`${config.ASSET_SERVER_URL}/sprites`);
+      const data = res.ok ? await res.json() : null;
+      this.sprites = (Array.isArray(data?.sprites) ? data.sprites : []).map((s: any) => String(s?.name ?? "")).filter(Boolean).sort((a: string, b: string) => a.localeCompare(b));
+    } catch {
+      this.sprites = []; // an asset server without the list: the field offers "None" and the particle's own image
+    }
+    this.sendSprites();
+  }
+  private sendSprites() {
+    this.sendToEditor({ type: 'sprites', sprites: this.sprites, assetServerUrl: config.ASSET_SERVER_URL });
   }
 
   private markBridgeReady() {
@@ -204,6 +237,7 @@ class ParticleEditor {
       time_on: '',
       time_off: '',
       scale: 1,
+      image: null,
     };
 
     sendRequest({

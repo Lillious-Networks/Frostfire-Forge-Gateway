@@ -172,7 +172,6 @@ body {
 #quest-tracker,
 #friends-list-container,
 #guild-container,
-#admin-panel-container,
 #stats-container,
 #castbar,
 #castbar-active-clone,
@@ -346,251 +345,6 @@ body {
   background-size: 100% 100%;
   width: 416px;
   height: 400px;
-}
-
-#admin-panel-container {
-  position: fixed;
-  top: 50px;
-  right: 10px;
-  z-index: 1002;
-  display: none;
-  width: 450px;
-  height: 630px;
-  background: url("../img/ui/ui-book.png");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-}
-
-#admin-panel-content {
-  position: absolute;
-  top: 50px;
-  left: 0;
-  right: 15px;
-  padding-right: 15px;
-  padding-left: 30px;
-  bottom: 20px;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-#admin-panel-content::-webkit-scrollbar {
-  width: 4px;
-}
-
-#admin-panel-content::-webkit-scrollbar-track {
-  background: rgba(139, 112, 48, 0.2);
-  border-radius: 4px;
-}
-
-#admin-panel-content::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #8b7030 0%, #6b5520 100%);
-  border-radius: 4px;
-  border: 1px solid rgba(107, 85, 32, 0.8);
-}
-
-#admin-panel-content::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #9b8040 0%, #7b6530 100%);
-}
-
-.admin-section {
-  margin-bottom: 18px;
-}
-
-.admin-label {
-  display: block;
-  font-family: 'Comic Relief';
-  font-size: 1em;
-  font-weight: 600;
-  color: #FFF1DA;
-  margin-bottom: 8px;
-  text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.8);
-}
-
-.admin-select {
-  width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  background: rgba(255, 241, 218, 0.9);
-  border: 2px solid #8b7030;
-  border-radius: 5px;
-  color: #813700;
-  font-family: 'Comic Relief';
-  font-size: 0.9em;
-  font-weight: 600;
-  cursor: pointer;
-  outline: none;
-  transition: all 0.2s ease;
-  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.2);
-}
-
-.admin-select:hover {
-  background: rgba(255, 241, 218, 1);
-  border-color: #a07a1a;
-  -webkit-box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-}
-
-.admin-select:focus {
-  background: rgba(255, 241, 218, 1);
-  border-color: #a07a1a;
-  -webkit-box-shadow: 0 2px 6px rgba(160, 72, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  box-shadow: 0 2px 6px rgba(160, 72, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-}
-
-.admin-select option {
-  background: #FFF1DA;
-  color: #813700;
-}
-
-.admin-input {
-  width: 100%;
-  height: 32px;
-  padding: 0 10px;
-  margin-bottom: 8px;
-  background: rgba(255, 241, 218, 0.9);
-  border: 2px solid #8b7030;
-  border-radius: 5px;
-  color: #813700;
-  font-family: 'Comic Relief';
-  font-size: 0.9em;
-  font-weight: 600;
-  outline: none;
-  transition: all 0.2s ease;
-  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.2);
-}
-
-.admin-input::placeholder {
-  color: rgba(129, 55, 0, 0.5);
-  text-shadow: none;
-}
-
-.admin-input:hover {
-  background: rgba(255, 241, 218, 1);
-  border-color: #a07a1a;
-  -webkit-box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-}
-
-.admin-input:focus {
-  background: rgba(255, 241, 218, 1);
-  border-color: #a07a1a;
-  -webkit-box-shadow: 0 2px 6px rgba(160, 72, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-  box-shadow: 0 2px 6px rgba(160, 72, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.5);
-}
-
-.admin-button-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.admin-button {
-  height: 32px;
-  padding: 0 12px;
-  border: none;
-  outline: none;
-  cursor: pointer;
-  background: linear-gradient(180deg, #6b8a6b 0%, #5a7a5a 100%);
-  color: #FFF1DA;
-  font-family: 'Comic Relief';
-  font-weight: 600;
-  font-size: 0.9em;
-  border-radius: 5px;
-  border: 2px solid #4a6a4a;
-  -webkit-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  transition: all 0.2s ease;
-  text-align: center;
-}
-
-.admin-button:hover {
-  background: linear-gradient(180deg, #7a9a7a 0%, #6b8a6b 100%);
-  transform: translateY(-2px);
-  -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-}
-
-.admin-button:active {
-  transform: translateY(0px);
-  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.admin-button.active {
-  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
-  border-color: #7a3838;
-  -webkit-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-}
-
-.admin-button.active:hover {
-  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
-}
-
-.admin-button-full {
-  grid-column: 1 / -1;
-}
-
-.admin-button-warning {
-  background: linear-gradient(180deg, #c9a655 0%, #b89545 100%);
-  border-color: #8b7030;
-  color: #FFF1DA;
-}
-
-.admin-button-warning:hover {
-  background: linear-gradient(180deg, #d9b665 0%, #c9a655 100%);
-  transform: translateY(-2px);
-  -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-}
-
-.admin-button-warning:active {
-  transform: translateY(0px);
-  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.admin-button-danger {
-  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
-  border-color: #7a3838;
-  color: #FFF1DA;
-}
-
-.admin-button-danger:hover {
-  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
-  transform: translateY(-2px);
-  -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-}
-
-.admin-button-danger:active {
-  transform: translateY(0px);
-  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.admin-button-special {
-  background: linear-gradient(180deg, #8a6ba8 0%, #7a5a98 100%);
-  border-color: #5a4070;
-  color: #FFF1DA;
-}
-
-.admin-button-special:hover {
-  background: linear-gradient(180deg, #9a7bb8 0%, #8a6ba8 100%);
-  transform: translateY(-2px);
-  -webkit-box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.3);
-}
-
-.admin-button-special:active {
-  transform: translateY(0px);
-  -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 #guild-member-count {
@@ -1751,6 +1505,9 @@ input {
   font-weight: bold;
   color: #4a2c14;
   text-shadow: 0 1px 0 rgba(255, 240, 210, 0.6);
+  /* a phone held sideways must not enlarge these: they are sized to the frame's plaques */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 #minimap-time {
@@ -3599,119 +3356,6 @@ input[type=range]:disabled {
   font-size: 0.75em;
 }
 
-.te-layer-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  margin: 6px 0;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  transition: background 0.15s, border-color 0.15s;
-  font-size: 13px;
-  color: #fff;
-}
-
-.te-layer-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(46, 204, 113, 0.3);
-}
-
-.te-layer-item.active {
-  background: rgba(46, 204, 113, 0.2);
-  border-color: rgba(46, 204, 113, 0.5);
-}
-
-.te-layer-label {
-  flex: 1;
-  font-family: 'Space Mono', monospace;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.te-layer-eye {
-  margin-left: 8px;
-  font-size: 14px;
-}
-
-.te-layer-lock {
-  margin-left: 4px;
-  font-size: 14px;
-}
-
-.te-layer-item.locked .te-layer-label {
-  opacity: 0.6;
-}
-
-.te-object-layer-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  margin: 6px 0;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.03);
-  transition: background 0.15s, border-color 0.15s;
-  font-size: 13px;
-  color: #fff;
-}
-
-.te-object-layer-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(100, 180, 255, 0.3);
-}
-
-.te-object-layer-item.active {
-  background: rgba(100, 180, 255, 0.2);
-  border-color: rgba(100, 180, 255, 0.5);
-}
-
-.te-object-label {
-  flex: 1;
-  font-family: 'Space Mono', monospace;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.te-object-eye {
-  margin-left: 8px;
-  font-size: 14px;
-}
-
-.te-tileset-tab {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  padding: 6px 12px;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  transition: all 0.2s;
-  white-space: nowrap;
-  font-size: 11px;
-  flex-shrink: 0;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: none;
-}
-
-.te-tileset-tab:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(46, 204, 113, 0.3);
-  transform: translateY(-2px);
-}
-
-.te-tileset-tab.active {
-  background: rgba(46, 204, 113, 0.3);
-  border-color: rgba(46, 204, 113, 0.6);
-  -webkit-box-shadow: 0 0 12px rgba(46, 204, 113, 0.3);
-  box-shadow: 0 0 12px rgba(46, 204, 113, 0.3);
-}
-
 .ne-floating-panel {
   position: fixed;
   background: rgba(30, 41, 59, 0.95);
@@ -3730,19 +3374,6 @@ input[type=range]:disabled {
   -webkit-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
   border-color: rgba(46, 204, 113, 0.5);
-}
-
-#ne-particle-options::-webkit-scrollbar {
-  width: 4px;
-}
-
-#ne-particle-options::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-#ne-particle-options::-webkit-scrollbar-thumb {
-  background: rgba(46, 204, 113, 0.5);
-  border-radius: 4px;
 }
 
 body.mobile-landscape {
@@ -3831,8 +3462,14 @@ body.mobile-landscape {
     height: 137px;
   }
 
+  /* USER FEEDBACK 2026-10-04 ("adjust the time size on mobile so it fits in it's little section"): the frame here is
+     0.7 of the full one, but the time was 9 px against 10: "12:42:06 PM" came 52 px wide in a plaque 44 px wide
+     inside. It is 7 px now (40 px wide), the same share of the frame as the full size's 10: set as a 12 px font
+     scaled down, so that a phone browser's minimum font size cannot push it back up. */
   #minimap-time {
-    font-size: 9px;
+    font-size: 12px;
+    transform: translateX(-50%) scale(0.583);
+    transform-origin: top center;
   }
 
   #minimap-location {
@@ -3935,16 +3572,6 @@ body.ios-device .guild-input {
 body.ios-device .guild-button {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
 }
-body.ios-device .admin-label {
-  text-shadow: 1px 1px 1.5px rgba(0,0,0,0.4);
-}
-body.ios-device .admin-select,
-body.ios-device .admin-input {
-  text-shadow: 0.3px 0.3px 0.5px rgba(0,0,0,0.1);
-}
-body.ios-device .admin-button {
-  text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
-}
 
 body.ios-device.mobile-landscape #inventory.open {
   right: 175px;
@@ -3954,8 +3581,7 @@ body.ios-device.mobile-landscape #collectables-container,
 body.ios-device.mobile-landscape #quest-frame-container,
 body.ios-device.mobile-landscape #quest-log-container,
 body.ios-device.mobile-landscape #friends-list-container,
-body.ios-device.mobile-landscape #guild-container,
-body.ios-device.mobile-landscape #admin-panel-container {
+body.ios-device.mobile-landscape #guild-container {
   right: 16px !important;
   top: 14px !important;
   transform: none !important;
@@ -5428,14 +5054,6 @@ body.ipad-device #game-notification-container {
   }
 }
 
-.radial-item.admin-only {
-  display: none;
-}
-
-.radial-item.admin-only.visible {
-  display: flex;
-}
-
 .radial-menu-btn:hover {
   transform: scale(1.05);
 }
@@ -5551,8 +5169,43 @@ body.ipad-device #game-notification-container {
 
 @media (hover: none) and (pointer: coarse) {
 
-  #minimap-container {
-    display: none;
+  /* USER REQUEST 2026-10-04 ("also display the minimap on mobile UI"): the minimap shows on touch devices too (it was
+     hidden here), in the top right corner. What stood in that corner moves under the player's frame: the buffs in a
+     row (#buff-bar below), then the party frames in a row (#party-container below; they were a column down the right
+     edge, where the minimap and the quest tracker now are).
+
+     USER FEEDBACK 2026-10-04 ("Make the minimap bigger on mobile", at 0.7 of its 182 x 191 px frame, 127 x 134; then
+     "minimap is too big now", at 0.85 to 1): its size on a phone held sideways is --minimap-scale times that frame,
+     by the screen's height (the classes events.ts sets): 0.9 up to 600 px high, 0.82 (149 x 157) up to 450, 0.78
+     (142 x 149) up to 380. A narrow phone keeps it smaller so that it stays clear of the target's frame, which ends
+     483 px in. */
+  body.mobile-landscape { --minimap-scale: 0.9; }
+  body.small-landscape { --minimap-scale: 0.82; }
+  body.tiny-landscape { --minimap-scale: 0.78; }
+
+  @media (max-width: 660px) {
+    body.mobile-landscape { --minimap-scale: 0.7; }
+  }
+
+  @media (max-width: 600px) {
+    body.mobile-landscape { --minimap-scale: 0.55; }
+  }
+
+  body.mobile-landscape #minimap-container {
+    top: 8px;
+    right: 8px;
+    transform: scale(var(--minimap-scale));
+  }
+
+  /* USER FEEDBACK 2026-10-04 ("in the mobile UI the active tracked quest list needs to be from the top, not the
+     bottom"): the desktop rule hangs the tracker 310 px down, under the full-size minimap; on a phone held sideways
+     that is the bottom of the screen, over the mount and menu buttons. It hangs right under the phone's minimap
+     instead, whatever size that is, and ends above those buttons (92 px from the bottom). */
+  body.mobile-landscape #quest-tracker {
+    top: calc(14px + 191px * var(--minimap-scale));
+    right: 8px;
+    width: max(170px, calc(182px * var(--minimap-scale)));
+    max-height: calc(100vh - 14px - 191px * var(--minimap-scale) - 92px);
   }
 
   #stat-screen-close {
@@ -5625,9 +5278,13 @@ body.ipad-device #game-notification-container {
     right: auto !important;
   }
 
+  /* under the player's frame (8,25, 240 x 80), left to right: the top right corner it stood in is the minimap's now,
+     and beside the minimap a third buff already reached the target's frame on a 740 px wide phone */
   #buff-bar {
-    top: 14px !important;
-    right: 16px !important;
+    top: 110px !important;
+    left: 8px !important;
+    right: auto !important;
+    flex-direction: row !important;
   }
 
   /* Cast bar sits just above the hotbar (overrides all landscape top-docked
@@ -5655,18 +5312,20 @@ body.ipad-device #game-notification-container {
     pointer-events: none !important;
   }
 
+  /* a row under the player's frame and its buffs: the right edge now holds the minimap and the quest tracker (a
+     column of five 52 px frames there was as tall as the screen) */
   #party-container {
     position: fixed !important;
-    top: 50% !important;
+    top: 154px !important;
     bottom: auto !important;
-    left: auto !important;
-    right: 10px !important;
+    left: 8px !important;
+    right: auto !important;
     width: auto !important;
     height: auto !important;
     display: flex !important;
-    flex-direction: column !important;
+    flex-direction: row !important;
     gap: 4px !important;
-    transform: translateY(-50%) !important;
+    transform: none !important;
   }
 
   .party-member {
@@ -5731,8 +5390,7 @@ body.ipad-device #game-notification-container {
   #quest-frame-container,
   #quest-log-container,
   #friends-list-container,
-  #guild-container,
-  #admin-panel-container {
+  #guild-container {
     position: fixed !important;
     top: 14px !important;
     bottom: auto !important;
@@ -5746,18 +5404,12 @@ body.ipad-device #game-notification-container {
     z-index: 9500 !important;
   }
 
-  #admin-panel-container {
-    height: 388px !important;
-    width: 404px !important;
-  }
-
   #spell-book-container.open,
   #collectables-container.open,
   #quest-frame-container.open,
   #quest-log-container.open,
   #friends-list-container.open,
-  #guild-container.open,
-  #admin-panel-container.open {
+  #guild-container.open {
     opacity: 1 !important;
     visibility: visible !important;
     pointer-events: auto !important;
@@ -5915,8 +5567,7 @@ body.ipad-device #game-notification-container {
   #quest-frame-container,
   #quest-log-container,
   #friends-list-container,
-  #guild-container,
-  #admin-panel-container {
+  #guild-container {
     transform: none !important;
     zoom: 0.5;
   }
@@ -5941,10 +5592,6 @@ body.ipad-device #game-notification-container {
 .loot-btn-primary:hover{background:#ffe44d}
 .loot-btn-secondary{background:rgba(255,255,255,0.12);color:#ddd;border:1px solid rgba(255,255,255,0.2)}
 .loot-btn-secondary:hover{background:rgba(255,255,255,0.2)}
-.editor-item-remove{background:none;border:none;color:#c0392b;font-size:16px;cursor:pointer;padding:0 4px;line-height:1}
-.editor-item-remove:hover{color:#e74c3c}
-#editor-form button{height:32px;padding:4px 10px;font-size:11px;white-space:nowrap;background:rgba(255,255,255,0.05);color:#e0e7ff;border:1px solid rgba(71,85,105,0.4);border-radius:3px;cursor:pointer;font-family:'Clash Display',sans-serif;transition:all .15s}
-#editor-form button:hover{background:rgba(255,255,255,0.1);border-color:rgba(71,85,105,0.7)}
 
 /* Quality frame around an item icon, anywhere one is shown (js/core/itemframe.ts).
    Keyed on data-quality so it never mixes with the inventory's .rare/.epic slot rules. */
@@ -5957,16 +5604,6 @@ body.ipad-device #game-notification-container {
 .item-frame[data-quality="epic"]{border-color:rgba(189,52,235,0.6);background:rgba(189,52,235,0.1)}
 .item-frame[data-quality="legendary"]{border-color:transparent;background:rgba(255,128,0,0.12);position:relative;overflow:visible}
 .item-frame[data-quality="legendary"]::before{content:'';position:absolute;inset:-2px;border-radius:6px;padding:2px;background:linear-gradient(135deg,#ff6b6b,#ffb347,#ffe66d,#51cf66,#45b7d1,#9b59b6,#ff6b6b);background-size:300% 300%;animation:rainbow-shift-gradient 4s ease-in-out infinite;pointer-events:none;-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);mask-composite:exclude}
-.le-inline-inp{width:48px;height:24px;font-size:11px;background:rgba(255,255,255,0.06);border:1px solid rgba(71,85,105,0.4);border-radius:3px;color:#e0e7ff;text-align:center;padding:0 2px;font-family:'Space Mono',monospace;box-sizing:border-box}
-.le-inline-inp:focus{outline:none;border-color:rgba(46,204,113,0.6);background:rgba(46,204,113,0.08)}
-.le-inline-inp::-webkit-outer-spin-button,.le-inline-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.le-inline-inp[type=number]{appearance:textfield;-moz-appearance:textfield}
-.le-item-results{position:absolute;z-index:100;max-height:280px;overflow-y:auto;background:#1a2332;border:1px solid rgba(71,85,105,0.5);border-radius:3px;margin-top:2px;width:100%;box-shadow:0 4px 12px rgba(0,0,0,0.4)}
-.le-item-result{display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer;font-size:12px;color:#e0e7ff;font-family:'Clash Display',sans-serif;border-bottom:1px solid rgba(71,85,105,0.15)}
-.le-item-result:hover{background:rgba(255,255,255,0.05)}
-.le-item-result img{image-rendering:pixelated;flex-shrink:0}
-.le-add-btn{height:24px;padding:0 8px;font-size:10px;background:rgba(46,204,113,0.15);color:#2ecc71;border:1px solid rgba(46,204,113,0.3);border-radius:3px;cursor:pointer;font-family:'Clash Display',sans-serif;white-space:nowrap}
-.le-add-btn:hover{background:rgba(46,204,113,0.25);border-color:rgba(46,204,113,0.5)}
 
 #timelapse-btn{font-size:0.75em;padding:2px 6px;margin-top:3px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;border-radius:2px;cursor:pointer}
 

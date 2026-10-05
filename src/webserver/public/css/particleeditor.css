@@ -1,0 +1,122 @@
+/* The particle editor's own parts, on top of css/tools.css: the preview that
+   stays beside the form, and the controls only this editor has (a slider with
+   its number, a colour field, a time of day). Everything here starts with pe-;
+   the colours, spacing and corners are the shared ones. The script side is
+   js/core/particleeditorbridge.ts and js/core/particleeditorparts.ts. */
+
+/* ------------------------------------------------------------- the page */
+
+/* The preview is what the form is for, so it stays beside it at every width
+   the tools are meant for: the shared workbench would put it under the form
+   below 1240px, out of sight of the sliders that change it. */
+.tl-work.pe-work.has-aside { grid-template-columns: minmax(0, 1fr) 272px; max-width: 1180px; }
+.pe-work > .tl-work-aside { position: sticky; top: 0; }
+
+/* A card's parts, one under the other: sliders, then the grid of fields. */
+.pe-body { display: grid; gap: var(--s-4); }
+.pe-body > .tl-field + .tl-field { margin-top: 0; }
+/* The form column is narrow beside the preview: fields pair up from 168px. */
+.pe-work .tl-fields { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
+.pe-work .tl-fields-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* A part of a card with a heading of its own. */
+.pe-body > .tl-group { display: grid; gap: var(--s-3); }
+.pe-body > .tl-group > .tl-group-title { margin: 0; }
+.pe-group-lead { margin-top: calc(var(--s-2) * -1); color: var(--text-muted); font-size: var(--t-sm); }
+
+/* ------------------------------------------------------------- a slider */
+
+/* On one line: the label, the track, the exact number. */
+.pe-slider { grid-template-columns: minmax(96px, 148px) minmax(0, 1fr) 100px; align-items: center; gap: 4px var(--s-3); }
+.pe-slider > .tl-field-hint, .pe-slider > .tl-field-error { grid-column: 2 / -1; }
+
+.pe-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  background: none;
+  cursor: pointer;
+}
+.pe-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  /* Filled up to the value. */
+  background: linear-gradient(90deg, var(--accent) var(--pe-fill, 0%), rgba(148, 163, 184, 0.28) var(--pe-fill, 0%));
+}
+.pe-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--slate-200);
+  box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.55), 0 1px 3px rgba(2, 6, 23, 0.6);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.pe-range:hover::-webkit-slider-thumb { background: #fff; }
+.pe-range:active::-webkit-slider-thumb { background: #fff; box-shadow: 0 0 0 5px var(--accent-soft), 0 0 0 1px rgba(2, 6, 23, 0.55); }
+.pe-range::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(148, 163, 184, 0.28); }
+.pe-range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.pe-range::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--slate-200); box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.55), 0 1px 3px rgba(2, 6, 23, 0.6); }
+/* The focus is drawn on the handle, where the eye already is. */
+.pe-range:focus-visible { outline: none; }
+.pe-range:focus-visible::-webkit-slider-thumb { background: #fff; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.pe-range:focus-visible::-moz-range-thumb { background: #fff; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.pe-range:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ------------------------------------------------------- a colour field */
+
+.pe-colour { display: flex; gap: var(--s-2); min-width: 0; }
+.pe-colour-swatch {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  /* A ring inside the edge, so black and near-black still read as a swatch. */
+  background: var(--pe-colour, #000);
+  box-shadow: inset 0 0 0 2px var(--bg);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.pe-colour-swatch:hover { border-color: rgba(148, 163, 184, 0.45); }
+.pe-colour-swatch:focus-within { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--bg), 0 0 0 3px var(--accent-soft); }
+/* The browser's own colour field lies over the swatch, unseen: a click on the swatch opens its picker. */
+.pe-colour-swatch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.pe-colour-code { flex: 1; font-family: var(--font-mono); font-size: var(--t-sm); }
+
+/* The clock mark of a time field, in the colour of the other fields' marks. */
+.pe-time::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer; }
+
+/* ----------------------------------------------------------- the preview */
+
+.pe-stage { display: grid; justify-items: center; gap: var(--s-2); }
+/* The frame carries the border, so the canvas keeps every one of its 200 pixels. */
+.pe-stage-frame { border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; line-height: 0; background: #222; }
+.pe-canvas { display: block; width: 200px; height: 200px; image-rendering: pixelated; }
+.pe-stage.is-paused .pe-stage-frame { border-style: dashed; }
+.pe-caption { max-width: 200px; color: var(--text-muted); font-size: var(--t-sm); text-align: center; }
+.pe-preview .tl-card-tools { gap: 0; margin: -4px -6px 0 0; }
+.pe-preview .tl-facts { gap: var(--s-3) var(--s-3); }
+.pe-preview .tl-fact-value { font-size: var(--t-base); }
+
+/* ----------------------------------------- a particle, as a mark in a list */
+
+/* A dot in the particle's own colour, haloed when the particle glows. */
+.pe-swatch { position: relative; }
+.pe-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--pe-colour, #fff); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.24); }
+.pe-swatch.has-glow .pe-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.24), 0 0 7px 2px var(--pe-colour, #fff); }
+.tl-thumb-lg .pe-dot { width: 16px; height: 16px; }
+/* One that emits a sprite shows a picture mark, with its colour (the glow's) as a point in the corner. */
+.pe-swatch.has-image .pe-dot { position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; }
+.tl-thumb-lg.has-image .pe-dot { width: 8px; height: 8px; }
+
+/* --------------------------------------------------------- narrow window */
+
+/* Smaller than the tools are meant for: the preview goes above the form, so nothing is cut off. */
+@media (max-width: 899px) {
+  .tl-work.pe-work.has-aside { grid-template-columns: minmax(0, 1fr); }
+  .pe-work > .tl-work-aside { position: static; order: -1; }
+}

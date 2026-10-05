@@ -2,6 +2,7 @@ import { cachedPlayerId, sendRequest, getIsLoaded } from './socket.js';
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { overlay } from './ui.js';
+import playerEditor from './playereditor.js';
 
 const partyContextActions: Record<string, { only_self: boolean, allowed_self: boolean, label: string, handler: (username: string) => void }> = {
   'kick-player': {
@@ -53,7 +54,7 @@ const guildContextActions: Record<string, { only_self: boolean, allowed_self: bo
   },
 }
 
-const contextActions: Record<string, { allowed_self: boolean, label: string, handler: (id: string) => void }> = {
+const contextActions: Record<string, { allowed_self: boolean, admin_only?: boolean, label: string, handler: (id: string) => void }> = {
   'inspect-player': {
     label: 'Inspect',
     allowed_self: true,
@@ -126,6 +127,16 @@ const contextActions: Record<string, { allowed_self: boolean, label: string, han
     label: 'Report Player',
     allowed_self: false,
     handler: (id) => {
+    }
+  },
+  'edit-player': {
+    label: 'Edit Player Attributes',
+    allowed_self: true,
+    // Hidden from everyone else; the server checks permission on every editor packet regardless.
+    admin_only: true,
+    handler: (id) => {
+      const username = Array.from(cache.players).find(player => player.id === id)?.username;
+      playerEditor.open(username || id);
     }
   },
 };
@@ -278,8 +289,10 @@ function createContextMenu(event: MouseEvent, id: string) {
   const isInParty = currentPlayer?.party?.includes(targetedPlayer?.username?.toString()) || false;
   const isInGuild = currentPlayer?.guild?.includes(targetedPlayer?.username?.toString()) || false;
 
-  Object.entries(contextActions).forEach(([action, { label, handler, allowed_self }]) => {
+  Object.entries(contextActions).forEach(([action, { label, handler, allowed_self, admin_only }]) => {
     if (!allowed_self && isSelf) return;
+
+    if (admin_only && !currentPlayer?.isAdmin) return;
 
     if (action === 'invite-to-party' && isInParty) return;
 

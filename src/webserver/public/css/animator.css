@@ -1,1003 +1,318 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+/* The animation editor's own parts, on top of css/tools.css. Like the map
+   editor it is a tool window, not a list of records with a form: the shared
+   frame holds the sprite sheet and what is open in the side pane, and in the
+   page the frames cut from the sheet, then the timeline they are dropped on
+   with its stage. Everything here starts with an-, or is one of the ids the
+   script finds its parts by; the colours, spacing and corners are the shared
+   ones. The script side is js/web/animator.ts, which shows and hides several
+   of these parts by setting their display itself (block, flex or none), so
+   the layout of such a part is on a box inside it.
 
-    scrollbar-width: thin;
-    scrollbar-color: rgba(34, 197, 94, 0.6) rgba(15, 23, 42, 0.9);
+   The stage is a canvas the script sizes once, and again when the window is
+   resized. Nothing around it may change height for any other reason, or the
+   drawing would no longer match the box it is in: every strip here has a set
+   height, the row of controls does not wrap, and the page keeps the room of
+   its scrollbar whether it has one or not. */
+
+/* ------------------------------------------------------------- the frame */
+
+.an-app { --side-w: 300px; }
+
+/* The side pane: the brand, then the sheet and the metadata, which scroll, then the way back. */
+.an-side { gap: var(--s-4); padding-bottom: 0; }
+.an-side-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  margin: 0 calc(var(--s-3) * -1);
+  padding: 0 var(--s-3) var(--s-3);
+  overflow-y: auto;
 }
+.an-part, .an-part-inner { display: flex; flex-direction: column; gap: var(--s-3); }
+.an-part .tl-list-head { padding: 0; }
+.an-part .tl-list-title { margin: 0; }
+#info-panel { display: none; padding-top: 14px; border-top: 1px solid var(--border); }
 
-*::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+.an-home {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-shrink: 0;
+  margin: 0 calc(var(--s-3) * -1);
+  padding: 10px var(--s-5);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--t-sm);
+  text-decoration: none;
 }
+.an-home:hover { color: var(--text); }
+.an-home:focus-visible { outline-offset: -2px; }
 
-*::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.2);
-    border-radius: 10px;
+/* ------------------------------------------------------- the sprite sheet */
+
+/* The sheet as it was loaded, small. */
+.an-sheet {
+  display: flex;
+  max-height: 148px;
+  padding: var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--slate-950);
+  overflow: auto;
 }
-
-*::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, rgba(34, 197, 94, 0.6) 0%, rgba(134, 239, 172, 0.6) 100%);
-    border-radius: 10px;
-    border: 2px solid rgba(15, 23, 42, 0.2);
-    transition: background 0.3s ease;
+.an-sheet-none {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: auto;
+  padding: 6px var(--s-1);
+  color: var(--text-muted);
+  font-size: var(--t-sm);
+  text-align: center;
 }
+.an-sheet-none-mark { color: var(--text-faint); }
+.an-sheet-none .tl-btn { margin-top: var(--s-1); }
+#spritesheet-preview-placeholder { display: flex; }
+/* Made smaller to fit, never larger, and never out of shape. */
+#spritesheet-preview-canvas { display: none; max-width: 100%; max-height: 130px; margin: auto; image-rendering: pixelated; }
 
-*::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, rgba(34, 197, 94, 0.9) 0%, rgba(134, 239, 172, 0.9) 100%);
+.an-fields { gap: var(--s-3); }
+.an-fields .tl-affix, .an-dialog .tl-affix { --unit-w: 14px; }
+/* Why the four fields and the button are greyed out: the sheet is already cut. */
+.an-why { display: none; align-items: flex-start; margin: 0; line-height: 1.4; }
+.an-why .tl-icon { margin-top: 2px; }
+.an-part:has(.an-fields .tl-input:disabled) .an-why { display: flex; }
+
+/* The animation that is open, and its direction: a name to pick, with add, change and delete beside its label. */
+.an-pick { display: grid; gap: 6px; }
+.an-pick-head { display: flex; align-items: center; gap: var(--s-2); }
+.an-pick-head .tl-field-label { flex: 1; }
+.an-pick-tools { display: flex; align-items: center; gap: 2px; }
+.an-pick-tools .tl-icon-btn { width: 28px; height: 28px; }
+/* The script hides the list while it has nothing in it; this says so in its place. */
+.an-pick-none { display: none; color: var(--text-faint); font-size: var(--t-sm); }
+.an-pick select[style*="display: none"] + .an-pick-none { display: block; }
+#direction-select-container { display: none; }
+
+/* ------------------------------------------------------------ the top bar */
+
+.an-autosave, .an-loop { padding: 0 var(--s-2); color: var(--text); }
+/* Import is a label around its file field: the field is there for the keyboard, and not seen. */
+.an-file { cursor: pointer; }
+.an-file input { position: absolute; width: 1px; height: 1px; opacity: 0; clip-path: inset(50%); pointer-events: none; }
+.an-file:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* --------------------------------------------------------------- the page */
+
+/* The page fills the window, and scrolls only when the window is too short for the stage.
+   Room for that scrollbar is kept whether it is there or not (see the top of this file); it is
+   10px wide as the tools draw it, and the padding beside it gives that much up so that the
+   cards still end under the last button of the top bar. */
+.an-page { --pad: var(--s-6); padding-top: var(--s-4); padding-right: calc(var(--pad) - 10px); padding-bottom: var(--s-4); overflow-y: auto; scrollbar-gutter: stable; }
+.an-page .tl-page-inner { flex: 1 0 auto; max-width: none; }
+.an-frames { flex: none; }
+.an-timeline { flex: 1 0 auto; }
+.an-timeline-body { display: flex; flex-direction: column; gap: 10px; }
+/* Height is what the stage needs most, so a card's opening line sits beside its title while there is room. */
+.an-page .tl-card-words { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s-3); }
+.an-page .tl-card-lead { margin-top: 0; }
+.an-page .tl-card-head { align-items: center; }
+.an-page .tl-card-body { padding-top: var(--s-3); }
+.an-timeline .tl-card-tools { flex-wrap: nowrap; }
+
+/* A row of things side by side that scrolls sideways: the frames of the sheet, the frames of the timeline. */
+.an-strip {
+  display: flex;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: var(--s-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  overflow-x: auto;
+  overflow-y: hidden;
 }
+/* Each is as tall as its frames and a scrollbar under them, so that getting one changes nothing above or below. */
+#frames-grid { height: 94px; }
+#frame-sequence-container { min-width: 0; }
+#frame-sequence-list { align-items: center; height: 60px; padding-top: 6px; padding-bottom: 6px; }
+/* In place of the frames while there are none. */
+.an-none { display: flex; align-items: center; gap: var(--s-2); margin: auto; padding: 0 var(--s-3); color: var(--text-muted); font-size: var(--t-sm); }
+.an-none .tl-icon { color: var(--text-faint); }
+.an-steps .an-none { margin: 0; }
 
-*::-webkit-scrollbar-corner {
-    background: rgba(15, 23, 42, 0.2);
+/* One frame cut from the sheet: its picture and its number. It is picked up and dropped on the timeline. */
+.an-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  min-width: 64px;
+  height: 100%;
+  padding: 4px 6px 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: rgba(148, 163, 184, 0.06);
+  cursor: grab;
+  transition: background 0.12s, border-color 0.12s;
 }
+.an-frame:hover { border-color: var(--border-strong); background: var(--surface-hover); }
+.an-frame:active { cursor: grabbing; }
+.an-frame canvas { max-width: 100%; max-height: 44px; image-rendering: pixelated; }
+.an-frame-index { color: var(--text-muted); font-size: var(--t-xs); font-variant-numeric: tabular-nums; line-height: 15px; }
 
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-    background: #0f172a;
-    background-image:
-        radial-gradient(circle at 20% 50%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 80% 80%, rgba(34, 197, 94, 0.05) 0%, transparent 50%);
-    color: #f1f5f9;
-    padding: 0;
-    margin: 0;
-    line-height: 1.5;
-    height: 100vh;
-    overflow: hidden;
+/* One frame on the timeline: its number on the sheet, how long it shows, and its way out. */
+.an-step {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: rgba(148, 163, 184, 0.06);
+  cursor: grab;
+  transition: margin 0.2s ease, opacity 0.2s ease, background 0.12s, border-color 0.12s;
 }
-
-input, select {
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-    outline: none;
+.an-step:hover { background: var(--surface-hover); }
+.an-step:active { cursor: grabbing; }
+.an-step.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+.an-step-index { min-width: 20px; color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.an-step-ms { width: 62px; height: 24px; padding: 0 6px; -moz-appearance: textfield; appearance: textfield; }
+.an-step-ms::-webkit-inner-spin-button, .an-step-ms::-webkit-outer-spin-button { display: none; }
+.an-step-unit { color: var(--text-faint); font-size: var(--t-sm); }
+.an-step-remove { width: 24px; height: 24px; }
+/* While one is being moved: it fades, and a gap with a green line opens where it would land. */
+.an-step.is-dragging { opacity: 0.4; cursor: grabbing; }
+.an-step.is-drop-before { margin-left: 44px; }
+.an-step.is-drop-after { margin-right: 44px; }
+.an-step.is-drop-before::before, .an-step.is-drop-after::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
 }
+.an-step.is-drop-before::before { left: -28px; }
+.an-step.is-drop-after::after { right: -28px; }
 
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
+/* The stage. The canvas is shown dot for dot at the size the script gave it, which is the size of this box. */
+.an-stage {
+  position: relative;
+  flex: 1 0 280px;
+  width: 100%;
+  min-height: 280px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  /* What the script paints the canvas with, so that nothing shows before it has. */
+  background: #0e111b;
+  overflow: hidden;
 }
-
-input[type="number"] {
-    -moz-appearance: textfield;
-    appearance: textfield;
+#timeline-grid-canvas { position: absolute; top: 0; left: 0; display: block; }
+#grid-frames-container { position: absolute; inset: 0; pointer-events: none; }
+/* Where the selected frame is placed, typed over its label on the stage: the script puts it there and sets its width. */
+.an-coord {
+  position: absolute;
+  z-index: 5;
+  height: 20px;
+  margin: 0;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--slate-950);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  color: var(--text-strong);
+  font: 400 var(--t-xs)/1 var(--font-mono);
+  text-align: center;
 }
+.an-coord::placeholder { color: var(--text-faint); }
+.an-coord:focus-visible { outline: none; }
 
-.container {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-sizing: border-box !important;
-    overflow: hidden !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: stretch !important;
-    justify-content: flex-start !important;
-    padding-top: 90px !important;
-    z-index: 1 !important;
+/* Under the stage: what the pointer and the keys do there. */
+.an-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--s-3); color: var(--text-muted); font-size: var(--t-sm); }
+.an-keys > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.an-keys-label { color: var(--slate-300); font-family: var(--font-mono); }
+
+/* Play, stop and loop, then when each frame starts along the length of the animation. */
+.an-transport {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--border-soft);
 }
+#playback-controls { display: flex; align-items: center; gap: var(--s-2); height: 34px; white-space: nowrap; }
+.an-play { min-width: 84px; }
+/* Which frame, and how far in: kept as wide as their longest so that nothing beside them moves. */
+.an-readout { display: flex; align-items: center; gap: var(--s-3); min-width: 172px; padding-left: var(--s-2); color: var(--text-muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+#current-frame-display { min-width: 92px; color: var(--slate-300); }
 
-.header {
-    text-align: center;
-    padding: 16px 24px;
-    border-bottom: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 999;
-    background: transparent;
-    backdrop-filter: none;
-}
-
-.header h1 {
-    font-size: 1.5em;
-    font-weight: 700;
-    color: #22c55e;
-    margin-bottom: 2px;
-    letter-spacing: 0;
-    font-family: 'Clash Display', sans-serif;
-}
-
-.header p {
-    color: #cbd5e1;
-    font-size: 0.8em;
-    font-weight: 300;
-    margin: 0;
-}
-
-.home-button {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    width: 40px;
-    height: 40px;
-    background: rgba(30, 41, 59, 0.8);
-    border: 1px solid var(--color-border);
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: var(--transition);
-    z-index: 1000;
-    font-size: 1.25rem;
-    color: var(--color-primary);
-}
-
-.home-button:hover {
-    border-color: var(--color-primary);
-    background: rgba(34, 197, 94, 0.1);
-}
-
-.home-button::before {
-    content: '←';
-}
-
-#animator {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    flex: 1;
-    overflow: hidden;
-    padding: 0;
-    margin: 0;
-    min-height: 0;
-}
-
-#animator-toolbar {
-    background: transparent;
-    backdrop-filter: none;
-    padding: 12px 20px;
-    border-radius: 0;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex-shrink: 0;
-}
-
-.toolbar-section {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-#animator-content {
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    gap: 0;
-    flex: 1;
-    overflow: hidden;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-}
-
-#left-section {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px;
-    overflow-y: auto;
-    min-height: 0;
-}
-
-#right-section {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.btn {
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-    font-size: 0.85em;
-    font-weight: 600;
-    padding: 8px 20px;
-    border-radius: 10px;
-    cursor: pointer;
-    border: none;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
-}
-
-.btn-primary,
-.btn-success,
-.btn-play {
-    background: #22c55e;
-    color: #0f172a;
-}
-
-.btn-primary:hover,
-.btn-success:hover,
-.btn-play:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(34, 197, 94, 0.4);
-    background: #16a34a;
-}
-
-.btn-secondary {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-    border: 1px solid rgba(34, 197, 94, 0.3);
-    text-transform: none;
-}
-
-.btn-secondary:hover {
-    background: rgba(34, 197, 94, 0.25);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(34, 197, 94, 0.2);
-}
-
-.btn-danger,
-.btn-stop {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    color: white;
-}
-
-.btn-danger:hover,
-.btn-stop:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
-}
-
-.btn-small {
-    padding: 6px 12px;
-    font-size: 0.8em;
-}
-
-.btn-icon {
-    padding: 6px 10px;
-    font-size: 1em;
-    min-width: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.btn-play,
-.btn-pause,
-.btn-stop {
-    font-size: 0.9em;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.btn-pause {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
-}
-
-.btn-pause:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
-}
-
-.settings-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 10px;
-}
-
-.panel-section {
-    background: rgba(30, 41, 59, 0.3);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(34, 197, 94, 0.15);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 0;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    flex: 1;
-    min-height: 0;
-    box-sizing: border-box;
-}
-
-.panel-section:hover {
-    background: rgba(30, 41, 59, 0.4);
-    border-color: rgba(34, 197, 94, 0.25);
-}
-
-.panel-section h3 {
-    color: #22c55e;
-    margin-bottom: 10px;
-    font-size: 1em;
-    font-weight: 600;
-}
-
-.panel-section h4 {
-    color: #22c55e;
-    font-size: 0.9em;
-    font-weight: 600;
-}
-
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.section-header h3 {
-    margin-bottom: 0;
-}
-
-#spritesheet-preview-container {
-    position: relative;
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 10px;
-    padding: 12px;
-    min-height: 80px;
-    max-height: 120px;
-    overflow: auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-#spritesheet-preview-placeholder {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    color: #6b7280;
-    font-size: 0.85em;
-    text-align: center;
-}
-
-#spritesheet-preview-canvas {
-    max-width: 100%;
-    height: auto;
-    image-rendering: pixelated;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
-    border-radius: 8px;
-    display: none;
-}
-
-#spritesheet-preview-canvas.loaded {
-    display: block;
-}
-
-.frames-panel {
-    display: flex;
-    flex-direction: column;
-    min-height: 120px;
-    max-height: 200px;
-    overflow: hidden;
-}
-
-.frames-panel h3 {
-    flex-shrink: 0;
-}
-
-#frames-grid {
-    display: flex;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 10px;
-    padding: 6px;
-    height: 90px;
-    min-width: 0;
-    overflow-y: hidden;
-    overflow-x: auto;
-}
-
-.frame-item {
-    background: rgba(30, 41, 59, 0.5);
-    border: 2px solid rgba(34, 197, 94, 0.25);
-    border-radius: 4px;
-    padding: 4px 3px;
-    cursor: grab;
-    transition: all 0.2s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 2px;
-    flex-shrink: 0;
-    min-width: 70px;
-    height: 80px;
-}
-
-.frame-item canvas {
-    max-width: 100%;
-    max-height: 50px;
-    image-rendering: pixelated;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: crisp-edges;
-    border-radius: 4px;
-}
-
-.frame-item:hover {
-    border-color: rgba(34, 197, 94, 0.5);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
-}
-
-.frame-item:active {
-    cursor: grabbing;
-}
-
-.frame-item .frame-label {
-    color: #cbd5e1;
-    font-size: 0.75em;
-    font-weight: 500;
-    padding-bottom: 2px;
-}
-
-#playback-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(34, 197, 94, 0.2);
-}
-
-#playback-info {
-    display: flex;
-    gap: 12px;
-    margin-left: auto;
-    color: #9ca3af;
-    font-size: 0.8em;
-}
-
-#timeline-scrubber-container {
-    margin-top: 10px;
-    width: 100%;
-}
-
+#timeline-scrubber-container { min-width: 0; }
 #timeline-scrubber {
-    position: relative;
-    width: 100%;
-    height: 60px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 6px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    padding: 8px 18px 18px 18px;
-}
-
-#timeline-track {
-    position: relative;
-    width: 100%;
-    height: 4px;
-    background: transparent;
-    border-top: 2px dotted rgba(34, 197, 94, 0.3);
-    border-radius: 2px;
-}
-
-.timeline-playhead {
-    position: absolute;
-    width: 3px;
-    height: 30px;
-    background: #22c55e;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    z-index: 10;
-    box-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
-    display: none;
-}
-
-.timeline-frame-dot-container {
-    position: absolute;
-    top: -5px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    transform: translateX(-50%);
-}
-
-.timeline-frame-dot {
-    width: 10px;
-    height: 10px;
-    background: #ef4444;
-    border: 2px solid rgba(17, 24, 39, 0.9);
-    border-radius: 50%;
-    cursor: pointer;
-    transition: none;
-    z-index: 2;
-}
-
-.timeline-frame-dot:hover {
-    width: 14px;
-    height: 14px;
-    background: #dc2626;
-}
-
-.timeline-frame-dot.active {
-    width: 14px;
-    height: 14px;
-}
-
-.timeline-frame-time {
-    color: #9ca3af;
-    font-size: 0.65em;
-    margin-top: 4px;
-    white-space: nowrap;
-    pointer-events: none;
-    transition: none !important;
-}
-
-.form-group {
-    margin-bottom: 10px;
-}
-
-.form-group label {
-    display: block;
-    color: #cbd5e1;
-    margin-bottom: 4px;
-    font-weight: 500;
-    font-size: 0.85em;
-}
-
-.form-group input[type="text"],
-.form-group input[type="number"],
-.form-group select,
-.form-control {
-    width: 100%;
-    background: rgba(30, 41, 59, 0.5);
-    border: 1px solid rgba(34, 197, 94, 0.25);
-    color: #f1f5f9;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 0.85em;
-    transition: all 0.3s ease;
-}
-
-.form-group input[type="text"]:focus,
-.form-group input[type="number"]:focus,
-.form-group select:focus,
-.form-control:focus {
-    border-color: rgba(34, 197, 94, 0.6);
-    background: rgba(30, 41, 59, 0.7);
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
-}
-
-.form-group input[type="text"]:disabled,
-.form-group input[type="number"]:disabled,
-.form-group select:disabled,
-.form-control:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.form-group input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
-    accent-color: #22c55e;
-    margin-right: 8px;
-}
-
-.form-group input[type="checkbox"]:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.offset-inputs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-}
-
-.offset-inputs > div {
-    display: flex;
-    flex-direction: column;
-}
-
-.offset-inputs label {
-    font-size: 0.8em;
-    margin-bottom: 4px;
-}
-
-.timeline-panel {
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-}
-
-.timeline-controls {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-#frame-sequence-container {
-    margin-top: 10px;
-    margin-bottom: 8px;
-    min-width: 0;
-}
-
-#frame-sequence-list {
-    display: flex;
-    gap: 6px;
-    flex-wrap: nowrap;
-    padding: 8px;
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 6px;
-    height: 62px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    min-width: 0;
-}
-
-.timeline-frame-item {
-    transition: margin 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
-    position: relative;
-    display: inline-flex;
-}
-
-.timeline-frame-item:active {
-    cursor: grabbing;
-}
-
-.timeline-frame-item.dragging {
-    opacity: 0.4;
-    cursor: grabbing;
-}
-
-.timeline-frame-item.drop-before {
-    margin-left: 90px;
-}
-
-.timeline-frame-item.drop-after {
-    margin-right: 90px;
-}
-
-.timeline-frame-item.drop-before::before,
-.timeline-frame-item.drop-after::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 4px;
-    height: 80%;
-    background: linear-gradient(180deg, rgba(16, 185, 129, 0) 0%, #10b981 50%, rgba(16, 185, 129, 0) 100%);
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.9);
-    z-index: 100;
-    border-radius: 2px;
-}
-
-.timeline-frame-item.drop-before::before {
-    left: -48px;
-}
-
-.timeline-frame-item.drop-after::after {
-    right: -48px;
-}
-
-#timeline-grid-container {
-    position: relative;
-    background: rgba(0, 0, 0, 0.4);
-    border-radius: 10px;
-    width: 100%;
-    aspect-ratio: 2.5 / 1;
-    overflow: hidden;
-    margin: 0 auto;
-}
-
-#timeline-grid-container.drag-over {
-    background: rgba(34, 197, 94, 0.15);
-}
-
-#timeline-grid-canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-}
-
-#grid-frames-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-}
-
-#timeline-info {
-    margin-top: 8px;
-    color: #6b7280;
-    font-size: 0.75em;
-    text-align: center;
-}
-
-.modal {
-    display: none;
-    position: fixed;
-    z-index: 2000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    align-items: center;
-    justify-content: center;
-    animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-.modal-content {
-    background: rgba(30, 41, 59, 0.9);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: 24px;
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    padding: 32px;
-    max-width: 600px;
-    width: 90%;
-    max-height: 80vh;
-    overflow-y: auto;
-    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.modal-small {
-    max-width: 700px;
-}
-
-@keyframes slideUp {
-    from {
-        transform: translateY(50px);
-        opacity: 0;
-    }
-    to {
-        transform: translateY(0);
-        opacity: 1;
-    }
-}
-
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid rgba(34, 197, 94, 0.15);
-}
-
-.modal-header h2 {
-    color: #22c55e;
-    font-size: 1.5em;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: calc(100% - 50px);
-}
-
-.modal-close {
-    color: #9ca3af;
-    font-size: 32px;
-    font-weight: 300;
-    cursor: pointer;
-    line-height: 1;
-    transition: all 0.2s ease;
-}
-
-.modal-close:hover {
-    color: #ef4444;
-    transform: scale(1.1);
-}
-
-.modal-body {
-    color: #f1f5f9;
-}
-
-#notification-container {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 3000;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-width: 400px;
-}
-
-.notification {
-    background: rgba(30, 41, 59, 0.9);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-radius: 0 12px 12px 0;
-    padding: 16px 20px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    border-left: 4px solid;
-    color: #f1f5f9;
-    font-size: 0.9em;
-    animation: slideInRight 0.3s ease;
-    cursor: pointer;
-    transition: transform 0.2s ease, opacity 0.3s ease;
-}
-
-.notification:hover {
-    transform: translateX(-4px);
-}
-
-.notification.hiding {
-    opacity: 0;
-    transform: translateX(100px);
-}
-
-.notification.success {
-    border-left-color: #10b981;
-}
-
-.notification.error {
-    border-left-color: #ef4444;
-}
-
-.notification.warning {
-    border-left-color: #f59e0b;
-}
-
-.notification.info {
-    border-left-color: #22c55e;
-}
-
-@keyframes slideInRight {
-    from {
-        transform: translateX(100px);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@media (max-width: 1400px) {
-    #animator-content {
-        grid-template-columns: 1fr;
-    }
-
-    #left-section {
-        max-width: 100%;
-    }
-
-    .frames-panel {
-        max-height: 250px;
-    }
-}
-
-@media (max-width: 768px) {
-    .header h1 {
-        font-size: 2em;
-    }
-
-    .header p {
-        font-size: 1em;
-    }
-
-    #animator-toolbar {
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    .toolbar-section {
-        width: 100%;
-        justify-content: center;
-        flex-wrap: wrap;
-    }
-
-    .settings-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .timeline-controls {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-}
-
-#import-json-input {
-    display: none;
-}
-
-.toolbar-check-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #22c55e;
-    font-size: 0.9em;
-}
-
-.toolbar-check-label-plain {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-#load-image-btn-alt {
-    margin-top: 8px;
-}
-
-.panel-heading-gap {
-    margin-top: 12px;
-}
-
-.section-header-tight {
-    margin-bottom: 6px;
-}
-
-#info-panel {
-    display: none;
-}
-
-#direction-select-container {
-    margin-top: 12px;
-    display: none;
-}
-
-.btn-icon-group {
-    display: flex;
-    gap: 6px;
-}
-
-.btn-icon-group-center {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-}
-
-#direction-select {
-    flex: 1;
-}
-
-.playback-loop-label {
-    margin-left: 8px;
-    font-size: 0.85em;
-}
-
-#confirm-message {
-    margin-bottom: 20px;
-}
-
-.confirm-actions {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 30px 15px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+#timeline-track { position: relative; width: 100%; height: 2px; border-radius: 1px; background: var(--border-strong); }
+.an-playhead {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: none;
+  width: 2px;
+  height: 22px;
+  border-radius: 1px;
+  background: var(--accent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.an-dot-wrap { position: absolute; top: -4px; display: flex; flex-direction: column; align-items: center; transform: translateX(-50%); }
+.an-dot { z-index: 1; width: 10px; height: 10px; border: 2px solid var(--bg); border-radius: 50%; background: var(--slate-400); cursor: pointer; }
+.an-dot:hover { background: var(--slate-200); }
+.an-dot.is-active { background: var(--accent); }
+.an-dot-time { margin-top: 3px; padding: 0 3px; border-radius: 3px; color: var(--text-faint); font-size: 10.5px; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+.an-dot-wrap:has(.is-active) .an-dot-time { color: var(--slate-300); }
+/* Too many frames for every time to be read: only the selected one and the one under the pointer show theirs. */
+#timeline-track:has(> :nth-child(11)) .an-dot-time { visibility: hidden; }
+#timeline-track:has(> :nth-child(11)) .an-dot-wrap:has(.is-active) .an-dot-time,
+#timeline-track:has(> :nth-child(11)) .an-dot-wrap:hover .an-dot-time { visibility: visible; background: var(--bg); }
+#timeline-track:has(> :nth-child(11)) .an-dot-wrap:hover { z-index: 3; }
+
+/* ---------------------------------------------------------------- dialogs */
+
+/* The script shows one of these by setting display: flex. The box inside is the shared dialog. */
+.an-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+  background: rgba(2, 6, 23, 0.66);
+}
+.an-modal > .tl-dialog { max-height: 100%; overflow-y: auto; animation: tl-toast-in 0.16s ease-out; }
+.an-dialog { display: grid; gap: var(--s-4); }
+.an-dialog .tl-dialog-actions { margin-top: var(--s-1); }
+
+/* --------------------------------------------------------- narrow window */
+
+@media (max-width: 1199px) {
+  .an-app { --side-w: 264px; }
+  .an-page { --pad: var(--s-5); }
+  /* The scrubber takes a line of its own under the controls. */
+  .an-transport { grid-template-columns: minmax(0, 1fr); }
 }

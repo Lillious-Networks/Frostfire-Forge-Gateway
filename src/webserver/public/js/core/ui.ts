@@ -99,7 +99,6 @@ const hotbar = document.getElementById("hotbar") as HTMLDivElement;
 const hotbarGrid = hotbar.querySelector("#grid") as HTMLDivElement;
 const hotbarSlots = hotbarGrid.querySelectorAll(".slot") as NodeListOf<HTMLDivElement>;
 const castbar = document.getElementById("castbar") as HTMLDivElement;
-const adminPanelContainer = document.getElementById("admin-panel-container") as HTMLDivElement;
 
 let touchDragJustEnded = false;
 
@@ -883,10 +882,6 @@ if (guildContainer) {
 const partyContainer = document.getElementById("party-container") as HTMLDivElement;
 if (partyContainer) {
   registerPanelDrag({ element: partyContainer, handle: partyContainer, storageKey: "panel-pos-party" });
-}
-
-if (adminPanelContainer) {
-  registerPanelDrag({ element: adminPanelContainer, handle: adminPanelContainer, storageKey: "panel-pos-admin" });
 }
 
 if (hotbar) {
@@ -2003,248 +1998,6 @@ async function loadHotbarConfiguration(hotbarConfig: any) {
   });
 }
 
-const adminPlayerSelect = document.getElementById("admin-player-select") as HTMLSelectElement;
-const adminNoclipButton = document.getElementById("admin-noclip");
-const adminStealthButton = document.getElementById("admin-stealth");
-const adminSummonButton = document.getElementById("admin-summon");
-const adminTeleportButton = document.getElementById("admin-teleport");
-const adminKickButton = document.getElementById("admin-kick");
-const adminBanButton = document.getElementById("admin-ban");
-const adminUnbanButton = document.getElementById("admin-unban");
-const adminRespawnButton = document.getElementById("admin-respawn");
-const adminToggleAdminButton = document.getElementById("admin-toggle-admin");
-const adminMapInput = document.getElementById("admin-map-input") as HTMLInputElement;
-const adminReloadMapButton = document.getElementById("admin-reload-map");
-const adminWarpInput = document.getElementById("admin-warp-input") as HTMLInputElement;
-const adminWarpButton = document.getElementById("admin-warp");
-const adminBroadcastInput = document.getElementById("admin-broadcast-input") as HTMLInputElement;
-const adminBroadcastAllButton = document.getElementById("admin-broadcast-all");
-const adminBroadcastMapButton = document.getElementById("admin-broadcast-map");
-const adminBroadcastAdminsButton = document.getElementById("admin-broadcast-admins");
-
-function updateAdminMapInput() {
-  if (!adminMapInput) return;
-
-  if ((window as any).mapData && (window as any).mapData.name) {
-    const mapName = (window as any).mapData.name;
-
-    const displayName = mapName.replace(/\.json$/i, '');
-    adminMapInput.placeholder = `Current map: ${displayName}`;
-  }
-}
-
-function updateAdminPlayerListWithData(players: Array<{ username: string; map: string; isAdmin: boolean }>) {
-  if (!adminPlayerSelect) return;
-
-  const currentSelection = adminPlayerSelect.value;
-
-  adminPlayerSelect.innerHTML = '<option value="">Select a player...</option>';
-
-  players.forEach((player) => {
-    if (player.username) {
-      const option = document.createElement("option");
-      option.value = player.username;
-      const adminBadge = player.isAdmin ? " [Admin]" : "";
-      option.textContent = `${player.username} (${player.map})${adminBadge}`;
-      adminPlayerSelect.appendChild(option);
-    }
-  });
-
-  if (currentSelection) {
-    const exists = players.some((p) => p.username === currentSelection);
-    if (exists) {
-      adminPlayerSelect.value = currentSelection;
-    }
-  }
-}
-
-
-function getSelectedPlayer(): string {
-  return adminPlayerSelect?.value || "";
-}
-
-function sendAdminCommand(command: string, args: string[] = []) {
-  const fullCommand = args.length > 0 ? `${command} ${args.join(" ")}` : command;
-  sendRequest({
-    type: "COMMAND",
-    data: { command: fullCommand }
-  });
-}
-
-function showAdminNotification(message: string) {
-  if (!notificationContainer || !notificationMessage) return;
-  notificationMessage.innerText = message;
-  notificationContainer.style.display = "flex";
-  setTimeout(() => {
-    if (notificationContainer) {
-      notificationContainer.style.display = "none";
-    }
-  }, 3000);
-}
-
-if (adminNoclipButton) {
-  adminNoclipButton.addEventListener("click", () => {
-    sendRequest({ type: "NOCLIP", data: null });
-  });
-}
-
-if (adminStealthButton) {
-  adminStealthButton.addEventListener("click", () => {
-    sendRequest({ type: "STEALTH", data: null });
-  });
-}
-
-if (adminSummonButton) {
-  adminSummonButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("summon", [player]);
-  });
-}
-
-if (adminTeleportButton) {
-  adminTeleportButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("teleport", [player]);
-  });
-}
-
-if (adminKickButton) {
-  adminKickButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("kick", [player]);
-  });
-}
-
-if (adminBanButton) {
-  adminBanButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("ban", [player]);
-  });
-}
-
-if (adminUnbanButton) {
-  adminUnbanButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("unban", [player]);
-  });
-}
-
-if (adminRespawnButton) {
-  adminRespawnButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("respawn", [player]);
-  });
-}
-
-if (adminToggleAdminButton) {
-  adminToggleAdminButton.addEventListener("click", () => {
-    const player = getSelectedPlayer();
-    if (!player) {
-      showAdminNotification("Please select a player first");
-      return;
-    }
-    sendAdminCommand("setadmin", [player]);
-  });
-}
-
-if (adminReloadMapButton) {
-  adminReloadMapButton.addEventListener("click", () => {
-
-    let mapName = adminMapInput?.value.trim();
-
-    if (!mapName) {
-
-      if ((window as any).mapData && (window as any).mapData.name) {
-        mapName = (window as any).mapData.name.replace(/\.json$/i, '');
-      }
-    }
-
-    if (!mapName) {
-      showAdminNotification("Unable to determine map name");
-      return;
-    }
-
-    sendAdminCommand("reloadmap", [mapName]);
-  });
-}
-
-if (adminWarpButton) {
-  adminWarpButton.addEventListener("click", () => {
-    const mapName = adminWarpInput?.value.trim();
-
-    if (!mapName) {
-      showAdminNotification("Please enter a map name to warp to");
-      return;
-    }
-
-    sendAdminCommand("warp", [mapName]);
-
-    if (adminWarpInput) {
-      adminWarpInput.value = "";
-    }
-  });
-}
-
-if (adminBroadcastAllButton) {
-  adminBroadcastAllButton.addEventListener("click", () => {
-    const message = adminBroadcastInput?.value.trim();
-    if (!message) {
-      showAdminNotification("Please enter a message");
-      return;
-    }
-    sendAdminCommand("broadcast", ["ALL", message]);
-    adminBroadcastInput.value = "";
-  });
-}
-
-if (adminBroadcastMapButton) {
-  adminBroadcastMapButton.addEventListener("click", () => {
-    const message = adminBroadcastInput?.value.trim();
-    if (!message) {
-      showAdminNotification("Please enter a message");
-      return;
-    }
-    sendAdminCommand("broadcast", ["MAP", message]);
-    adminBroadcastInput.value = "";
-  });
-}
-
-if (adminBroadcastAdminsButton) {
-  adminBroadcastAdminsButton.addEventListener("click", () => {
-    const message = adminBroadcastInput?.value.trim();
-    if (!message) {
-      showAdminNotification("Please enter a message");
-      return;
-    }
-    sendAdminCommand("broadcast", ["ADMINS", message]);
-    adminBroadcastInput.value = "";
-  });
-}
-
 if (guildMemberInviteButton) {
   guildMemberInviteButton.addEventListener("click", () => {
     const username = guildMemberInviteInput?.value.trim();
@@ -2322,8 +2075,7 @@ export {
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
     hotbarSlots, saveHotbarConfiguration, loadHotbarConfiguration, equipmentLeftColumn, equipmentRightColumn, equipmentBottomCenter,
-    saveInventoryConfiguration, loadInventoryConfiguration, saveInventorySlots, flushInventorySlots, setupInventorySlotHandlers, updateCurrencyDisplay, adminPanelContainer,
-    updateAdminMapInput, updateAdminPlayerListWithData,
+    saveInventoryConfiguration, loadInventoryConfiguration, saveInventorySlots, flushInventorySlots, setupInventorySlotHandlers, updateCurrencyDisplay,
 };
 
 function updateCurrencyDisplay() {

@@ -9,17 +9,13 @@ const radialItems = document.querySelectorAll('.radial-item') as NodeListOf<HTML
 
 /**
  * Calculate circular positions for radial items
- * 8 items at 45° intervals, starting from top (12 o'clock)
+ * The items at even intervals, starting from top (12 o'clock)
  */
 function calculateRadialPositions() {
-  const visibleItems = Array.from(radialItems).filter(item => {
-    if (item.classList.contains("admin-only") && !item.classList.contains("visible")) return false;
-    return true;
-  });
-  const itemCount = visibleItems.length;
+  const itemCount = radialItems.length;
   const radius = 110;
 
-  visibleItems.forEach((item, index) => {
+  radialItems.forEach((item, index) => {
     const angle = (index / itemCount) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
@@ -84,6 +80,7 @@ function dispatchHotkey(keyCode: string) {
          keyCode === 'KeyO' ? 'o' :
          keyCode === 'KeyG' ? 'g' :
          keyCode === 'KeyK' ? 'k' :
+         keyCode === 'KeyM' ? 'm' :
          keyCode === 'KeyQ' ? 'q' : '',
     bubbles: true,
     cancelable: true,
@@ -121,4 +118,4 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('resize', calculateRadialPositions);
 
 // Export closeRadialMenu for use in other modules
-export { closeRadialMenu, openRadialMenu, toggleRadialMenu, calculateRadialPositions };
+export { closeRadialMenu, openRadialMenu, toggleRadialMenu };
