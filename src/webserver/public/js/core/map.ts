@@ -844,7 +844,9 @@ async function requestChunkViaAssetServer(mapName: string, chunkX: number, chunk
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch chunk: ${response.statusText}`);
+      // The status code is spelled out: HTTP/2 and HTTP/3 carry no status text.
+      const detail = (await response.text().catch(() => "")).slice(0, 120);
+      throw new Error(`Failed to fetch chunk: ${response.status} ${response.statusText} ${detail}`.trim());
     }
 
     const chunkData: ChunkData = await response.json();

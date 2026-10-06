@@ -16,7 +16,13 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let sending = false;
 
 function describe(value: unknown): string {
-  if (value instanceof Error) return value.stack || `${value.name}: ${value.message}`;
+  if (value instanceof Error) {
+    // Chromium stacks start with "Name: message". Safari and Firefox stacks are
+    // frames only, so without this the reason for the error never reaches the log.
+    const summary = `${value.name}: ${value.message}`;
+    if (!value.stack) return summary;
+    return value.stack.includes(value.message) ? value.stack : `${summary}\n${value.stack}`;
+  }
   if (typeof value === "string") return value;
   try {
     return JSON.stringify(value);
