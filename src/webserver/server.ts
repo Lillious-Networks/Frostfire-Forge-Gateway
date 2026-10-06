@@ -9,6 +9,7 @@ import { generateSecret, generateTotpUri, verifyTOTP } from "../services/totp";
 import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verifyAttestation, generateAssertionOptions, verifyAssertion } from "../services/webauthn";
 import { generateQRDataUri } from "../services/qrcode";
 import { getInternalServerOptions, serverFetch, getInternalBaseUrl } from "../modules/https_servers";
+import { getDocsManifest, getDocsPage, getDocsSearchIndex } from "../services/docs";
 
 const settings = {
   guest_mode: {
@@ -73,6 +74,7 @@ import forgotpassword_html from "./public/forgot-password.html";
 import realmselection_html from "./public/realm-selection.html";
 import manageprofile_html from "./public/manage-profile.html";
 import twofachallenge_html from "./public/2fa-challenge.html";
+import docs_html from "./public/docs.html";
 
 // Service worker source lives at js/web/service-worker.ts and is transpiled to
 // service-worker.js alongside the other web scripts (src/utility/transpiler.ts).
@@ -188,8 +190,53 @@ async function handleClientLog(req: Request): Promise<Response> {
   return new Response(null, { status: 204 });
 }
 
+// Documentation content for /docs: the manifest by default, one page with
+// ?page=<id>, the search index with ?search. The Player Guide is public; every
+// other section is only readable by a fully signed-in, non-guest account.
+async function handleDocs(req: Request) {
+  const username = await getUsernameFromToken(req);
+  const authenticated = !!username && !username.startsWith("guest_") && !(await player.isTwoFactorPending(username));
+
+  const params = tryParseURL(req.url)?.searchParams;
+  const pageId = params?.get("page");
+  let docs;
+  if (pageId) {
+    const page = getDocsPage(pageId, authenticated);
+    if (page === null) return new Response(JSON.stringify({ message: "Page not found" }), { status: 404 });
+    if (page === "locked") return new Response(JSON.stringify({ message: "Log in to read this page" }), { status: 403 });
+    docs = page;
+  } else {
+    docs = params?.has("search") ? getDocsSearchIndex(authenticated) : getDocsManifest(authenticated);
+  }
+
+  const headers = {
+    "Content-Type": docs.contentType,
+    "Cache-Control": "private, no-cache",
+    "Vary": "Cookie",
+    "ETag": docs.etag,
+  };
+  if (req.headers.get("If-None-Match") === docs.etag) {
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(docs.body, { status: 200, headers });
+}
+
+// The gateway dashboard is served by src/gateway/server.ts on its own port.
+// /gateway sends the visitor there on the host they are already using; the
+// gateway shows its login page first when there is no dashboard session.
+function redirectToGateway(req: Request) {
+  const ssl = process.env.HTTP_USE_SSL === "true";
+  const port = ssl ? process.env.GATEWAY_PORTSSL || "9443" : process.env.GATEWAY_PORT || "9999";
+  const host = req.headers.get("host");
+  const hostname =
+    (host && tryParseURL(`http://${host}`)?.hostname) ||
+    tryParseURL(process.env.DOMAIN || "")?.hostname ||
+    "localhost";
+  return Response.redirect(`${ssl ? "https" : "http"}://${hostname}:${port}/dashboard`, 302);
+}
+
 const routes = {
-  "/status": (req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  "/status":(req: Request) => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }),
   "/service-worker.js": (req: Request) => new Response(service_worker_js, { status: 200, headers: { "Content-Type": "application/javascript", "Cache-Control": "max-age=3600" } }),
   "/": login_html,
   "/registration": register_html,
@@ -324,6 +371,11 @@ const routes = {
   "/realm-selection": realmselection_html,
   "/manage-profile": manageprofile_html,
   "/2fa-challenge": twofachallenge_html,
+  "/docs": docs_html,
+  "/gateway": (req: Request) => redirectToGateway(req),
+  "/api/docs": {
+    GET: async (req: Request) => handleDocs(req),
+  },
   "/api/profile": {
     GET: async (req: Request) => handleGetProfile(req),
   },
@@ -427,6 +479,9 @@ Bun.serve({
       "/api/client-log": routes["/api/client-log"],
       "/manage-profile": routes["/manage-profile"],
       "/2fa-challenge": routes["/2fa-challenge"],
+      "/docs": routes["/docs"],
+      "/gateway": routes["/gateway"],
+      "/api/docs": routes["/api/docs"],
       "/api/profile": routes["/api/profile"],
       "/api/profile/change-email": routes["/api/profile/change-email"],
       "/api/profile/change-password": routes["/api/profile/change-password"],

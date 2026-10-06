@@ -1,165 +1,43 @@
-* {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+/* Gateway dashboard login. Shared pieces live in frontend.css. */
 
-        html, body {
-            width: 100%;
-            height: 100%;
-            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-            background-color: #0f172a;
-            color: #f1f5f9;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .login-card {
-            background: rgba(30, 41, 59, 0.8);
-            border: 1px solid rgba(34, 197, 94, 0.2);
-            padding: 2.5rem;
-            border-radius: 16px;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            max-width: 400px;
-            width: 100%;
-            margin: 0 1rem;
-        }
-
-        .login-title {
-            font-family: 'Clash Display', sans-serif;
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 1.5rem;
-            color: #fff;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        label {
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #f1f5f9;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        input[type="password"] {
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(34, 197, 94, 0.2);
-            color: #f1f5f9;
-            padding: 0.875rem 1rem;
-            border-radius: 10px;
-            font-family: 'Space Mono', monospace;
-            font-size: 0.875rem;
-        }
-
-        input[type="password"]:focus {
-            outline: none;
-            border-color: #22c55e;
-            background: rgba(34, 197, 94, 0.05);
-        }
-
-        input[type="password"]::placeholder {
-            color: #6b7280;
-        }
-
-        .login-button {
-            width: 100%;
-            padding: 0.875rem 1.5rem;
-            background: #22c55e;
-            color: #0f172a;
-            border: none;
-            border-radius: 10px;
-            font-family: 'Clash Display', sans-serif;
-            font-size: 0.875rem;
-            font-weight: 700;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            cursor: pointer;
-        }
-
-        .login-button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .error-message {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #fca5a5;
-            padding: 0.875rem 1rem;
-            border-radius: 10px;
-            margin-bottom: 1.5rem;
-            font-size: 0.875rem;
-            display: none;
-        }
-
-        .error-message.show {
-            display: block;
-        }
-
-html {
-    overscroll-behavior-y: none;
-}
-
-#ptr-indicator {
-    position: fixed;
-    top: max(10px, env(safe-area-inset-top, 0px));
-    left: 50%;
-    transform: translate(-50%, -150%);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.9rem;
-    background: rgba(30, 41, 59, 0.92);
-    border: 1px solid var(--color-border, #475569);
+.site-tag {
+    padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
     border-radius: 999px;
-    color: var(--color-primary, #22c55e);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-    z-index: 90;
-    pointer-events: none;
-    opacity: 0;
-    visibility: hidden;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    transition: transform 0.25s ease, opacity 0.25s ease, border-color 0.25s ease, visibility 0.25s ease;
+    background: var(--primary-soft);
+    color: var(--primary-strong);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
-#ptr-indicator.ptr-pulling,
-#ptr-indicator.ptr-refreshing {
-    opacity: 1;
-    visibility: visible;
+
+.login-button {
+    margin-top: 6px;
 }
-#ptr-indicator.ptr-pulling {
-    transition: none;
+
+/* Which website account the dashboard would open for. */
+.account-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
 }
-#ptr-indicator.ptr-ready {
-    border-color: var(--color-primary, #22c55e);
+
+.account-label {
+    color: var(--text-muted);
+    font-size: 13px;
 }
-#ptr-icon {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
-}
-#ptr-indicator.ptr-refreshing #ptr-icon {
-    animation: ptr-spin 0.8s linear infinite;
-}
-@keyframes ptr-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-@media (prefers-reduced-motion: reduce) {
-    #ptr-indicator.ptr-refreshing #ptr-icon {
-        animation: none;
-    }
+
+.account-row strong {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    overflow-wrap: anywhere;
 }

@@ -1150,122 +1150,142 @@ input {
   will-change: transform;
 }
 
+/* Loading screen. Like the rotate screen further down, it shares the look of
+   the account pages and the documentation site, with the values written out
+   because the game page does not load those stylesheets. The client only
+   toggles #loading-screen and #progress-bar-container and sets the width of
+   #progress-bar (js/core/map.ts, js/core/socket.ts). */
 #loading-screen {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  width: 100vw;
-  background: var(--color-bg, #0f172a);
-  background-image:
-    radial-gradient(circle at 20% 50%, rgba(34, 197, 94, 0.15) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(34, 197, 94, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 50% 0%, rgba(34, 197, 94, 0.05) 0%, transparent 60%);
-  background-size: cover;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
   z-index: 10000;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2rem;
+  gap: 36px;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px));
+  background-color: #0b1120;
+  background-image:
+    radial-gradient(60% 55% at 0% 0%, rgba(56, 189, 248, 0.1), transparent 70%),
+    radial-gradient(55% 55% at 100% 100%, rgba(245, 158, 11, 0.1), transparent 70%);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
-#loading-screen::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background:
-    radial-gradient(circle at 25% 25%, rgba(34, 197, 94, 0.03) 0%, transparent 40%),
-    radial-gradient(circle at 75% 75%, rgba(34, 197, 94, 0.03) 0%, transparent 40%);
-  animation: float 20s ease-in-out infinite;
-  pointer-events: none;
+.loading-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
 }
 
-#loading-screen::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background:
-    linear-gradient(180deg, transparent 0%, rgba(15, 23, 42, 0.3) 100%);
-  pointer-events: none;
-  z-index: 1;
+.loading-brand img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+}
+
+.loading-brand span {
+  color: #e6edf7;
+  font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
 }
 
 #loading-screen #progress-bar-container {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
   width: 100%;
-  height: 53px;
-  padding: 0;
-  box-sizing: border-box;
-  z-index: 10;
-  -webkit-filter: drop-shadow(0 0 15px rgba(34, 197, 94, 0.15));
-  filter: drop-shadow(0 0 15px rgba(34, 197, 94, 0.15));
-  transform: translateY(-50%);
+  max-width: 420px;
 }
 
-#loading-bar-left {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 47px;
-  height: 100%;
-  background: url("../img/ui/loading-bar-left.png");
+.loading-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-#loading-bar-right {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 47px;
-  height: 100%;
-  background: url("../img/ui/loading-bar-right.png");
+.loading-eyebrow {
+  color: #4ade80;
+  font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-#loading-bar-center {
-  position: absolute;
-  bottom: 0;
-  height: 100%;
-  left: 47px;
-  right: 47px;
-  background: url("../img/ui/loading-bar-center.png");
-  background-repeat: repeat-x;
+.loading-hint {
+  color: #8493ab;
+  font-size: 13px;
+}
+
+.loading-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #1f2c47;
+  overflow: hidden;
 }
 
 #loading-screen #progress-bar {
-  background: linear-gradient(to right, rgb(76, 201, 114), rgb(156, 255, 184));
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: absolute;
-  top: 15px;
-  bottom: 15px;
-  left: 20px;
+  position: relative;
   width: 0%;
-  max-width: calc(100% - 40px);
-  border-radius: 0;
+  max-width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38bdf8, #22c55e);
+  overflow: hidden;
+  transition: width 0.2s ease-out;
+}
 
-  transition: width 0.1s ease-in-out;
+/* A soft highlight travels along the filled part while assets load. */
+#loading-screen #progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: translateX(-100%);
+  animation: loading-shimmer 1.6s ease-in-out infinite;
+}
 
-  -webkit-box-shadow: 0 0 10px rgba(34, 197, 94, 0.4),
-    0 0 20px rgba(34, 197, 94, 0.2),
-    inset 0 0 10px rgba(255, 255, 255, 0.2);
-  box-shadow:
-    0 0 10px rgba(34, 197, 94, 0.4),
-    0 0 20px rgba(34, 197, 94, 0.2),
-    inset 0 0 10px rgba(255, 255, 255, 0.2);
+@keyframes loading-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #loading-screen #progress-bar::after {
+    animation: none;
+  }
+}
+
+@media (max-height: 420px) {
+  #loading-screen {
+    gap: 22px;
+  }
+
+  .loading-brand {
+    gap: 10px;
+  }
+
+  .loading-brand img {
+    width: 52px;
+    height: 52px;
+  }
+
+  .loading-brand span {
+    font-size: 22px;
+  }
 }
 
 #stats-container {
@@ -2162,62 +2182,36 @@ body.timelapse-active .ui-hidden-in-timelapse {
 }
 
 #start-game-button {
-  position: fixed;
   display: none;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: var(--color-primary, #22c55e);
-  border: 2px solid var(--color-primary, #22c55e);
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  height: 48px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   outline: none;
-  color: var(--color-bg, #0f172a);
-  width: 200px;
-  height: 50px;
-  font-family: 'Clash Display', sans-serif;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  background: #22c55e;
+  color: #05230f;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  -webkit-box-shadow: 0 0 20px rgba(34, 197, 94, 0.3),
-    0 10px 30px rgba(34, 197, 94, 0.2);
-  box-shadow:
-    0 0 20px rgba(34, 197, 94, 0.3),
-    0 10px 30px rgba(34, 197, 94, 0.2);
-  position: relative;
-  overflow: hidden;
-  z-index: 10;
-}
-
-#start-game-button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  transition: left 0.5s;
-}
-
-#start-game-button:hover::before {
-  left: 100%;
+  transition: background 0.15s, transform 0.15s;
 }
 
 #start-game-button:hover {
-  background: var(--color-primary-dark, #16a34a);
-  border-color: var(--color-primary-dark, #16a34a);
-  -webkit-box-shadow: 0 0 30px rgba(34, 197, 94, 0.5),
-    0 15px 40px rgba(34, 197, 94, 0.3);
-  box-shadow:
-    0 0 30px rgba(34, 197, 94, 0.5),
-    0 15px 40px rgba(34, 197, 94, 0.3);
-  transform: translate(-50%, -50%) translateY(-3px);
+  background: #4ade80;
+  transform: translateY(-1px);
 }
 
 #start-game-button:active {
-  transform: translate(-50%, -50%);
+  transform: none;
+}
+
+#start-game-button:focus-visible {
+  outline: 2px solid #22c55e;
+  outline-offset: 2px;
 }
 
 .self {
@@ -4298,14 +4292,6 @@ body.ipad-device #game-notification-container {
   -webkit-backdrop-filter: blur(2px);
 }
 
-@media (max-height: 600px) and (orientation: landscape) {
-  #progress-bar-container {
-    left: 75px !important;
-    right: 75px !important;
-    width: auto !important;
-  }
-}
-
 @keyframes float {
   0%, 100% {
     transform: translate(0, 0);
@@ -5092,6 +5078,9 @@ body.ipad-device #game-notification-container {
   animation: fadeOutStagger 0.3s ease forwards;
 }
 
+/* Rotate-to-landscape screen. It shares the look of the account pages and the
+   documentation site (css/frontend.css, css/docs.css), with the values written
+   out because the game page does not load those stylesheets. */
 #rotate-prompt {
   position: fixed;
   top: 0;
@@ -5099,66 +5088,94 @@ body.ipad-device #game-notification-container {
   right: 0;
   bottom: 0;
   z-index: 100000;
-  background: var(--color-bg, #0f172a);
+  background-color: #0b1120;
   background-image:
-    radial-gradient(circle at 30% 40%, rgba(34, 197, 94, 0.12) 0%, transparent 50%),
-    radial-gradient(circle at 70% 60%, rgba(34, 197, 94, 0.06) 0%, transparent 50%);
+    radial-gradient(70% 45% at 0% 0%, rgba(56, 189, 248, 0.1), transparent 70%),
+    radial-gradient(65% 45% at 100% 100%, rgba(245, 158, 11, 0.1), transparent 70%);
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  padding: max(24px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
   pointer-events: auto;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 .rotate-card {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
-  padding: 40px 32px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 20px;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  max-width: 280px;
+  width: 100%;
+  max-width: 340px;
+  padding: 36px 28px;
+  border: 1px solid #1f2c47;
+  border-radius: 18px;
+  background: #111a2e;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.7);
+  text-align: center;
 }
 
 .rotate-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  animation: rotatePrompt 2.5s ease-in-out infinite;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 22px;
+  border-radius: 20px;
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+}
+
+.rotate-icon svg {
+  width: 34px;
+  height: 34px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: rotatePrompt 2.8s ease-in-out infinite;
+}
+
+.rotate-eyebrow {
+  margin-bottom: 10px;
+  color: #4ade80;
+  font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .rotate-text {
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  text-align: center;
+  color: #e6edf7;
+  font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
 }
 
 .rotate-subtext {
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 13px;
-  text-align: center;
-  line-height: 1.5;
+  margin-top: 10px;
+  color: #b6c2d6;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 @keyframes rotatePrompt {
-  0%   { transform: rotate(0deg); }
-  25%  { transform: rotate(90deg); }
-  50%  { transform: rotate(90deg); }
-  75%  { transform: rotate(0deg); }
-  100% { transform: rotate(0deg); }
+  0%, 15%  { transform: rotate(0deg); }
+  40%, 70% { transform: rotate(-90deg); }
+  95%, 100% { transform: rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-icon svg {
+    animation: none;
+    transform: rotate(-90deg);
+  }
 }
 
 @media (orientation: landscape) and (max-width: 950px) {

@@ -1,4 +1,6 @@
 import { startHttpsServers, getInternalServerOptions, serverFetch } from "../modules/https_servers";
+import query from "../controllers/sqldatabase";
+import player from "../systems/player";
 
 const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
@@ -25,8 +27,86 @@ const migrationHistory: Array<{
   clientCount: number;
 }> = [];
 
-const dashboardSessions: Map<string, number> = new Map();
+// Dashboard sessions belong to an admin account that is signed in on the
+// website: the gateway reads the same "token" cookie (cookies are shared across
+// ports of one host) and never handles a password itself.
+type DashboardSession = { username: string; expires: number; checkedAt: number };
+const dashboardSessions: Map<string, DashboardSession> = new Map();
 const DASHBOARD_SESSION_TIMEOUT = 3600000;
+// How often a live session confirms the account is still signed in and still
+// allowed, so removing the role or permission locks the dashboard promptly.
+const DASHBOARD_ACCESS_RECHECK = 60000;
+const DASHBOARD_PERMISSIONS = ["server.gateway", "server.*"];
+
+function readCookie(req: Request, name: string): string | null {
+  const match = (req.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return match ? match[1] : null;
+}
+
+// The account signed in on the website, or null. Guests and accounts that
+// still owe a second factor do not count as signed in.
+async function getSignedInAccount(req: Request): Promise<string | null> {
+  const token = readCookie(req, "token");
+  if (!token) return null;
+  const rows = (await player.getUsernameByToken(token)) as any[];
+  const username: string | undefined = rows?.[0]?.username;
+  if (!username || username.startsWith("guest_")) return null;
+  if (await player.isTwoFactorPending(username)) return null;
+  return username;
+}
+
+// Dashboard access needs an admin account (role 1) that holds server.gateway
+// or server.*, and is not banned.
+async function hasDashboardAccess(username: string): Promise<boolean> {
+  const accounts = (await query("SELECT role, banned FROM accounts WHERE username = ? LIMIT 1", [username])) as any[];
+  if (Number(accounts?.[0]?.role) !== 1 || Number(accounts[0].banned) === 1) return false;
+  const rows = (await query("SELECT permissions FROM permissions WHERE username = ? LIMIT 1", [username])) as any[];
+  const held = String(rows?.[0]?.permissions || "").split(",").map((permission) => permission.trim());
+  return DASHBOARD_PERMISSIONS.some((permission) => held.includes(permission));
+}
+
+async function getDashboardSession(req: Request): Promise<DashboardSession | null> {
+  const sessionToken = readCookie(req, "dashboard_session");
+  const session = sessionToken ? dashboardSessions.get(sessionToken) : undefined;
+  if (!sessionToken || !session) return null;
+
+  const now = Date.now();
+  if (now > session.expires) {
+    dashboardSessions.delete(sessionToken);
+    return null;
+  }
+
+  if (now - session.checkedAt > DASHBOARD_ACCESS_RECHECK) {
+    let allowed = false;
+    try {
+      allowed = (await getSignedInAccount(req)) === session.username && (await hasDashboardAccess(session.username));
+    } catch {
+      // A failed lookup closes the session rather than leaving it open unchecked.
+    }
+    if (!allowed) {
+      dashboardSessions.delete(sessionToken);
+      return null;
+    }
+    session.checkedAt = now;
+  }
+
+  session.expires = now + DASHBOARD_SESSION_TIMEOUT;
+  return session;
+}
+
+// Where the website login page lives, on the host this request came in on.
+function getWebsiteLoginUrl(req: Request): string {
+  const ssl = process.env.HTTP_USE_SSL === "true";
+  const port = ssl ? process.env.WEBSRV_PORTSSL || "443" : process.env.WEBSRV_PORT || "80";
+  let hostname = "localhost";
+  try {
+    hostname = new URL(`http://${req.headers.get("host")}`).hostname || hostname;
+  } catch {
+    // Keep the fallback.
+  }
+  const defaultPort = ssl ? "443" : "80";
+  return `${ssl ? "https" : "http"}://${hostname}${port === defaultPort ? "" : `:${port}`}/?next=gateway`;
+}
 
 function migrateSessionsFromDeadServer(deadServerId: string): number {
   const sessionsToMigrate: string[] = [];
@@ -291,41 +371,61 @@ const serverConfig: any = {
     }
 
 
+    // Who is asking, and whether they may open the dashboard. The login page
+    // uses this to decide what to show.
+    if (url.pathname === "/api/session" && req.method === "GET") {
+      const headers = { "Content-Type": "application/json", "Cache-Control": "no-store" };
+      const loginUrl = getWebsiteLoginUrl(req);
+      try {
+        const username = await getSignedInAccount(req);
+        if (!username) return new Response(JSON.stringify({ state: "signed-out", loginUrl }), { headers });
+        const allowed = await hasDashboardAccess(username);
+        return new Response(JSON.stringify({ state: allowed ? "allowed" : "forbidden", username, loginUrl }), { headers });
+      } catch (error) {
+        return new Response(JSON.stringify({ state: "error", loginUrl }), { status: 500, headers });
+      }
+    }
+
+    // Opens a dashboard session for the admin signed in on the website.
     if (url.pathname === "/api/login" && req.method === "POST") {
       try {
-        const body = await req.json();
-        const { authKey } = body;
-
-        if (authKey === config.authKey) {
-
-          const sessionToken = crypto.randomUUID();
-          dashboardSessions.set(sessionToken, Date.now() + DASHBOARD_SESSION_TIMEOUT);
-
-          return new Response(JSON.stringify({ success: true, sessionToken }), {
-            headers: {
-              "Content-Type": "application/json",
-              "Set-Cookie": `dashboard_session=${sessionToken}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
-            }
+        const username = await getSignedInAccount(req);
+        if (!username) {
+          return new Response(JSON.stringify({ error: "Log in on the website first" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" }
           });
         }
 
-        return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" }
+        if (!(await hasDashboardAccess(username))) {
+          return new Response(JSON.stringify({ error: "This account cannot open the gateway dashboard" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        const sessionToken = crypto.randomUUID();
+        const now = Date.now();
+        dashboardSessions.set(sessionToken, { username, expires: now + DASHBOARD_SESSION_TIMEOUT, checkedAt: now });
+
+        return new Response(JSON.stringify({ success: true, username }), {
+          headers: {
+            "Content-Type": "application/json",
+            "Set-Cookie": `dashboard_session=${sessionToken}; HttpOnly; Path=/; Max-Age=3600; SameSite=Strict`
+          }
         });
       } catch (error) {
-        return new Response(JSON.stringify({ error: "Invalid request body" }), {
-          status: 400,
+        return new Response(JSON.stringify({ error: "Could not check the account" }), {
+          status: 500,
           headers: { "Content-Type": "application/json" }
         });
       }
     }
 
     if (url.pathname === "/api/logout" && req.method === "POST") {
-      const cookies = req.headers.get('cookie') || '';
-      const sessionMatch = cookies.match(/dashboard_session=([^;]+)/);
-      if (sessionMatch) {
-        dashboardSessions.delete(sessionMatch[1]);
+      const sessionToken = readCookie(req, "dashboard_session");
+      if (sessionToken) {
+        dashboardSessions.delete(sessionToken);
       }
 
       return new Response(JSON.stringify({ success: true }), {
@@ -337,28 +437,12 @@ const serverConfig: any = {
     }
 
     if (url.pathname === "/api/stats" && req.method === "GET") {
-      const cookies = req.headers.get('cookie') || '';
-      const sessionMatch = cookies.match(/dashboard_session=([^;]+)/);
-
-      if (!sessionMatch) {
+      if (!(await getDashboardSession(req))) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
           headers: { "Content-Type": "application/json" }
         });
       }
-
-      const sessionToken = sessionMatch[1];
-      const sessionExpiry = dashboardSessions.get(sessionToken);
-
-      if (!sessionExpiry || Date.now() > sessionExpiry) {
-        dashboardSessions.delete(sessionToken);
-        return new Response(JSON.stringify({ error: "Session expired" }), {
-          status: 401,
-          headers: { "Content-Type": "application/json" }
-        });
-      }
-
-      dashboardSessions.set(sessionToken, Date.now() + DASHBOARD_SESSION_TIMEOUT);
 
       const servers = Array.from(gameServers.values()).map(s => ({
         id: s.id,
@@ -389,19 +473,7 @@ const serverConfig: any = {
     }
 
     if (url.pathname === "/dashboard" && req.method === "GET") {
-      const cookies = req.headers.get('cookie') || '';
-      const sessionMatch = cookies.match(/dashboard_session=([^;]+)/);
-
-      if (!sessionMatch) {
-
-        return Response.redirect("/", 302);
-      }
-
-      const sessionToken = sessionMatch[1];
-      const sessionExpiry = dashboardSessions.get(sessionToken);
-
-      if (!sessionExpiry || Date.now() > sessionExpiry) {
-        dashboardSessions.delete(sessionToken);
+      if (!(await getDashboardSession(req))) {
         return Response.redirect("/", 302);
       }
 
@@ -419,7 +491,7 @@ const serverConfig: any = {
     }
 
     // Static file serving for CSS, JS, and other assets
-    if (url.pathname.startsWith("/css/") || url.pathname.startsWith("/js/") || url.pathname.startsWith("/images/")) {
+    if (url.pathname.startsWith("/css/") || url.pathname.startsWith("/js/") || url.pathname.startsWith("/img/") || url.pathname.startsWith("/images/")) {
       try {
         const filePath = new URL(`../webserver/public${url.pathname}`, import.meta.url);
         const file = await Bun.file(filePath).bytes();
@@ -431,6 +503,7 @@ const serverConfig: any = {
         else if (url.pathname.endsWith(".jpg") || url.pathname.endsWith(".jpeg")) contentType = "image/jpeg";
         else if (url.pathname.endsWith(".gif")) contentType = "image/gif";
         else if (url.pathname.endsWith(".svg")) contentType = "image/svg+xml";
+        else if (url.pathname.endsWith(".ico")) contentType = "image/x-icon";
         else if (url.pathname.endsWith(".woff")) contentType = "font/woff";
         else if (url.pathname.endsWith(".woff2")) contentType = "font/woff2";
         else if (url.pathname.endsWith(".ttf")) contentType = "font/ttf";

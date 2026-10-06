@@ -46,6 +46,7 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 - [Environment Variables](#-environment-variables)
 - [Setup Instructions](#-setup-instructions)
 - [Monitoring Dashboard](#-monitoring-dashboard)
+- [Documentation Site](#documentation-site)
 - [Security](#-security)
 
 ---
@@ -74,6 +75,7 @@ The gateway works in conjunction with the [Frostfire Forge Game Engine](https://
 - **SSL/TLS Support:** Full HTTPS support for both webserver and gateway
 - **Realm Routing:** Client requests routed to appropriate game server realms
 - **Asset Delivery:** Gzip-compressed asset data serving
+- **Documentation Site:** Searchable docs for the engine, gateway, asset server, editors and players, served at `/docs`
 - **Docker Ready:** Development and production-ready containerization
 
 ---
@@ -364,13 +366,24 @@ Both services read `TLS_CERT_PATH`, `TLS_KEY_PATH`, and `TLS_CA_PATH`. If these 
 
 Access the real-time dashboard at `http://localhost:9999/dashboard`
 
-**Default credentials:** Value of `GATEWAY_AUTH_KEY`
+**Access:** log in on the website with an admin account that holds the `server.gateway` or `server.*` permission. The dashboard uses that login; `GATEWAY_AUTH_KEY` does not open it. Opening `/gateway` on the website redirects to the dashboard on the right port.
 
 **Dashboard Features:**
 - Real-time server status
 - CPU and RAM usage graphs
 - Connection count per server
 - Latency/RTT monitoring
+
+---
+
+## Documentation Site
+
+The webserver hosts the full documentation at `/docs` (for example `http://localhost/docs`).
+
+- The **Player Guide** is public. Every other section needs a logged-in, non-guest account.
+- Content is Markdown under `src/webserver/documentation/`, one file per page. See the `README.md` in that folder for the page format (code block titles, tabs, callouts).
+- Pages are rendered once at startup and re-rendered when a file changes, so edits show up without a restart.
+- `src/webserver/documentation/sections.json` sets the section order and which sections are public.
 
 ---
 

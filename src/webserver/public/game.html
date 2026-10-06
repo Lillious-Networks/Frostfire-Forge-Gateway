@@ -10,6 +10,9 @@
     <meta name="theme-color" content="#000000">
     <title>Game</title>
     <script defer src="./js/web/core.js" type="text/javascript"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./css/game.css" />
   </head>
   <body oncontextmenu="return false;">
@@ -18,12 +21,19 @@
     <div id="ambience-cool-overlay" class="ui"></div>
     <div id="sun-flare" class="ui"><div id="sun-flare-rays"></div></div>
     <div id="loading-screen" class="ui">
+      <div class="loading-brand">
+        <img src="./img/logo.png" alt="" width="72" height="72">
+        <span>Frostfire Forge</span>
+      </div>
       <button type="button" id="start-game-button" class="ui">Start Game</button>
       <div id="progress-bar-container" class="ui">
-        <div id="loading-bar-left" class="ui"></div>
-        <div id="loading-bar-center" class="ui"></div>
-        <div id="loading-bar-right" class="ui"></div>
-        <div id="progress-bar" class="ui"></div>
+        <div class="loading-label">
+          <span class="loading-eyebrow">Loading</span>
+          <span class="loading-hint">Preparing the world</span>
+        </div>
+        <div class="loading-track">
+          <div id="progress-bar" class="ui"></div>
+        </div>
       </div>
     </div>
     <div id="game-notification-container" class="ui">
@@ -417,9 +427,12 @@
     <!-- Rotate-to-landscape prompt for portrait mobile -->
     <div id="rotate-prompt" class="ui">
       <div class="rotate-card">
-        <div class="rotate-icon">📱</div>
+        <div class="rotate-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg>
+        </div>
+        <div class="rotate-eyebrow">Landscape only</div>
         <div class="rotate-text">Rotate Your Device</div>
-        <div class="rotate-subtext">This game is played in landscape mode</div>
+        <div class="rotate-subtext">This game is played in landscape mode. Turn your device sideways to continue.</div>
       </div>
     </div>
 

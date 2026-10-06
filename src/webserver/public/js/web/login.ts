@@ -11,6 +11,12 @@ if (!login) {
   throw new Error('login-button not found');
 }
 
+// The gateway dashboard sends admins here to sign in (/?next=gateway). The
+// realm selection page sends them back to it once they have.
+if (new URLSearchParams(window.location.search).get('next') === 'gateway') {
+  sessionStorage.setItem('login-return', '/gateway');
+}
+
 const login_listener = async () => {
     const response = await fetch('/login', {
         method: 'POST',

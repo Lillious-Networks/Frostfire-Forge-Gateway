@@ -11,6 +11,19 @@ if (!token) {
     window.location.href = '/';
 }
 
+// A login started from the documentation site (/docs) returns there.
+const docsReturn = sessionStorage.getItem('docs-return');
+if (token && docsReturn !== null) {
+    sessionStorage.removeItem('docs-return');
+    window.location.href = '/docs' + docsReturn;
+}
+
+// Same for a login started from the gateway dashboard (js/web/login.ts).
+if (token && sessionStorage.getItem('login-return') === '/gateway') {
+    sessionStorage.removeItem('login-return');
+    window.location.href = '/gateway';
+}
+
 let selectedServerId: string | null = null;
 let servers: any[] = [];
 const serverPings = new Map<string, number>();
@@ -81,7 +94,7 @@ async function loadServers(): Promise<void> {
         const loadingEl = document.getElementById('loading-message');
         if (loadingEl) {
             loadingEl.innerHTML =
-                `<span style="color: #fca5a5;">Failed to load realms. Please try refreshing.</span>`;
+                `<span class="realm-load-error">Failed to load realms. Please try refreshing.</span>`;
         }
     } finally {
         loadInFlight = false;
@@ -116,7 +129,7 @@ function renderServers(): void {
         const clientPing = serverPings.get(server.id);
         const latencyDisplay = clientPing !== undefined
             ? `${clientPing}ms`
-            : (status === 'offline' ? 'offline' : '<span style="color: #22c55e;">measuring...</span>');
+            : (status === 'offline' ? 'offline' : '<span class="realm-measuring">measuring...</span>');
 
         // Build status badges (whitelist first, then status)
         const statusBadges = [];

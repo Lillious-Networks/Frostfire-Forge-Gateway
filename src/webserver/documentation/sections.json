@@ -1,0 +1,44 @@
+[
+  {
+    "id": "getting-started",
+    "title": "Getting Started",
+    "description": "What Frostfire Forge is, how the three servers fit together, and how to get them running.",
+    "icon": "rocket",
+    "public": false
+  },
+  {
+    "id": "engine",
+    "title": "Game Engine",
+    "description": "Networking, the game loop, commands, spells, quests, plugins, events and packets.",
+    "icon": "cpu",
+    "public": false
+  },
+  {
+    "id": "gateway",
+    "title": "Gateway",
+    "description": "Accounts, two-factor login, the reverse proxy, realms and game server registration.",
+    "icon": "shield",
+    "public": false
+  },
+  {
+    "id": "assets",
+    "title": "Asset Server",
+    "description": "Maps, sprites and world data: how they are stored, served and synced.",
+    "icon": "box",
+    "public": false
+  },
+  {
+    "id": "tools",
+    "title": "Tools & Editors",
+    "description": "The control panel and every live editor: maps, spells, quests, NPCs, loot and more.",
+    "icon": "wrench",
+    "public": false
+  },
+  {
+    "id": "player-guide",
+    "title": "Player Guide",
+    "description": "Create an account, learn the controls, and find your way around the game.",
+    "icon": "gamepad",
+    "public": true
+  }
+]
