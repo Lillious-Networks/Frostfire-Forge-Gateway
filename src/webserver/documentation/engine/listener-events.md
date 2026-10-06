@@ -147,7 +147,7 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Items | `onItemUnequip` | `{ player, slot }` | An item was unequipped |
 | Items | `onPlayerMount` | `{ player, mounted, mountType }` | A player mounted or dismounted |
 | Loot | `onPlayerLootDropped` | `{ player, itemName, quantity, mapName, x, y }` | A loot drop appeared on the ground |
-| Loot | `onPlayerLootDespawned` | `{ player, itemName, quantity, mapName, x, y }` | A loot drop was removed without being picked up. `player` is only `{ username, id }` of the owner |
+| Loot | `onPlayerLootDespawned` | `{ player, itemName, quantity, mapName, x, y }` | A loot drop was removed without being picked up. `player` is only `{ username, id }` of the owner, both empty for loot that had no owner |
 | Loot | `onPlayerLootRetrieved` | `{ player, itemName, quantity, mapName, x, y }` | A player picked up a loot drop |
 | Creatures | `onCreatureKilled` | `{ creature, template, killer, tapper }` | A creature died. `killer` is a player object or `null` |
 | Creatures | `onCreatureKillCredit` | `{ player, templateId, creature, updates }` | A player received kill credit. `updates` are the quest objective updates it caused |

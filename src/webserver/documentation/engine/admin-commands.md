@@ -59,7 +59,7 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/reloadmap <map>` | none | `admin.reloadmap` or `admin.*` | Reloads a map and resends it to everyone on it |
 | `/weather <name \| clear \| random \| weather_api>` | none | `admin.weather` or `admin.*` | Sets the weather of the world you are in |
 | `/give <username \| id> <item> [amount]` | none | `admin.items` or `admin.*` | Adds an item to a player's inventory |
-| `/drop <item> [amount]` | none | `admin.items` or `admin.*` | Drops loot on the ground at your position |
+| `/drop <item> [amount]` | none | `admin.items` or `admin.*` | Drops loot on the ground at your position, for anyone to pick up |
 | `/spawnchest table <id>` or `/spawnchest inline ...` | none | `admin.items` or `admin.*` | Spawns a loot chest at your position |
 | `/loottable <sub-command> ...` | none | `admin.loot` or `admin.*` | Lists and edits loot tables |
 | `/tileeditor` | `/te` | `tools.tile_editor` or `tools.*` | Opens the map editor |
@@ -301,7 +301,7 @@ Adds an item to a player's inventory. The player can be offline. The item name i
 /drop <item> [amount]
 ```
 
-Spawns a loot drop at your position that you own. The amount defaults to 1 and is capped at 9999.
+Spawns a loot drop at your position with no owner: any player who walks up to it can pick it up, and the first one to do so gets it. The amount defaults to 1 and is capped at 9999. The drop disappears after 30 minutes if nobody takes it.
 
 ### /spawnchest
 

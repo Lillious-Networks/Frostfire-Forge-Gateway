@@ -58,7 +58,8 @@ export function updateLootPickup(playerX: number, playerY: number, playerMap: st
   let nearestDist = Infinity;
 
   for (const loot of lootItems) {
-    if (String(loot.ownerId) !== String(localUsername)) continue;
+    // Loot with no owner is anyone's to take.
+    if (loot.ownerId && String(loot.ownerId) !== String(localUsername)) continue;
     const lootMap = (loot.map || "").replace(".json", "").toLowerCase();
     if (lootMap !== normalizedMap) continue;
     const dx = playerX - loot.x;
@@ -299,7 +300,7 @@ window.addEventListener("keydown", async (e) => {
     const localUsername = Array.from(cache.players).find(p => p.id === cachedPlayerId)?.username;
     let nearOwned = false;
     for (const loot of lootItems) {
-      if (String(loot.ownerId) !== String(localUsername)) continue;
+      if (loot.ownerId && String(loot.ownerId) !== String(localUsername)) continue;
       nearOwned = true;
       break;
     }

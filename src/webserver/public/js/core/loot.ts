@@ -114,7 +114,8 @@ export function renderLoot(
 
     const quality = loot.quality?.toLowerCase() || "common";
     const color = QUALITY_COLORS[quality] || QUALITY_COLORS.common;
-    const isOwn = String(loot.ownerId) === String(localUsername);
+    // Loot with no owner is anyone's to take, so it is drawn like the player's own.
+    const isOwn = !loot.ownerId || String(loot.ownerId) === String(localUsername);
 
     const iconSize = 30;
     const iconHalf = iconSize / 2;
@@ -300,7 +301,7 @@ export function renderLootInteractionHint(
   let nearestDist = Infinity;
 
   for (const loot of lootItems) {
-    if (String(loot.ownerId) !== String(localUsername)) continue;
+    if (loot.ownerId && String(loot.ownerId) !== String(localUsername)) continue;
     const dx = loot.x - cameraX;
     const dy = loot.y - cameraY;
     const dist = Math.sqrt(dx * dx + dy * dy);

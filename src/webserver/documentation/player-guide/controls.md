@@ -36,7 +36,7 @@ Your target's name, level, health and mana appear in the target frame. A target 
 | Tab | Target the nearest player or creature in front of you, press again to cycle |
 | 1 to 9, 0 | Cast the spell in hotbar slot 1 to 10 |
 | Q | Mount or dismount |
-| E | Talk to a nearby character. Next to your own loot: tap to pick up the nearest item, hold to pick up everything nearby |
+| E | Talk to a nearby character. Next to loot you can take: tap to pick up the nearest item, hold to pick up everything nearby |
 | F | Open a nearby loot chest |
 | B | Open or close the inventory |
 | C | Open or close the character window (stats and equipment) |

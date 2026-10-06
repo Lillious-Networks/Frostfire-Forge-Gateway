@@ -105,13 +105,14 @@ In a party, the right to loot the items passes from member to member with each k
 
 Sometimes an item appears floating above the ground with a glow in its quality colour.
 
-- Every ground item has an owner. If it is not yours, you see **Owned by** and a name when you get near, and you cannot take it.
-- Stand next to your item and tap **E** to pick up the nearest one.
-- Hold **E** to pick up everything of yours that is close by.
+- Some ground items have an owner. If one is not yours, you see **Owned by** and a name when you get near, and you cannot take it.
+- A ground item with no owner is free for anyone. The first player to pick it up gets it.
+- Stand next to an item you can take and tap **E** to pick up the nearest one.
+- Hold **E** to pick up everything you can take that is close by.
 - Point at a ground item to read what it is.
 
 :::note
-Ground loot does not wait forever. It disappears after 30 minutes, or about 5 minutes after its owner leaves the game.
+Ground loot does not wait forever. It disappears after 30 minutes. An item with an owner also disappears about 5 minutes after that owner leaves the game.
 :::
 
 ## Loot chests
