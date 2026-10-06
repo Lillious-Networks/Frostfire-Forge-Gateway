@@ -1,6 +1,6 @@
 ---
 title: Database
-description: MySQL and SQLite, the setup scripts, the query function and its worker pool, the rule that reads come from caches, and the main tables.
+description: MySQL and SQLite, the setup scripts, the query function and its worker pool, transactions, the rule that reads come from caches, and the main tables.
 order: 60
 ---
 
@@ -182,6 +182,92 @@ A rejected `query` does not prove the statement was not applied. Code that keeps
 
 `drainQueries()` (a named export of the same module) resolves once every statement sent so far has been answered or has timed out.
 
+## Transactions
+
+Statements sent with `query` are separate: each may land on another worker and another connection. When several writes must all be kept or all be undone, send them together with `transaction`, a named export of the same module.
+
+```ts title="src/controllers/sqldatabase.ts"
+export async function transaction(statements: TransactionStatement[]): Promise<any[]>
+
+interface TransactionStatement {
+  sql: string;
+  values?: any[];
+  mustChange?: boolean;
+}
+```
+
+```ts title="All or nothing"
+import { transaction, GuardError } from "@engine/controllers/sqldatabase";
+
+try {
+  await transaction([
+    {
+      sql: "UPDATE my_plugin_scores SET points = points - ? WHERE username = ? AND points >= ?",
+      values: [cost, username, cost],
+      mustChange: true,
+    },
+    { sql: "INSERT INTO my_plugin_unlocks (username, unlock) VALUES (?, ?)", values: [username, unlock] },
+  ]);
+} catch (error) {
+  if (error instanceof GuardError) {
+    // Statement number error.statement changed no rows: not enough points. Nothing was written.
+  }
+}
+```
+
+| Behaviour | Detail |
+|-----------|--------|
+| Where it runs | The whole list goes to one worker and runs on one connection, in order |
+| Result | One result per statement, as `query` would give it |
+| A statement fails | Everything is undone and the call throws the database's error |
+| `mustChange: true` | Everything is undone and the call throws a `GuardError` when that statement changes no rows |
+| Timeout | 15 seconds for the whole list, then it is undone |
+| Retries | Only when the transaction never opened. One that opened is never sent a second time. |
+
+:::warning mustChange counts rows that changed
+MySQL does not count a row that already held the values written. Use `mustChange` on statements that change what they find (`points = points - ?`), not on ones that may write the same value back.
+:::
+
+A `mustChange` statement puts a check and a write in one step that no other write can come between. That is what keeps coins from being spent twice and an item from being given away twice.
+
+### Changes that span systems
+
+The inventory, the currency, the stats and the quest log each hold their own cached rows and queue their own writes. A change made of several of them (a quest hand-in gives items, experience and coins and completes the quest) goes through a batch from `src/services/batch.ts`:
+
+```ts title="One change, several systems"
+import { atomically } from "@engine/services/batch";
+import currency from "@engine/systems/currency";
+import inventory from "@engine/systems/inventory";
+
+await atomically([buyer], async (batch) => {
+  await currency.remove(buyer, price, batch);
+  await inventory.add(buyer, { name: "Health Potion", quantity: 1 }, batch);
+});
+```
+
+A system call that is handed the batch adds its statement to it instead of sending it. When the function returns, the batch sends everything as one `transaction`. Only then does each system update the rows it holds. If the transaction is not kept, each system drops the rows it holds for those players and the call throws.
+
+| Rule | Why |
+|------|-----|
+| Name every player whose rows change | A batch waits for any other batch of the same players, so two of them never work from the same rows |
+| Hand the batch to every system call inside it | A call without it would wait for a turn the batch holds until it ends |
+| Do not start a batch inside another for the same player | The inner one would wait for the outer one |
+| Throw inside the function to cancel | Nothing is sent and no cached row changes |
+| Read what you need before or inside the function | Reads see the rows as they were until the transaction is kept |
+
+These calls accept a batch today:
+
+| Call | Notes |
+|------|-------|
+| `inventory.add(name, item, batch)` | Resolves to `true` when a statement was added |
+| `inventory.remove(name, item, batch)` | Resolves to `undefined` when the player holds none of the item |
+| `currency.add(username, amount, batch)` | Resolves to the balance after |
+| `currency.remove(username, amount, batch)` | Resolves to the balance after |
+| `player.increaseXp(username, xp, batch)` | Resolves to the experience and level after |
+| `writeQuestRowsIn(batch, username, write)` | From `src/systems/quests/log.ts`, for quest log rows |
+
+Quest hand-ins, corpse loot, chest loot and saving inventory slots use this, so each of them is kept whole or not at all.
+
 ## Reads come from caches
 
 This is the most important rule for engine and plugin code:
@@ -276,6 +362,9 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | Table | Holds | Key columns |
 |-------|-------|-------------|
 | `friendslist` | A player's friends, comma separated | `username`, `friends` |
+| `ignores` | Who each player ignores, one row per pair | `username`, `ignored`, `created_at` |
+| `mutes` | Chat mutes. No `expires_at` is a mute until it is lifted. | `username`, `muted_by`, `reason`, `created_at`, `expires_at` |
+| `reports` | Reports players sent about each other, with the chat lines attached | `id`, `reporter`, `target`, `category`, `details`, `chat_log`, `status`, `resolved_by`, `resolution` |
 | `parties` | Parties: the leader and the member list | `id`, `leader`, `members` |
 | `guilds` | Guilds, their members, bank and rank permissions | `id`, `name`, `leader`, `members`, `bank`, `rank_permissions` |
 

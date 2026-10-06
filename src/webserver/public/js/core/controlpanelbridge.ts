@@ -8,10 +8,19 @@
 import { LineChart, barList, columns, meter, shares, sparkline, type Bar, type Point } from "./controlpanelcharts.js";
 import {
   ago, arrowKeys, avatar, clock, confirmDialog, count, dayAndTime, duration, el, empty, forbid, icon, listed, memory, num, screen, segments, short, shown, subcard,
-  tag, toast, type IconName,
+  tag, titleCount, toast, type IconName,
 } from "./toolkit.js";
 
-type Page = "dashboard" | "players" | "communication" | "server" | "world" | "items";
+type Page = "dashboard" | "players" | "reports" | "communication" | "server" | "world" | "items";
+/** A mute as the server holds it: times are milliseconds since the epoch, and no `expires_at` is a mute until it is lifted. */
+type Mute = { username: string; muted_by: string; reason: string | null; created_at: number; expires_at: number | null };
+/** A player's report of another, with the reported player's lines that reached the one who reported. */
+type Report = {
+  id: number; reporter: string; target: string; category: string; details: string | null;
+  chat_log: Array<{ at: number; channel: string; text: string }>;
+  map: string | null; x: number | null; y: number | null; target_map: string | null; target_x: number | null; target_y: number | null;
+  created_at: number; status: "open" | "resolved"; resolved_by: string | null; resolved_at: number | null; resolution: string | null;
+};
 type Range = "hour" | "six" | "day";
 type SortKey = "username" | "level" | "map" | "status" | "onlineFor";
 type LootTable = { id: number; name: string; items: ControlPanelLootRow[] };
@@ -46,6 +55,7 @@ const AUDIENCES: Array<[string, string, string]> = [
 const PAGES: Array<{ id: Page; label: string; icon: IconName; group: string; lead: string }> = [
   { id: "dashboard", label: "Dashboard", icon: "dashboard", group: "Overview", lead: "" },
   { id: "players", label: "Players", icon: "players", group: "People", lead: "Everyone online now. Pick a player to see their details and act on them, or search to find any account." },
+  { id: "reports", label: "Reports", icon: "shield", group: "People", lead: "What players have reported about each other. The reported player is never told, and neither is a player you mute." },
   { id: "communication", label: "Communication", icon: "megaphone", group: "People", lead: "Messages from the admins to the players in the game." },
   { id: "server", label: "Server", icon: "server", group: "Operations", lead: "How the server is running, who may log in, and when it restarts." },
   { id: "world", label: "World", icon: "globe", group: "Operations", lead: "The maps of the game, their weather, and how you move through them." },
@@ -63,6 +73,7 @@ const ACTION_LABELS: Record<string, string> = {
   "self.noclip": "Noclip", "self.stealth": "Stealth",
   "player.summon": "Summon", "player.goto": "Go to", "player.respawn": "Respawn", "player.revive": "Revive", "player.kill": "Kill",
   "player.kick": "Kick", "player.ban": "Ban", "player.unban": "Unban", "player.admin": "Admin role", "player.give": "Give item",
+  "player.mute": "Mute", "player.unmute": "Unmute", "report.resolve": "Resolve report",
   "permission.add": "Give permission", "permission.remove": "Take permission away", "permission.set": "Set permissions", "permission.clear": "Clear permissions",
   "server.broadcast": "Message", "server.whitelist.add": "Add to whitelist", "server.whitelist.remove": "Remove from whitelist",
   "server.whitelist.on": "Turn whitelist on", "server.whitelist.off": "Turn whitelist off",
@@ -95,7 +106,19 @@ const PLAYER_ACTIONS: Record<string, { label: string; note: string; online?: boo
     confirm: (name) => [`Ban ${name}?`, `${name} is disconnected now and cannot log in again until they are unbanned.`],
   },
   "player.unban": { label: "Unban", note: "Let them log in again." },
+  "player.unmute": { label: "Unmute", note: "Let everyone hear them again." },
 };
+
+/** How long a mute can be set to last. None is a mute until it is lifted. */
+const MUTE_LENGTHS: Array<[string, string]> = [
+  ["10m", "10 minutes"], ["1h", "1 hour"], ["6h", "6 hours"], ["1d", "1 day"], ["7d", "7 days"], ["30d", "30 days"],
+];
+/** What each category of report is called. */
+const REPORT_CATEGORIES: Record<string, string> = {
+  harassment: "Harassment", spam: "Spam", cheating: "Cheating", name: "Offensive name", other: "Other",
+};
+/** Longest reason for a mute, or note on a report: what the server takes. */
+const NOTE_MAX = 200;
 
 class ControlPanel {
   private data: ControlPanelData | null = null;
@@ -129,12 +152,19 @@ class ControlPanel {
   private matchTimer: ReturnType<typeof setTimeout> | null = null;
   private permissions: { target: string; held: string[]; types: string[]; isAdmin: boolean } | null = null;
   private showPermissions = false;
+  /** Whether the selected player is muted, and how many open reports name them. */
+  private moderation: { target: string; mute: Mute | null; openReports: number } | null = null;
+  /** The reports as last read: the open ones newest first, and the latest that were resolved. */
+  private reportList: { open: Report[]; resolved: Report[] } | null = null;
+  /** The report the Reports page shows in full. */
+  private openReport = 0;
   private lootTables: LootTable[] | null = null;
   private openTable = 0;
 
   /** What the fields hold between redraws. */
   private drafts = {
     giveItem: "", giveAmount: 1, permission: "", held: new Set<string>(),
+    muteLength: "", muteReason: "", resolveNote: "",
     broadcast: "", audience: "ALL", whitelist: "", weather: "", warp: "", reload: "",
     dropItem: "", dropAmount: 1, chestMode: "table" as "table" | "items", chestTable: 0, tableName: "",
     chest: [{ item: "", min: 1, max: 1, chance: 100 }],
@@ -162,6 +192,7 @@ class ControlPanel {
   private updatedEl = el("span", "cp-updated");
   private viewerEl = el("div", "cp-viewer");
   private navCountEl = el("span", "tl-count");
+  private navReportsEl = el("span", "tl-count");
 
   constructor() {
     this.buildShell();
@@ -223,6 +254,8 @@ class ControlPanel {
     }
     if (data.options) this.options = data.options;
     this.takeHistory(data, !!data.can);
+    // A report came in or was resolved by someone else: the list on screen is read again.
+    if (this.page === "reports" && data.reports && data.reports.open !== this.reportList?.open.length) this.askReports();
     this.paintChrome();
     if (redraw) this.renderPage();
     else this.refresh(false);
@@ -252,6 +285,12 @@ class ControlPanel {
     } else if (data?.kind === "lootTables") {
       this.lootTables = Array.isArray(data.tables) ? data.tables : [];
       if (this.page === "items") this.renderPage();
+    } else if (data?.kind === "moderation") {
+      this.moderation = { target: data.target, mute: data.mute ?? null, openReports: Number(data.openReports) || 0 };
+      this.refresh(false);
+    } else if (data?.kind === "reports") {
+      this.reportList = { open: Array.isArray(data.open) ? data.open : [], resolved: Array.isArray(data.resolved) ? data.resolved : [] };
+      if (this.page === "reports") this.renderPage();
     } else if (data?.kind === "players") {
       if (data.query !== this.filter.text.trim().toLowerCase()) return;
       this.matches = { query: data.query, players: data.players || [], truncated: data.truncated || 0 };
@@ -293,6 +332,8 @@ class ControlPanel {
     // What the action changed is read again: the panel shows what the server has.
     if (action.startsWith("permission.") || action === "player.admin") this.askPermissions();
     if (action.startsWith("loot.")) this.request("CONTROL_PANEL_QUERY", { kind: "lootTables" });
+    if (action === "player.mute" || action === "player.unmute") this.askModeration();
+    if (action === "report.resolve") this.askReports();
     this.paintChrome();
     this.renderPage();
     // The list of what admins did has a new line.
@@ -399,13 +440,26 @@ class ControlPanel {
     if (this.selected && this.showPermissions && this.can["query.permissions"]) this.request("CONTROL_PANEL_QUERY", { kind: "permissions", target: this.selected });
   }
 
+  /** Whether the selected player is muted and how many reports name them: asked of the server, for whoever may act on either. */
+  private askModeration(): void {
+    if (this.selected && this.can["query.moderation"]) this.request("CONTROL_PANEL_QUERY", { kind: "moderation", target: this.selected });
+  }
+
+  private askReports(): void {
+    if (this.can["query.reports"]) this.request("CONTROL_PANEL_QUERY", { kind: "reports" });
+  }
+
   private select(username: string): void {
     this.selected = username.toLowerCase();
     if (this.permissions?.target !== this.selected) this.permissions = null;
+    if (this.moderation?.target !== this.selected) this.moderation = null;
     this.drafts.permission = "";
+    this.drafts.muteLength = "";
+    this.drafts.muteReason = "";
     // What went wrong for the last player is not about this one.
     for (const key of [...this.errors.keys()]) if (key.startsWith("players.")) this.errors.delete(key);
     this.askPermissions();
+    this.askModeration();
     this.renderPage();
   }
 
@@ -654,6 +708,7 @@ class ControlPanel {
       item.title = page.label;
       item.append(icon(page.icon, 18), el("span", "tl-nav-label", page.label));
       if (page.id === "players") item.appendChild(this.navCountEl);
+      if (page.id === "reports") item.appendChild(this.navReportsEl);
       item.addEventListener("click", () => this.go(page.id));
       list.appendChild(item);
     }
@@ -677,6 +732,9 @@ class ControlPanel {
   private go(page: Page): void {
     this.page = page;
     this.errors.clear();
+    if (page === "reports") this.askReports();
+    // The mute shown for the selected player may have been set from another page.
+    if (page === "players") this.askModeration();
     this.paintChrome();
     this.renderPage();
     this.pageEl.scrollTop = 0;
@@ -732,6 +790,10 @@ class ControlPanel {
     this.updatedEl.textContent = this.data && !this.denied ? `Updated ${clock(this.lastAnswerAt, true)}` : "";
     this.navCountEl.textContent = s && !this.denied ? num(s.online) : "";
     this.navCountEl.hidden = !s || this.denied;
+    // How many reports wait, for those who handle them: nothing is shown when none do.
+    const waiting = this.denied ? 0 : this.data?.reports?.open ?? 0;
+    this.navReportsEl.textContent = waiting ? num(waiting) : "";
+    this.navReportsEl.hidden = !waiting;
 
     this.bannerEl.replaceChildren();
     this.bannerEl.className = "tl-banner";
@@ -806,6 +868,7 @@ class ControlPanel {
     this.pageEl.appendChild(inner);
     switch (this.page) {
       case "players": this.renderPlayers(inner); break;
+      case "reports": this.renderReports(inner); break;
       case "communication": this.renderCommunication(inner); break;
       case "server": this.renderServer(inner); break;
       case "world": this.renderWorld(inner); break;
@@ -1374,6 +1437,10 @@ class ControlPanel {
     };
     const movement = group("Movement", "move", "players.movement");
     const moderation = group("Moderation", "shield", "players.moderation");
+    const chat = group("Chat", "megaphone", "players.chat");
+    // How things stand follows the server; the fields under it are built once, so what is typed in them stays.
+    const chatState = el("div", "tl-rows");
+    chat.appendChild(chatState);
     const account = group("Account", "user", origin);
     const items = group("Items", "box", "players.items");
 
@@ -1404,6 +1471,23 @@ class ControlPanel {
       moderation.replaceChildren();
       for (const action of ["player.revive", "player.kill", "player.kick", "player.ban", "player.unban"]) act(moderation, "players.moderation", action);
 
+      chatState.replaceChildren();
+      if (this.can["query.moderation"]) {
+        const held = this.moderation?.target === who ? this.moderation : null;
+        const mute = held?.mute ?? null;
+        const unmute = this.playerButton("player.unmute", p, "players.chat");
+        if (held && !mute) forbid(unmute, `${name} is not muted.`);
+        const state = !held ? "Reading…"
+          : !mute ? "Everyone they speak to hears them."
+          : `${mute.expires_at ? `Until ${dayAndTime(mute.expires_at)}` : "Until it is lifted"}, by ${shown(mute.muted_by)}.${mute.reason ? ` Reason: ${mute.reason}` : ""}`;
+        this.row(chatState, !held ? "Mute" : mute ? "Muted" : "Not muted", state, unmute);
+        if (held?.openReports) {
+          const see = this.button("See reports", () => this.go("reports"), { icon: "shield", fk: "reports.see" });
+          if (!this.can["query.reports"]) forbid(see, "You don't have permission to see reports.");
+          this.row(chatState, "Reports", `${count(held.openReports, "open report")} ${held.openReports === 1 ? "names" : "name"} ${name}.`, see);
+        }
+      }
+
       account.replaceChildren();
       const admin = (wanted: boolean) => {
         const label = wanted ? "Make admin" : "Remove admin";
@@ -1422,7 +1506,7 @@ class ControlPanel {
       this.renderPermissions(account, who, self);
     }, () => {
       const live = this.data!.players.find((p) => p.username === who);
-      return JSON.stringify([live ? { ...live, onlineFor: live.onlineFor === null } : null, this.permissions, this.showPermissions, this.pending?.requestId ?? "", this.lost]);
+      return JSON.stringify([live ? { ...live, onlineFor: live.onlineFor === null } : null, this.permissions, this.showPermissions, this.moderation, this.pending?.requestId ?? "", this.lost]);
     });
     // The time they have been online counts up without the buttons under it being built again.
     this.follow(() => {
@@ -1430,6 +1514,17 @@ class ControlPanel {
       const value = facts.querySelector<HTMLElement>("[data-time] .tl-fact-value");
       if (value && seconds !== null && seconds !== undefined) value.textContent = duration(seconds);
     });
+
+    const muteForm = el("div", "tl-form tl-form-tight");
+    this.field(muteForm, "Reason", this.textInput(this.drafts.muteReason, "Why, for the other admins", (value) => (this.drafts.muteReason = value), NOTE_MAX, "mute.reason"));
+    this.field(muteForm, "For", this.choice(MUTE_LENGTHS, this.drafts.muteLength, (value) => (this.drafts.muteLength = value), "Until lifted"));
+    chat.appendChild(muteForm);
+    const mute = this.button("Mute", (fk) => {
+      this.act("player.mute", { target: who, duration: this.drafts.muteLength, reason: this.drafts.muteReason.trim() }, { key: "players.chat", fk, done: () => (this.drafts.muteReason = "") });
+    }, { action: "player.mute", fk: `player.mute:${who}` });
+    if (self) forbid(mute, "That is you.");
+    this.actions(chat, muteForm, mute);
+    chat.appendChild(el("p", "tl-hint", "A muted player still sees their own messages and is not told. Nobody else receives them. Muting again replaces the mute they are under."));
 
     const form = el("div", "tl-form tl-form-tight");
     this.field(form, "Item", this.itemField(this.drafts.giveItem, "Type an item name", (value) => (this.drafts.giveItem = value), "give.item"));
@@ -1511,6 +1606,167 @@ class ControlPanel {
     const row = el("div", "tl-inline");
     row.append(one, give, take);
     box.appendChild(row);
+  }
+
+  // ----------------------------------------------------------------- reports
+
+  /** Shows a player's details on the Players page. */
+  private openPlayer(username: string): void {
+    this.select(username);
+    this.go("players");
+  }
+
+  private renderReports(root: HTMLElement): void {
+    if (!this.can["query.reports"]) {
+      empty(root, "lock", "Reports are for the admins who handle them", "Your account does not hold the admin.reports permission, so the server does not list them for you.");
+      return;
+    }
+    const grid = el("div", "tl-grid");
+    root.appendChild(grid);
+    const open = this.card(grid, "Open reports", "Newest first. Resolve a report once it has been dealt with.", "reports.open");
+    open.root.classList.add("tl-span-8");
+    const done = this.card(grid, "Recently resolved", "The latest reports that were closed, and what was done.");
+    done.root.classList.add("tl-span-4");
+
+    const list = this.reportList;
+    if (!list) {
+      open.body.appendChild(el("div", "tl-loading", "Reading the reports…"));
+      done.body.appendChild(el("div", "tl-loading", "Reading the reports…"));
+      return;
+    }
+
+    titleCount(open.root, list.open.length);
+    if (list.open.length === 0) {
+      empty(open.body, "check", "No open reports", "When a player reports another, it is listed here, and the admins online who handle reports are told.");
+    } else {
+      const entries = el("div", "cp-reports");
+      for (const report of list.open) entries.appendChild(this.reportEntry(report, list.open));
+      open.body.appendChild(entries);
+    }
+
+    if (list.resolved.length === 0) {
+      empty(done.body, "history", "Nothing resolved yet");
+      return;
+    }
+    const closed = el("ol", "cp-acts");
+    for (const report of list.resolved) {
+      const item = el("li", "cp-act");
+      const badge = el("span", "cp-act-icon");
+      badge.appendChild(icon("check", 14));
+      const line = el("div", "cp-act-line");
+      line.append(el("strong", "", shown(report.target)), el("span", "cp-act-what", REPORT_CATEGORIES[report.category] ?? report.category));
+      line.appendChild(el("span", "cp-act-detail", `resolved by ${shown(report.resolved_by ?? "")}`));
+      const body = el("div", "cp-act-body");
+      body.appendChild(line);
+      if (report.resolution) body.appendChild(el("div", "cp-act-said", report.resolution));
+      const at = report.resolved_at ?? report.created_at;
+      const when = el("time", "cp-act-when", ago(at));
+      when.dateTime = new Date(at).toISOString();
+      when.title = new Date(at).toLocaleString();
+      item.append(badge, body, when);
+      closed.appendChild(item);
+    }
+    done.body.appendChild(closed);
+  }
+
+  /** One open report: who it names and why on a line, and everything about it when it is the one opened. */
+  private reportEntry(report: Report, all: Report[]): HTMLElement {
+    const opened = this.openReport === report.id;
+    const target = shown(report.target);
+    const reporter = shown(report.reporter);
+    const entry = el("article", "cp-report" + (opened ? " is-open" : ""));
+
+    const head = el("button", "cp-report-head");
+    head.type = "button";
+    head.dataset.fk = `report:${report.id}`;
+    head.setAttribute("aria-expanded", String(opened));
+    const when = el("time", "cp-report-when", ago(report.created_at));
+    when.dateTime = new Date(report.created_at).toISOString();
+    when.title = new Date(report.created_at).toLocaleString();
+    head.append(
+      icon(opened ? "chevronDown" : "chevronRight", 14),
+      el("strong", "cp-report-target", target),
+      tag(REPORT_CATEGORIES[report.category] ?? report.category, "warning"),
+      el("span", "cp-report-by", `reported by ${reporter}`),
+      when,
+    );
+    head.addEventListener("click", () => {
+      this.openReport = opened ? 0 : report.id;
+      this.drafts.resolveNote = "";
+      this.renderPage();
+    });
+    entry.appendChild(head);
+    if (!opened) return entry;
+
+    const body = el("div", "cp-report-body");
+    entry.appendChild(body);
+    if (report.details) body.appendChild(el("blockquote", "cp-report-details", report.details));
+
+    const place = (map: string | null, x: number | null, y: number | null, none: string) => (map ? `${map} (${num(x ?? 0)}, ${num(y ?? 0)})` : none);
+    const facts = el("dl", "tl-facts");
+    this.fact(facts, "Reported", dayAndTime(report.created_at));
+    this.fact(facts, "Other open reports on them", num(all.filter((other) => other.target === report.target).length - 1));
+    this.fact(facts, `Where ${target} was`, place(report.target_map, report.target_x, report.target_y, "Not online"));
+    this.fact(facts, `Where ${reporter} was`, place(report.map, report.x, report.y, "Unknown"));
+    body.appendChild(facts);
+
+    const said = el("section", "tl-group");
+    const heading = el("h3", "tl-group-title");
+    heading.append(icon("megaphone", 14), el("span", "", `What ${target} said that reached ${reporter}`));
+    said.appendChild(heading);
+    if (report.chat_log.length === 0) {
+      said.appendChild(el("p", "tl-hint", `Nothing ${target} said in the half hour before reached ${reporter}.`));
+    } else {
+      const lines = el("ol", "cp-report-lines");
+      for (const line of report.chat_log) {
+        const row = el("li", "cp-report-line");
+        const at = el("time", "cp-report-line-at", clock(line.at, true));
+        at.dateTime = new Date(line.at).toISOString();
+        row.append(at, tag(line.channel, "muted"), el("span", "cp-report-line-text", line.text));
+        lines.appendChild(row);
+      }
+      said.appendChild(lines);
+    }
+    body.appendChild(said);
+
+    // What can be done about it: the same commands as on the Players page, on the player reported.
+    const origin = "reports.open";
+    const live = this.data!.players.find((p) => p.username === report.target);
+    const p = { username: report.target, isAdmin: live?.isAdmin, online: !!live };
+    const acts = el("section", "tl-group");
+    const actsTitle = el("h3", "tl-group-title");
+    actsTitle.append(icon("shield", 14), el("span", "", `Act on ${target}`));
+    const rows = el("div", "tl-rows");
+    acts.append(actsTitle, rows);
+    const length = this.choice(MUTE_LENGTHS, this.drafts.muteLength, (value) => (this.drafts.muteLength = value), "Until lifted");
+    length.setAttribute("aria-label", "How long the mute lasts");
+    const mute = this.button("Mute", (fk) => {
+      this.act("player.mute", { target: report.target, duration: this.drafts.muteLength, reason: `Report #${report.id}` }, { key: origin, fk });
+    }, { action: "player.mute", fk: `player.mute:report:${report.id}` });
+    this.row(rows, "Mute", "Nobody else receives what they say. They are not told.", length, mute);
+    for (const action of ["player.kick", "player.ban"]) this.row(rows, PLAYER_ACTIONS[action].label, PLAYER_ACTIONS[action].note, this.playerButton(action, p, origin));
+    this.row(rows, "Details", "Their account, permissions and items, on the Players page.", this.button("Open in Players", () => this.openPlayer(report.target), { icon: "user", fk: `report.player:${report.id}` }));
+    body.appendChild(acts);
+
+    const close = el("section", "tl-group");
+    const closeTitle = el("h3", "tl-group-title");
+    closeTitle.append(icon("check", 14), el("span", "", "Resolve"));
+    const line = el("div", "tl-inline");
+    const note = this.textInput(this.drafts.resolveNote, "What was done, for the other admins", (value) => (this.drafts.resolveNote = value), NOTE_MAX, `report.note:${report.id}`);
+    note.setAttribute("aria-label", "What was done about the report");
+    const resolve = this.button("Resolve", (fk) => {
+      this.act("report.resolve", { id: report.id, note: this.drafts.resolveNote.trim() }, {
+        key: origin, fk,
+        done: () => {
+          this.drafts.resolveNote = "";
+          this.openReport = 0;
+        },
+      });
+    }, { action: "report.resolve", kind: "primary", fk: `report.resolve:${report.id}` });
+    line.append(note, resolve);
+    close.append(closeTitle, line);
+    body.appendChild(close);
+    return entry;
   }
 
   // ----------------------------------------------------------- communication

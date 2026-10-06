@@ -3,6 +3,8 @@ class Cache {
 
   players: Set<any> = new Set();
   onlinePlayers: Set<string> = new Set();
+  /** The players this one ignores, in lower case, as the server last sent them. */
+  ignored: Set<string> = new Set();
   pendingPlayers: Map<string, any> = new Map();
   pendingEffects: Map<string, any[]> = new Map();
   npcs: any[] = [];

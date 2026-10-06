@@ -94,6 +94,9 @@ Every node name found in the engine source, and where it is checked.
 | `admin.*` | Wildcard for every `admin.` node | Yes |
 | `admin.ban` | `/ban` | Yes |
 | `admin.unban` | `/unban` | Yes |
+| `admin.mute` | `/mute` | Yes |
+| `admin.unmute` | `/unmute` | Yes |
+| `admin.reports` | `/reports`, the control panel's Reports page, and the notification when a report arrives | Yes |
 | `admin.kick` | `/kick`, `/disconnect` | No |
 | `admin.kill` | `/kill` | Yes |
 | `admin.revive` | `/revive` | Yes |

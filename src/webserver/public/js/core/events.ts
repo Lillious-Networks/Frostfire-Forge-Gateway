@@ -19,7 +19,7 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     setIsMoving,
     closeAllPanels} from "./input.js";
 import { friendsListSearch } from "./friends.js";
-import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu } from "./actions.js";
+import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createIgnoredContextMenu } from "./actions.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
@@ -652,6 +652,15 @@ document.addEventListener("contextmenu", (event) => {
           return;
         }
         createGuildContextMenu(event, username);
+      }
+      event.preventDefault();
+      return;
+    }
+
+    const ignoredItem = (event.target as HTMLElement).closest(".ignored-item") as HTMLElement;
+    if (ignoredItem) {
+      if (ignoredItem.dataset.username) {
+        createIgnoredContextMenu(event, ignoredItem.dataset.username);
       }
       event.preventDefault();
       return;

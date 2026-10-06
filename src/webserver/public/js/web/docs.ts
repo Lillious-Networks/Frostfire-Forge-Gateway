@@ -753,7 +753,7 @@ function onClick(event: MouseEvent) {
 function onKeyDown(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
-    setSearchOpen(searchDialog.hidden);
+    setSearchOpen(searchDialog.hidden as boolean);
     return;
   }
 

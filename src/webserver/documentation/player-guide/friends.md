@@ -53,3 +53,7 @@ There are two ways:
 | In the world | **Right-click** the player and choose **Remove Friend** |
 
 Removing a friend also removes you from their list. You can add each other again later with a new friend request.
+
+## Ignoring someone
+
+Players you ignore are listed under **Ignored**, below your friends. Ignoring a friend removes them from your friends list and you from theirs. See [Chat and Commands](#/player-guide/chat-and-commands) for how ignoring works.

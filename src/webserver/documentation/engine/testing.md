@@ -145,6 +145,7 @@ describe("isStunned", () => {
 | Export | What it is |
 |--------|-----------|
 | `mockQuery(sql, params)` | A `query` that always resolves to an empty array |
+| `databaseModule({ default })` | Wraps the fake you hand to `mock.module("../controllers/sqldatabase", ...)` and adds the layer's other exports. Its `transaction` hands each statement to your `default` in order and undoes nothing, so give it a `transaction` of your own when a test is about a write that fails part way. |
 | `mockAssetCache` | `get`, `set`, `add` and `getNested`. `get` returns a small fixed data set for `items`, `spells`, `mounts`, `quests`, `weather`, `worlds`, `mapProperties`, `particles`, `npcs` and `audio`. |
 | `mockPlayerCache` | `get`, `set`, `has` and `delete`. `get` returns a level 1 player named `test_player`. |
 | `mockLog` | A logger that writes to the console |
@@ -183,12 +184,13 @@ To test a real system module, replace what it imports before you import it. `moc
 
 ```ts title="src/tests/loottable.test.ts (shortened)"
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { databaseModule } from "./setup";
 
 // Rows the mocked database returns for loot_table_items, and what was written.
 let tableItems: any[] = [];
 let written: any[][] = [];
 
-mock.module("../controllers/sqldatabase", () => ({
+mock.module("../controllers/sqldatabase", () => databaseModule({
   default: async (sql: string, params: any[] = []) => {
     if (sql.startsWith("SELECT * FROM loot_tables")) return [{ id: 1, name: "Wolf drops", created_at: null }];
     if (sql.startsWith("SELECT * FROM loot_table_items")) return tableItems;

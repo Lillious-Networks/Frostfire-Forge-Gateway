@@ -18,6 +18,10 @@ For the player-facing version of this page see [Chat and Commands](#/player-guid
 | `/whisper <username> <message>` | `/w` | Server | Sends a private message to one online player |
 | `/invite <username>` | none | Server | Invites an online player to your party |
 | `/ginvite <username>` | none | Server | Invites an online player to your guild. Guild leader only |
+| `/ignore <username>` | none | Server | Stops you receiving anything from a player |
+| `/unignore <username>` | none | Server | Takes a player off your ignore list |
+| `/ignorelist` | none | Server | Lists who you ignore |
+| `/report <username> <reason>` | none | Server | Reports a player to the admins |
 
 ## Who can use commands
 
@@ -147,6 +151,57 @@ Invites an online player to your guild. Only the guild leader may use it.
 ```text title="Example"
 /ginvite alice
 ```
+
+## Ignore
+
+```text title="Syntax"
+/ignore <username>
+/unignore <username>
+/ignorelist
+```
+
+Ignoring is decided on the server, in the same place every chat channel asks who a line goes to (`src/systems/chatgate.ts`). A player you ignore is told nothing:
+
+| What they do | What happens |
+|--------------|--------------|
+| Say something near you | Everyone else on the map receives it. You do not. |
+| Whisper you | It shows as sent on their side and never reaches you |
+| Speak in a party or guild you share | You do not receive that line |
+| Invite you to a party or guild, or send a friend request | It looks sent on their side and never reaches you |
+
+The command works on offline accounts and a list holds up to 100 names. Ignoring a friend ends the friendship on both sides. The same actions are on the menu that opens on a player, on a friend in the friends list, and on a name in the Ignored section of that list.
+
+| Problem | Answer |
+|---------|--------|
+| No username given | `Usage: /ignore <username>` |
+| No such account | `Player not found` |
+| You named yourself | `You cannot ignore yourself` |
+| The player is an admin | `You cannot ignore an admin` |
+| You are an admin | `Admins cannot ignore players` |
+| Already on your list | `You are already ignoring <username>` |
+| Your list is full | `Your ignore list is full (100 players)` |
+
+:::note Admins are never held back
+An admin is always heard and hears everyone. A name left on a list from before an account became an admin holds nothing back.
+:::
+
+## Report
+
+```text title="Syntax"
+/report <username> <reason>
+```
+
+Sends a report to the admins. From chat the reason you type is the report. The menu on a player opens a small window instead, with a category (Harassment, Spam, Cheating, Offensive name, Other) and room for details.
+
+The server attaches the reported player's latest chat lines that reached you and where each of you was. The reported player is never told.
+
+| Problem | Answer |
+|---------|--------|
+| No username or no reason | `Usage: /report <username> <reason>` |
+| No such account | `Player not found` |
+| You named yourself | `You cannot report yourself` |
+| You already have an open report on them | `You have already reported this player` |
+| More than five reports in an hour | `You have sent too many reports. Try again later` |
 
 ## How the client sends a command
 

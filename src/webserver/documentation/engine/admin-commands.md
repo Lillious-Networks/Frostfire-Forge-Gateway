@@ -44,6 +44,9 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/kick <username \| id>` | `/disconnect` | `admin.kick` or `admin.*` | Disconnects an online player |
 | `/ban <username \| id>` | none | `admin.ban` or `admin.*` | Bans an account, online or offline |
 | `/unban <username \| id>` | none | `admin.unban` or `admin.*` | Lifts a ban |
+| `/mute <username> [duration] [reason]` | none | `admin.mute` or `admin.*` | Mutes a player's chat without telling them |
+| `/unmute <username>` | none | `admin.unmute` or `admin.*` | Lifts a mute |
+| `/reports [view <number> \| resolve <number> [note]]` | none | `admin.reports` or `admin.*` | Lists, shows or resolves the reports players have sent |
 | `/admin <username \| id>` | `/setadmin` | `server.admin` or `server.*` | Toggles the admin role of an account |
 | `/kill [username \| id]` | none | `admin.kill` or `admin.*` | Kills an online player through the normal death flow |
 | `/revive [username \| id]` | none | `admin.revive` or `admin.*` | Revives a dead or ghost player in place |
@@ -108,6 +111,47 @@ Disconnects an online player. It refuses yourself (`You cannot disconnect yourse
 /ban alice
 /unban alice
 ```
+
+### /mute and /unmute
+
+```text title="Syntax"
+/mute <username> [duration] [reason]
+/unmute <username>
+```
+
+A mute is silent. The muted player still sees their own say, whisper, party and guild lines as if they were sent, and nobody else receives them. They are never told, and chat events are not emitted for their lines, so plugins do not see them either.
+
+| Part | Meaning |
+|------|---------|
+| `duration` | A whole number and a unit: `s`, `m`, `h`, `d` or `w`. `30m`, `2h`, `7d`. Left out, the mute lasts until `/unmute`. |
+| `permanent` | Written in place of a duration, it says there is none. Use it when the reason itself starts with something that reads as a duration. |
+| `reason` | The rest of the line. Shown to other admins in the control panel. |
+
+The command works on offline accounts, by username. It refuses yourself and admins. Muting a muted player replaces the mute. A mute survives logins and restarts, and one whose time has passed is removed the next time the player speaks.
+
+```text title="Example"
+/mute alice 30m spamming the market
+/mute alice permanent 7d was not enough
+/unmute alice
+```
+
+### /reports
+
+```text title="Syntax"
+/reports
+/reports view <number>
+/reports resolve <number> [note]
+```
+
+Players send reports with `/report` or from the menu on another player (see [Player Commands](#/engine/player-commands)). Admins online who hold `admin.reports` get a notification when one arrives.
+
+| Form | What it answers |
+|------|-----------------|
+| `/reports` | The open reports, newest first, ten at most. The rest are in the control panel. |
+| `/reports view 12` | Who reported whom and why, what the reporter typed, where the reported player was, and the lines attached |
+| `/reports resolve 12 warned` | Closes the report with a note for the other admins |
+
+A report carries the reported player's latest chat lines that reached the reporter, up to 20 from the half hour before. A whisper to somebody else is never attached. The control panel's Reports page shows the same and adds Mute, Kick and Ban.
 
 ### /admin
 

@@ -35,6 +35,9 @@ Inside the panel, every control stands for one admin command and is checked with
 | Kick | `/kick` | `admin.kick` or `admin.*` |
 | Ban | `/ban` | `admin.ban` or `admin.*` |
 | Unban | `/unban` | `admin.unban` or `admin.*` |
+| Mute | `/mute` | `admin.mute` or `admin.*` |
+| Unmute | `/unmute` | `admin.unmute` or `admin.*` |
+| Reports page, Resolve | `/reports` | `admin.reports` or `admin.*` |
 | Make admin, Remove admin | `/admin` | `server.admin` or `server.*` |
 | Give item, Drop item, Spawn chest | `/give`, `/drop`, `/spawnchest` | `admin.items` or `admin.*` |
 | See, give, take, set and clear permissions | `/permission` | `admin.permission` or `admin.*`, plus `permission.list`, `permission.add` or `permission.remove` (or `permission.*`) for the part used |
@@ -53,7 +56,7 @@ The commands themselves are documented in [Admin Commands](#/engine/admin-comman
 
 | Area | Contents |
 | --- | --- |
-| Navigation | The six pages, grouped as Overview, People and Operations, with who is logged in at the foot |
+| Navigation | The seven pages, grouped as Overview, People and Operations, with who is logged in at the foot |
 | Top bar | The page name and a status pill for the server |
 | Banner | A line shown when something needs attention |
 | Page | Cards for the page in view |
@@ -104,12 +107,13 @@ A table of everyone online, with columns Player, Level, Map, Status and Online f
 - The Show filter switches between All, Admins and Guests. A second filter limits the table to one map.
 - Up and Down move through the rows. Enter or Space opens the player.
 
-Picking a player opens a side panel with their facts (level, map, time online, connection id, or account number when offline) and four groups of actions.
+Picking a player opens a side panel with their facts (level, map, time online, connection id, or account number when offline) and five groups of actions.
 
 | Group | Actions |
 | --- | --- |
 | Movement | Summon (bring them to you), Go to (take yourself to them), Respawn (send them to the respawn point, alive and at full health), Revive (bring them back to life where they are) |
 | Moderation | Kill, Kick, Ban, Unban |
+| Chat | Whether they are muted, until when, by whom and why. Mute with a reason and a length (10 minutes to 30 days, or until lifted), and Unmute. When open reports name the player, their count and a link to the Reports page. |
 | Account | Make admin or Remove admin, and Permissions |
 | Items | Give item: an item name with search, and an amount. It goes straight into their inventory, online or not. |
 
@@ -123,6 +127,28 @@ Built in limits:
 **Permissions** shows the player's permissions as tick boxes. "Save ticked" sets the list to what is ticked, "Clear all" removes every permission, and below them one permission can be given or taken away on its own. You can only give out permissions you hold yourself, and you cannot change your own.
 
 To change a player's stats, inventory or quests, use the [Player Editor](#/tools/player-editor).
+
+:::note A mute is silent
+A muted player still sees their own messages and is not told. Nobody else receives them. The Chat group is shown to admins who hold `admin.mute`, `admin.unmute` or `admin.reports`.
+:::
+
+## Reports
+
+What players have reported about each other, for admins who hold `admin.reports`. A count beside the page name shows how many are open.
+
+**Open reports** lists them newest first: who is reported, the category, who reported them and when. Opening one shows:
+
+| Part | Contents |
+| --- | --- |
+| Details | What the reporter typed, if anything |
+| Facts | When it was sent, how many other open reports name the same player, and where each of the two players was |
+| Chat | The reported player's latest lines that reached the reporter, with the time and channel of each |
+| Act on the player | Mute for a chosen length (the reason is filled in as the report's number), Kick, Ban, and a button that opens the player on the Players page |
+| Resolve | A note for the other admins, and the button that closes the report |
+
+**Recently resolved** keeps the latest 50 closed reports with who closed each one and their note.
+
+The reported player is never told about a report, and the list refreshes on its own when a report arrives or another admin resolves one.
 
 ## Communication
 
@@ -192,7 +218,7 @@ Anything that cannot be taken back asks first: kick, ban, kill, the admin role, 
 | `TOGGLE_CONTROL_PANEL` | Server to client | Open or close the panel window |
 | `CONTROL_PANEL_LOAD` | Client to server | Ask for the current state. The first request is full, later ones only ask for what is new. |
 | `CONTROL_PANEL_DATA` | Server to client | Status, players, worlds, readings and activity |
-| `CONTROL_PANEL_QUERY` | Client to server | A list read on request: players, items, permissions, loot tables |
+| `CONTROL_PANEL_QUERY` | Client to server | A list read on request: players, items, permissions, loot tables, reports, and one player's mute |
 | `CONTROL_PANEL_RESULTS` | Server to client | The answer to a query |
 | `CONTROL_PANEL_ACTION` | Client to server | Run one action, such as `player.kick` or `server.broadcast` |
 | `CONTROL_PANEL_RESULT` | Server to client | What the command answered and how things now stand |

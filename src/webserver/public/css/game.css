@@ -713,6 +713,59 @@ body {
   opacity: 0.6;
 }
 
+/* The players ignored, under the friends: a name, and a way to take it off the list. */
+#ignored-list-title {
+  margin: 14px 10px 2px;
+  color: #e8c98f;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.ignored-item {
+  border-bottom: 1px solid rgba(147, 111, 85, 0.73);
+  margin: 5px 10px;
+  padding: 5px 0px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ignored-item .ignored-name {
+  color: #FFF1DA;
+  font-weight: 600;
+  opacity: 0.75;
+  text-shadow: 2px 2px 5px rgba(0,0,0,0.8);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ignored-item .ignored-remove {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  padding: 0;
+  border: 2px solid #7a3838;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 1.1em;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ignored-item .ignored-remove:hover {
+  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+}
+
 #friends-list::-webkit-scrollbar {
   width: 4px;
 }
@@ -2589,6 +2642,138 @@ input[type=range]:disabled {
   transform: translateY(0px);
   -webkit-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Reporting a player: a reason picked from a few, room to say what happened, and the same two buttons an invitation has. */
+#report-popup {
+  position: fixed;
+  z-index: 1005;
+  top: 50%;
+  left: 50%;
+  width: 494px;
+  height: 332px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  background: url("../img/ui/ui-message-popup.png") no-repeat center center;
+  background-size: cover;
+  padding: 100px 80px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  font-family: 'Comic Relief';
+}
+
+#report-popup h2 {
+  margin: 0;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: #FFF1DA;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5px;
+}
+
+#report-popup .report-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+#report-popup .report-reason {
+  padding: 4px 10px;
+  border: 2px solid #8b7030;
+  border-radius: 5px;
+  background: rgba(255, 241, 218, 0.9);
+  color: #813700;
+  font-family: 'Comic Relief';
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#report-popup .report-reason:hover {
+  background: #fff8ea;
+}
+
+#report-popup .report-reason[aria-checked="true"] {
+  border-color: #3d6b3d;
+  background: linear-gradient(180deg, #5a8f5a 0%, #4a7a4a 100%);
+  color: #FFF1DA;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+#report-details {
+  width: 100%;
+  height: 58px;
+  flex: none;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  resize: none;
+  background: rgba(255, 241, 218, 0.9);
+  border: 2px solid #8b7030;
+  border-radius: 5px;
+  color: #813700;
+  font-family: 'Comic Relief';
+  font-size: 0.85em;
+  font-weight: 600;
+  outline: none;
+}
+
+#report-details::placeholder {
+  color: rgba(129, 55, 0, 0.5);
+}
+
+#report-popup .button-container {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  justify-content: center;
+}
+
+#report-send,
+#report-cancel {
+  width: 100px;
+  height: 32px;
+  outline: none;
+  cursor: pointer;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-weight: 600;
+  font-size: 0.9em;
+  border-radius: 5px;
+  -webkit-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  transition: all 0.2s ease;
+}
+
+#report-send {
+  background: linear-gradient(180deg, #5a8f5a 0%, #4a7a4a 100%);
+  border: 2px solid #3d6b3d;
+}
+
+#report-send:hover:not(:disabled) {
+  background: linear-gradient(180deg, #6aa06a 0%, #5a8f5a 100%);
+  transform: translateY(-2px);
+}
+
+/* Nothing to send until a reason is picked. */
+#report-send:disabled {
+  cursor: default;
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+#report-cancel {
+  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+  border: 2px solid #7a3838;
+}
+
+#report-cancel:hover {
+  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+  transform: translateY(-2px);
 }
 
 /* Same size as the green confirm buttons (the shared decline rule is 100px). */

@@ -1,53 +1,16 @@
 import { SQL } from 'bun';
 import { getSqlCert } from "./utils";
+import { sqlWrapper } from "./sqlescape";
+import { runTransaction, GuardError, NotStartedError, type TransactionStatement } from "./sqltransaction";
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 
 let sqlController: any = null;
 
-function sqlWrapper(query: string, params: any[]): string {
-  const parts = query.split("?");
-  if (parts.length - 1 !== params.length) {
-    throw new Error("Number of placeholders does not match number of parameters");
-  }
-
-  let result = parts[0];
-  for (let i = 0; i < params.length; i++) {
-    const param = params[i];
-
-    if (Array.isArray(param)) {
-      if (param.length === 0) {
-        throw new Error("Cannot use empty array as SQL parameter");
-      }
-      const escapedArray = param.map(p => escapeValue(p)).join(", ");
-      result += escapedArray + parts[i + 1];
-    } else {
-      result += escapeValue(param) + parts[i + 1];
-    }
-  }
-
-  return result;
-}
-
-function escapeValue(param: any): string {
-  if (param === null || param === undefined) {
-    return "NULL";
-  } else if (typeof param === "string") {
-    return "'" + param.replace(/'/g, "''") + "'";
-  } else if (typeof param === "number") {
-    return param.toString();
-  } else if (typeof param === "boolean") {
-    return param ? "1" : "0";
-  } else if (param instanceof Date) {
-    return "'" + param.toISOString().slice(0, 19).replace("T", " ") + "'";
-  } else {
-    return "'" + String(param).replace(/'/g, "''") + "'";
-  }
-}
+const _databaseEngine = (process.env.DATABASE_ENGINE || "mysql") as DatabaseEngine;
 
 async function createSQLController(): Promise<any> {
-  const _databaseEngine = process.env.DATABASE_ENGINE || "mysql" as DatabaseEngine;
   if (_databaseEngine === "mysql") {
     if (!process.env.DATABASE_HOST || !process.env.DATABASE_USER || !process.env.DATABASE_PASSWORD || !process.env.DATABASE_NAME) {
       throw new Error("MySQL connection parameters are not set in environment variables.");
@@ -167,8 +130,29 @@ const initializationPromise: Promise<any> = createSQLControllerWithRetry().then(
   throw error;
 });
 
+/**
+ * A list of statements, kept whole or not at all. Only a transaction that never opened is tried
+ * again: one that opened and then failed may have been kept, and a second run would write it twice.
+ */
+async function answerTransaction(id: string, statements: TransactionStatement[], maxRetries: number, retryDelay: number, timeout: number) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const result = await runTransaction(sqlController, statements, _databaseEngine, timeout);
+      self.postMessage({ id, result });
+      return;
+    } catch (error: any) {
+      if (error instanceof NotStartedError && attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        continue;
+      }
+      self.postMessage({ id, error: error?.message || 'Unknown error', guard: error instanceof GuardError ? error.statement : undefined });
+      return;
+    }
+  }
+}
+
 self.onmessage = async (event: MessageEvent) => {
-  const { id, sql, values } = event.data;
+  const { id, sql, values, transaction } = event.data;
   const maxRetries = 3;
   const retryDelay = 1000;
   const queryTimeout = 15000;
@@ -184,9 +168,14 @@ self.onmessage = async (event: MessageEvent) => {
     }
   }
 
+  if (transaction) {
+    await answerTransaction(id, transaction, maxRetries, retryDelay, queryTimeout);
+    return;
+  }
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const queryPromise = sqlController.unsafe(sqlWrapper(sql, values || []));
+      const queryPromise = sqlController.unsafe(sqlWrapper(sql, values || [], _databaseEngine));
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error(`Query timeout after ${queryTimeout}ms`)), queryTimeout)
       );

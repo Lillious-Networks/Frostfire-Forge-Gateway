@@ -281,6 +281,10 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `ADD_FRIEND` | To server | Social | Send a friend request |
 | `REMOVE_FRIEND` | To server | Social | Remove a friend |
 | `UPDATE_FRIENDS` | To client | Social | The friends list |
+| `IGNORE_PLAYER` | To server | Social | Ignore a player, by the id of one in sight or by username |
+| `UNIGNORE_PLAYER` | To server | Social | Stop ignoring a player |
+| `UPDATE_IGNORES` | To client | Social | The names the player ignores, sent at login and after each change |
+| `REPORT_PLAYER` | To server | Social | Report a player to the admins, with a category and optional details |
 | `UPDATE_ONLINE_STATUS` | To client | Social | A friend came online or went offline |
 | `INVITATION_RESPONSE` | To server | Social | Accept or decline a friend, party or guild invitation |
 | `INVITE_PARTY` | To server | Social | Invite a player to the party |

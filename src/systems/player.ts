@@ -1,4 +1,4 @@
-import query from "../controllers/sqldatabase";
+import query, { transaction, type TransactionStatement } from "../controllers/sqldatabase";
 import { verify, randomBytes, verifyGuestPassword } from "../modules/hash";
 import log from "../modules/logger";
 
@@ -50,39 +50,42 @@ const player = {
       };
     });
 
-    const multiInsert = async (
+    const multiInsert = (
       sql: string,
       perRow: (r: (typeof rows)[number]) => any[]
-    ) => {
+    ): TransactionStatement => {
       const first = perRow(rows[0]);
       const group = `(${first.map(() => "?").join(", ")})`;
       const values = rows.map(() => group).join(", ");
       const params = rows.flatMap(perRow);
-      await query(`${sql} VALUES ${values}`, params);
+      return { sql: `${sql} VALUES ${values}`, values: params };
     };
 
-    await multiInsert(
-      "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode)",
-      (r) => [r.email, r.username, r.token, "guest:benchmark", ip ?? null, geo ?? null, "", "0,0", 1]
-    );
-    await multiInsert(
-      "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance)",
-      (r) => [r.username, 100, 100, 100, 100, 0, 100, 1, 10, 10]
-    );
-    await multiInsert(
-      "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted)",
-      (r) => [r.username, 60, 50, 50, 0]
-    );
-    await multiInsert("INSERT INTO quest_log (username)", (r) => [r.username]);
-    await multiInsert(
-      "INSERT INTO currency (username, copper, silver, gold)",
-      (r) => [r.username, 0, 0, 0]
-    );
-    await multiInsert("INSERT INTO equipment (username)", (r) => [r.username]);
-    await multiInsert(
-      "INSERT INTO collectables (type, item, username)",
-      (r) => ["mount", "horse", r.username]
-    );
+    // One transaction: no guest is left with an account and not the rows a login reads.
+    await transaction([
+      multiInsert(
+        "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode)",
+        (r) => [r.email, r.username, r.token, "guest:benchmark", ip ?? null, geo ?? null, "", "0,0", 1]
+      ),
+      multiInsert(
+        "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance)",
+        (r) => [r.username, 100, 100, 100, 100, 0, 100, 1, 10, 10]
+      ),
+      multiInsert(
+        "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted)",
+        (r) => [r.username, 60, 50, 50, 0]
+      ),
+      multiInsert("INSERT INTO quest_log (username)", (r) => [r.username]),
+      multiInsert(
+        "INSERT INTO currency (username, copper, silver, gold)",
+        (r) => [r.username, 0, 0, 0]
+      ),
+      multiInsert("INSERT INTO equipment (username)", (r) => [r.username]),
+      multiInsert(
+        "INSERT INTO collectables (type, item, username)",
+        (r) => ["mount", "horse", r.username]
+      ),
+    ]);
 
     return rows.map((r) => r.token);
   },
@@ -109,48 +112,44 @@ const player = {
     if (emailExists && emailExists.length != 0)
       return { error: "Email already exists" };
 
-    const response = await query(
-      "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        email,
-        username,
-        null,
-        password_hash,
-        req.ip,
-        req.headers["cf-ipcountry"],
-        "",
-        "0,0",
-        guest ? 1 : 0,
-      ]
-    ).catch((err) => {
+    // One transaction: the account and every row it starts with are made together or not at all.
+    // An account without them cannot be played, and its name and e-mail could not be used again.
+    try {
+      await transaction([
+        {
+          sql: "INSERT INTO accounts (email, username, token, password_hash, ip_address, geo_location, map, position, guest_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          values: [
+            email,
+            username,
+            null,
+            password_hash,
+            req.ip,
+            req.headers["cf-ipcountry"],
+            "",
+            "0,0",
+            guest ? 1 : 0,
+          ],
+        },
+        {
+          sql: "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          values: [username, 100, 100, 100, 100, 0, 100, 1, 10, 10],
+        },
+        {
+          sql: "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted) VALUES (?, ?, ?, ?, ?)",
+          values: [username, 60, 50, 50, 0],
+        },
+        { sql: "INSERT INTO quest_log (username) VALUES (?)", values: [username] },
+        {
+          sql: "INSERT INTO currency (username, copper, silver, gold) VALUES (?, ?, ?, ?)",
+          values: [username, 0, 0, 0],
+        },
+        { sql: "INSERT INTO equipment (username) VALUES (?)", values: [username] },
+        { sql: "INSERT INTO collectables (type, item, username) VALUES (?, ?, ?)", values: ["mount", "horse", username] },
+      ]);
+    } catch (err: any) {
       log.error(err);
       return { error: "An unexpected error occurred" };
-    });
-    if (!response) return { error: "An unexpected error occurred" };
-
-    await query(
-      "INSERT INTO stats (username, health, max_health, stamina, max_stamina, xp, max_xp, level, stat_critical_damage, stat_critical_chance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [username, 100, 100, 100, 100, 0, 100, 1, 10, 10]
-    );
-
-    await query(
-      "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted) VALUES (?, ?, ?, ?, ?)",
-      [username, 60, 50, 50, 0]
-    );
-
-    await query("INSERT INTO quest_log (username) VALUES (?)", [username]);
-
-    await query(
-      "INSERT INTO currency (username, copper, silver, gold) VALUES (?, ?, ?, ?)",
-      [username, 0, 0, 0]
-    );
-
-    await query(
-      "INSERT INTO equipment (username) VALUES (?)",
-      [username]
-    );
-
-    await query("INSERT INTO collectables (type, item, username) VALUES (?, ?, ?)", ["mount", "horse", username]);
+    }
     return username;
   },
   findByUsername: async (username: string) => {

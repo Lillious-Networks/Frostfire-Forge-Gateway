@@ -57,10 +57,32 @@ Commands start with a slash. These are the commands every player can use:
 | `/whisper <player> <message>` | `/w` | Sends a private message to an online player | `/w Aria thank you!` |
 | `/invite <player>` | none | Invites an online player to your party | `/invite Aria` |
 | `/ginvite <player>` | none | Invites an online player to your guild. Guild Master only. | `/ginvite Aria` |
+| `/ignore <player>` | none | Stops you seeing anything a player says or sends you | `/ignore Grumble` |
+| `/unignore <player>` | none | Lets you hear a player again | `/unignore Grumble` |
+| `/ignorelist` | none | Shows who you are ignoring | `/ignorelist` |
+| `/report <player> <reason>` | none | Tells the game's admins about a player | `/report Grumble keeps insulting people` |
 
 If you mistype a command, the game answers "Invalid command".
 
 More about the invitations these send is on the [Parties](#/player-guide/parties) and [Guilds](#/player-guide/guilds) pages.
+
+## Ignoring a player
+
+If someone is bothering you, ignore them. You stop seeing what they say, their whispers do not reach you, and neither do their invitations or friend requests. They are not told.
+
+| Where | How |
+|-------|-----|
+| In the world | **Right-click** the player and choose **Ignore** |
+| Chat | Type `/ignore` and their name. This also works when they are offline. |
+| Friends list | **Right-click** a friend and choose **Ignore**. This ends the friendship too. |
+
+The players you ignore are listed under **Ignored** in your friends list (press **O**). Click the **×** beside a name, or right-click it and choose **Stop Ignoring**, to hear them again. You can ignore up to 100 players. Admins cannot be ignored.
+
+## Reporting a player
+
+To tell the admins about a player, **right-click** them and choose **Report Player**. Pick a reason, add what happened if you like, and press **Send**. You can also type `/report`, their name and the reason.
+
+The admins see what that player said to you or near you just before. The player is not told that you reported them.
 
 ## Chat history
 

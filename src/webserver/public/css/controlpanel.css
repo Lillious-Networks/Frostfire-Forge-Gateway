@@ -205,6 +205,26 @@ button.cp-bar-row:hover .cp-bar-fill { filter: brightness(1.2); }
 .cp-row-offline .cp-player-name { color: var(--text); }
 .cp-row-offline .tl-avatar { background: none; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-muted); }
 
+/* ---------------------------------------------------------------- reports */
+
+/* A report is a line that opens: who it names and why, then everything about it. */
+.cp-reports { display: flex; flex-direction: column; }
+.cp-report + .cp-report { border-top: 1px solid var(--border-soft); }
+.cp-report-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s-2); width: 100%; padding: 11px var(--s-2); border: 0; border-radius: var(--r-md); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.cp-report-head:hover { background: rgba(148, 163, 184, 0.07); }
+.cp-report-head > .tl-icon { flex: none; color: var(--text-faint); }
+.cp-report-target { color: var(--text-strong); }
+.cp-report-by { color: var(--text-muted); }
+.cp-report-when { margin-left: auto; color: var(--text-faint); font-size: var(--t-sm); white-space: nowrap; }
+.cp-report.is-open { padding-bottom: var(--s-3); }
+.cp-report-body { display: grid; gap: var(--s-4); padding: var(--s-2) var(--s-2) var(--s-2) 30px; }
+.cp-report-details { margin: 0; padding: var(--s-2) var(--s-3); border-left: 2px solid var(--border-strong); color: var(--text-strong); overflow-wrap: anywhere; white-space: pre-wrap; }
+.cp-report-lines { display: grid; gap: 2px; max-height: 240px; margin: 0; padding: var(--s-2) 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); list-style: none; overflow-y: auto; }
+.cp-report-line { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: var(--s-2); align-items: baseline; padding: 3px 0; }
+.cp-report-line-at { color: var(--text-faint); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.cp-report-line-text { color: var(--text-strong); overflow-wrap: anywhere; }
+.cp-report .tl-row-controls .tl-select { width: auto; }
+
 /* A player's permissions, between the rows of what can be done to them. */
 .tl-row + .cp-permissions, .cp-permissions + .tl-row { border-top: 1px solid var(--border-soft); }
 .cp-permissions { display: grid; gap: var(--s-3); padding: var(--s-3) 0; }

@@ -3,6 +3,7 @@ import Cache from "./cache.js";
 const cache = Cache.getInstance();
 import { overlay } from './ui.js';
 import playerEditor from './playereditor.js';
+import { openReportDialog } from './report.js';
 
 const partyContextActions: Record<string, { only_self: boolean, allowed_self: boolean, label: string, handler: (username: string) => void }> = {
   'kick-player': {
@@ -117,16 +118,33 @@ const contextActions: Record<string, { allowed_self: boolean, admin_only?: boole
       });
     }
   },
-  'block-player': {
-    label: 'Block Player',
+  // The server keeps the list and holds back what an ignored player says: neither side is told.
+  'ignore-player': {
+    label: 'Ignore',
     allowed_self: false,
     handler: (id) => {
+      sendRequest({
+        type: "IGNORE_PLAYER",
+        data: { id: id },
+      });
+    }
+  },
+  'unignore-player': {
+    label: 'Stop Ignoring',
+    allowed_self: false,
+    handler: (id) => {
+      sendRequest({
+        type: "UNIGNORE_PLAYER",
+        data: { id: id },
+      });
     }
   },
   'report-player': {
     label: 'Report Player',
     allowed_self: false,
     handler: (id) => {
+      const username = Array.from(cache.players).find(player => player.id === id)?.username;
+      if (username) openReportDialog(username);
     }
   },
   'edit-player': {
@@ -288,6 +306,7 @@ function createContextMenu(event: MouseEvent, id: string) {
   const isFriend = currentPlayer?.friends?.includes(targetedPlayer?.username?.toString()) || false;
   const isInParty = currentPlayer?.party?.includes(targetedPlayer?.username?.toString()) || false;
   const isInGuild = currentPlayer?.guild?.includes(targetedPlayer?.username?.toString()) || false;
+  const isIgnored = cache.ignored.has(String(targetedPlayer?.username ?? "").toLowerCase());
 
   Object.entries(contextActions).forEach(([action, { label, handler, allowed_self, admin_only }]) => {
     if (!allowed_self && isSelf) return;
@@ -301,6 +320,11 @@ function createContextMenu(event: MouseEvent, id: string) {
     if (action === 'add-friend' && isFriend) return;
 
     if (action === 'remove-friend' && !isFriend) return;
+
+    // Admins ignore nobody and are ignored by nobody: the server refuses both, so neither is offered.
+    if (action === 'ignore-player' && (isIgnored || currentPlayer?.isAdmin || targetedPlayer?.isAdmin)) return;
+
+    if (action === 'unignore-player' && !isIgnored) return;
 
     const li = document.createElement("li");
     li.id = `context-${action}`;
@@ -361,9 +385,51 @@ function createFriendContextMenu(event: MouseEvent, username: string) {
   };
   ul.appendChild(li);
 
+  // Ignoring a friend ends the friendship on both sides: the server does both.
+  const ignore = document.createElement("li");
+  ignore.innerText = "Ignore";
+  ignore.onclick = (e) => {
+    e.stopPropagation();
+    sendRequest({
+      type: "IGNORE_PLAYER",
+      data: { username },
+    });
+    contextMenu.remove();
+  };
+  ul.appendChild(ignore);
+
   contextMenu.appendChild(ul);
   overlay.appendChild(contextMenu);
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 
-export { partyContextActions, guildContextActions, contextActions, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createContextMenu };
+/** The menu on a name in the list of who is ignored. */
+function createIgnoredContextMenu(event: MouseEvent, username: string) {
+  if (!getIsLoaded()) return;
+  document.getElementById("context-menu")?.remove();
+
+  const contextMenu = document.createElement("div");
+  contextMenu.id = 'context-menu';
+  contextMenu.style.left = `${event.clientX + 200 > window.innerWidth ? event.clientX - 200 : event.clientX}px`;
+  contextMenu.style.top = `${event.clientY + 80 > window.innerHeight ? event.clientY - 80 : event.clientY}px`;
+  contextMenu.dataset.username = username.toLowerCase();
+
+  const ul = document.createElement("ul");
+  const li = document.createElement("li");
+  li.innerText = "Stop Ignoring";
+  li.onclick = (e) => {
+    e.stopPropagation();
+    sendRequest({
+      type: "UNIGNORE_PLAYER",
+      data: { username },
+    });
+    contextMenu.remove();
+  };
+  ul.appendChild(li);
+
+  contextMenu.appendChild(ul);
+  overlay.appendChild(contextMenu);
+  document.addEventListener("click", () => contextMenu.remove(), { once: true });
+}
+
+export { partyContextActions, guildContextActions, contextActions, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createIgnoredContextMenu, createContextMenu };
