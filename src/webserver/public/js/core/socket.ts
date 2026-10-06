@@ -258,7 +258,9 @@ function rebuildInventoryGrid() {
     slot.dataset.inventoryIndex = i.toString();
     const item = slotArray[i];
     if (item) {
-      slot.classList.add(item.quality.toLowerCase() || "common");
+      // An item without a quality must not throw here: the grid has just been
+      // emptied, so an error would leave the inventory with no slots at all.
+      slot.classList.add((item.quality || "common").toLowerCase());
       if (item.iconUrl) {
         createCachedImage(item.iconUrl).then((iconImage) => {
           iconImage.draggable = false;
