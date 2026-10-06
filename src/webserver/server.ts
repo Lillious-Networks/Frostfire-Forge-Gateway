@@ -64,6 +64,7 @@ import npceditor_html from "./public/npceditor.html";
 import creatureeditor_html from "./public/creatureeditor.html";
 import itemeditor_html from "./public/itemeditor.html";
 import spelleditor_html from "./public/spelleditor.html";
+import weathereditor_html from "./public/weathereditor.html";
 import playereditor_html from "./public/playereditor.html";
 import controlpanel_html from "./public/controlpanel.html";
 import questeditor_html from "./public/questeditor.html";
@@ -199,6 +200,7 @@ const routes = {
   "/creature-editor": creatureeditor_html,
   "/item-editor": itemeditor_html,
   "/spell-editor": spelleditor_html,
+  "/weather-editor": weathereditor_html,
   "/player-editor": playereditor_html,
   "/control-panel": controlpanel_html,
   "/quest-editor": questeditor_html,
@@ -412,6 +414,7 @@ Bun.serve({
       "/creature-editor": routes["/creature-editor"],
       "/item-editor": routes["/item-editor"],
       "/spell-editor": routes["/spell-editor"],
+      "/weather-editor": routes["/weather-editor"],
       "/player-editor": routes["/player-editor"],
       "/control-panel": routes["/control-panel"],
       "/quest-editor": routes["/quest-editor"],

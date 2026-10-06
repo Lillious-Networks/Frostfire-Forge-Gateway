@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Editor</title>
+    <!-- The look every tool window shares. The weather editor has no styles of its own. -->
+    <link rel="stylesheet" href="./css/tools.css" />
+    <script defer src="./js/core/weathereditorbridge.js" type="text/javascript"></script>
+  </head>
+  <body>
+    <!-- The workbench every editor uses; js/core/tooleditor.ts fills it in. -->
+    <div class="tl-app tl-app-editor">
+      <!-- Every weather, and where a new one is started. -->
+      <aside id="tl-side" class="tl-side"></aside>
+      <div class="tl-main">
+        <!-- What is open, how it stands, and what can be done to it. -->
+        <header id="tl-topbar" class="tl-topbar"></header>
+        <div id="tl-banner" class="tl-banner" role="status" hidden></div>
+        <div id="tl-tabs" class="tl-tabs" hidden></div>
+        <main id="tl-page" class="tl-page"></main>
+      </div>
+    </div>
+    <!-- What the server answered, shown for a few seconds. -->
+    <div id="tl-toasts" class="tl-toasts"></div>
+    <noscript>The weather editor needs JavaScript.</noscript>
+  </body>
+</html>

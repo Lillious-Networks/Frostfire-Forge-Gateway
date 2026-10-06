@@ -70,10 +70,20 @@ function getServerTime(): { hours: number; minutes: number } {
     return { hours: 0, minutes: 0 };
   }
 
-  return {
-    hours: date.getHours(),
-    minutes: date.getMinutes()
-  };
+  const { hours, minutes } = clockOf(date);
+  return { hours, minutes };
+}
+
+// The game's time of day is the time at the place the server reads its real
+// weather from, when it has one: `placeOffsetMs` is that place's shift from
+// UTC, sent with SERVER_TIME. Without it the time is read on this browser's
+// own clock, as it always was.
+let placeOffsetMs: number | null = null;
+
+function clockOf(date: Date): { hours: number; minutes: number; seconds: number } {
+  if (placeOffsetMs === null) return { hours: date.getHours(), minutes: date.getMinutes(), seconds: date.getSeconds() };
+  const there = new Date(date.getTime() + placeOffsetMs);
+  return { hours: there.getUTCHours(), minutes: there.getUTCMinutes(), seconds: there.getUTCSeconds() };
 }
 
 // Server time is anchored when the server tells us (on connect) and then
@@ -85,13 +95,17 @@ let serverEpochAtAnchor: number | null = null;
 let localEpochAtAnchor: number | null = null;
 
 // Anchor (or re-anchor) the clock from a server timestamp. Safe to call again
-// at any time to re-sync.
-function updateTime(time: string) {
+// at any time to re-sync. `utcOffset` is the shift from UTC, in seconds, of
+// the place whose time of day the game keeps; none means this browser's own.
+function updateTime(time: string, utcOffset?: unknown) {
   if (!time) return;
 
   const date = new Date(time);
   if (isNaN(date.getTime())) return;
 
+  placeOffsetMs = typeof utcOffset === "number" && Number.isFinite(utcOffset) ? utcOffset * 1000 : null;
+  // The minute shown may be another one now: the ambience is worked out again.
+  lastMinute = null;
   timeOfDay = time;
   serverEpochAtAnchor = date.getTime();
   localEpochAtAnchor = Date.now();
@@ -106,16 +120,17 @@ function currentServerDate(): Date | null {
 }
 
 function renderTime(date: Date) {
-  const hours = date.getHours() % 12 || 12;
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  const seconds = date.getSeconds().toString().padStart(2, "0");
+  const clock = clockOf(date);
+  const hours = clock.hours % 12 || 12;
+  const minutes = clock.minutes.toString().padStart(2, "0");
+  const seconds = clock.seconds.toString().padStart(2, "0");
   serverTime.innerText = `${hours}:${minutes}:${seconds} ${
-    date.getHours() < 12 ? "AM" : "PM"
+    clock.hours < 12 ? "AM" : "PM"
   }`;
 
-  if (lastMinute === null || date.getMinutes() !== lastMinute) {
+  if (lastMinute === null || clock.minutes !== lastMinute) {
     updateAmbience();
-    lastMinute = date.getMinutes();
+    lastMinute = clock.minutes;
   }
 }
 

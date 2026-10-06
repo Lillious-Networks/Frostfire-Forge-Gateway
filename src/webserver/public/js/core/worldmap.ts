@@ -1,6 +1,6 @@
 import Cache from "./cache.js";
 import { cachedPlayerId, sendRequest } from "./socket.js";
-import { bakedMap } from "./bakedmap.js";
+import { bakedMap, mapDetailPiece, DETAIL_TILES } from "./bakedmap.js";
 
 /**
  * Full world map (M): the whole map at once from its baked image (bakedmap.ts: the asset server bakes one pixel per tile
@@ -21,6 +21,31 @@ let raf: number | null = null;
 // the baked image (bakedmap.ts, shared with the minimap) and the one the view was last fitted to
 let image: HTMLImageElement | null = null;
 let fitted: HTMLImageElement | null = null;
+// Tiles to an image pixel (bakedmap.ts): 1, or more for a world baked smaller. The view below is in tiles, so the
+// map's size is the image's times this, and the zoom limits (meant per image pixel) are divided by it.
+let mapScale = 1;
+const mapW = () => (image ? image.width * mapScale : 0);
+const mapH = () => (image ? image.height * mapScale : 0);
+
+/**
+ * USER REQUEST 2026-10-05 ("For the underworld map, only show the current cave system, not every one near by"): a map
+ * may come in sections (window.mapData.sections, rectangles in tiles: the cave systems of a world's underworld). The
+ * view then shows the section the player is in and nothing of the others: that section fills the screen, the view
+ * pans and zooms inside it, and it is fitted again when the player comes into another one. A map without sections, or
+ * a player outside every one, shows the whole map as before.
+ */
+type Rect = { x: number; y: number; w: number; h: number };
+let section: Rect | null = null;
+function currentSection(): Rect | null {
+  const list = window.mapData?.sections, at = playerTile();
+  if (!Array.isArray(list) || !at) return null;
+  for (const s of list) {
+    if (at.x >= s.x && at.y >= s.y && at.x < s.x + s.width && at.y < s.y + s.height) return { x: s.x, y: s.y, w: s.width, h: s.height };
+  }
+  return null;
+}
+/** What the view may show, in tiles: the player's section, else the whole map. */
+const bounds = (): Rect => section ?? { x: 0, y: 0, w: mapW(), h: mapH() };
 
 // view: image pixel (tile) at the canvas centre, and screen px per image px
 // coverZoom: the least zoom that still fills the screen (USER REQUEST 2026-10-03: "the fullscreen map should always fill
@@ -40,6 +65,15 @@ let pinch = 0;
  */
 type View = { x: number; y: number; zoom: number };
 const FOLLOW_ZOOM = 4, MAX_ZOOM = 16;
+// the same limits for a world baked smaller: zoomed in, its full-detail pieces are drawn over the image (below)
+const followZoomFor = () => FOLLOW_ZOOM, maxZoom = () => MAX_ZOOM;
+
+/**
+ * A world's image is several tiles to a pixel (mapScale > 1), too coarse to zoom into. From DETAIL_FROM screen px per
+ * tile on, the regions in view are drawn over it from its full-detail pieces (bakedmap.ts mapDetailPiece).
+ */
+const DETAIL_FROM = 1;
+const detailPiece = mapDetailPiece;
 let follow = false, followZoom = FOLLOW_ZOOM;
 /** the view the toggle was turned on from, and the view being eased back to after it was turned off */
 let before: View | null = null, back: View | null = null;
@@ -60,7 +94,7 @@ function setFollow(on: boolean, goBack = true) {
   if (on) {
     before = { x: viewX, y: viewY, zoom };
     back = null;
-    followZoom = Math.min(MAX_ZOOM, Math.max(zoom, FOLLOW_ZOOM, coverZoom));
+    followZoom = Math.min(maxZoom(), Math.max(zoom, followZoomFor(), coverZoom));
   } else {
     back = goBack ? before : null;
     before = null;
@@ -145,11 +179,11 @@ function build() {
     if (!image || !canvas) return;
     const step = e.deltaY < 0 ? 1.2 : 1 / 1.2;
     // centred on the player: the wheel changes how close, not where
-    if (follow) { followZoom = Math.min(MAX_ZOOM, Math.max(coverZoom, followZoom * step)); return; }
+    if (follow) { followZoom = Math.min(maxZoom(), Math.max(coverZoom, followZoom * step)); return; }
     back = null;
     const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
     const under = { x: viewX + mx / zoom, y: viewY + my / zoom };
-    zoom = Math.min(MAX_ZOOM, Math.max(coverZoom, zoom * step));
+    zoom = Math.min(maxZoom(), Math.max(coverZoom, zoom * step));
     viewX = under.x - mx / zoom; viewY = under.y - my / zoom;
     keepInside();
   }, { passive: false });
@@ -161,8 +195,9 @@ function build() {
     e.stopPropagation();
     if (!image || !canvas) return;
     const r = canvas.getBoundingClientRect();
-    const ix = Math.min(image.width - 0.5, Math.max(0, viewX + (e.clientX - r.left - r.width / 2) / zoom));
-    const iy = Math.min(image.height - 0.5, Math.max(0, viewY + (e.clientY - r.top - r.height / 2) / zoom));
+    const b = bounds();
+    const ix = Math.min(b.x + b.w - 0.5, Math.max(b.x, viewX + (e.clientX - r.left - r.width / 2) / zoom));
+    const iy = Math.min(b.y + b.h - 0.5, Math.max(b.y, viewY + (e.clientY - r.top - r.height / 2) / zoom));
     const tw = window.mapData?.tilewidth || 16, th = window.mapData?.tileheight || 16;
     sendRequest({ type: "TELEPORTXY", data: { x: Math.floor(ix * tw), y: Math.floor(iy * th) } });
   });
@@ -192,11 +227,11 @@ function build() {
     if (e.touches.length === 2 && pinch > 0 && image && canvas) {
       const r = canvas.getBoundingClientRect(), now = spread(e.touches);
       // centred on the player: the pinch changes how close, not where
-      if (follow) { followZoom = Math.min(MAX_ZOOM, Math.max(coverZoom, followZoom * now / pinch)); pinch = now; return; }
+      if (follow) { followZoom = Math.min(maxZoom(), Math.max(coverZoom, followZoom * now / pinch)); pinch = now; return; }
       back = null;
       const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left - r.width / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top - r.height / 2;
       const under = { x: viewX + mx / zoom, y: viewY + my / zoom };
-      zoom = Math.min(MAX_ZOOM, Math.max(coverZoom, zoom * now / pinch));
+      zoom = Math.min(maxZoom(), Math.max(coverZoom, zoom * now / pinch));
       viewX = under.x - mx / zoom; viewY = under.y - my / zoom;
       pinch = now;
       keepInside();
@@ -227,14 +262,20 @@ function displayName(name: string): string {
 function syncImage() {
   const b = bakedMap();
   image = b.image;
-  if (image && image !== fitted) { fitted = image; fitView(); }
+  mapScale = b.scale;
+  // the player's section; coming into another one (or the first look at this one) fits the view to it
+  const now = image ? currentSection() : null;
+  const moved = (now?.x ?? -1) !== (section?.x ?? -1) || (now?.y ?? -1) !== (section?.y ?? -1) || (now?.w ?? -1) !== (section?.w ?? -1) || (now?.h ?? -1) !== (section?.h ?? -1);
+  section = now;
+  if (image && (image !== fitted || moved)) { fitted = image; fitView(); }
   if (statusEl) statusEl.textContent = image ? (TOUCH ? "Pinch to zoom · drag to move · ✕ to close" : "Scroll to zoom · drag to move · M or Esc to close")
     : b.state === "missing" ? "No world map for this area" : "Loading map…";
 }
 
 /** The least zoom that fills a w x h screen with the image. */
 function coverFor(w: number, h: number): number {
-  return image ? Math.max(w / image.width, h / image.height) : 1;
+  const b = bounds();
+  return image && b.w > 0 && b.h > 0 ? Math.max(w / b.w, h / b.h) : 1;
 }
 
 /** Zoom at least coverZoom and the view inside the image, so the map always fills the screen. */
@@ -244,8 +285,9 @@ function keepInside() {
   coverZoom = coverFor(w, h);
   if (zoom < coverZoom) zoom = coverZoom;
   const hw = w / 2 / zoom, hh = h / 2 / zoom;
-  viewX = Math.min(Math.max(viewX, hw), image.width - hw);
-  viewY = Math.min(Math.max(viewY, hh), image.height - hh);
+  const b = bounds();
+  viewX = Math.min(Math.max(viewX, b.x + hw), b.x + b.w - hw);
+  viewY = Math.min(Math.max(viewY, b.y + hh), b.y + b.h - hh);
 }
 
 /** Opens at the fill zoom, centred on the player (kept inside the map). */
@@ -254,12 +296,13 @@ function fitView() {
   zoom = coverFor(window.innerWidth, window.innerHeight);
   const me: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
   const tw = window.mapData?.tilewidth || 16, th = window.mapData?.tileheight || 16;
-  viewX = me?.position ? me.position.x / tw : image.width / 2;
-  viewY = me?.position ? me.position.y / th : image.height / 2;
+  const b = bounds();
+  viewX = me?.position ? me.position.x / tw : b.x + b.w / 2;
+  viewY = me?.position ? me.position.y / th : b.y + b.h / 2;
   keepInside();
   // opened with centre-on-player on: it zooms in from here, and turning it off comes back to here
   back = null;
-  if (follow) { before = { x: viewX, y: viewY, zoom }; followZoom = Math.min(MAX_ZOOM, Math.max(followZoom, coverZoom)); }
+  if (follow) { before = { x: viewX, y: viewY, zoom }; followZoom = Math.min(maxZoom(), Math.max(followZoom, coverZoom)); }
 }
 
 /**
@@ -292,8 +335,24 @@ function draw() {
   ctx.clearRect(0, 0, w, h);
   if (image) {
     const toX = (ix: number) => w / 2 + (ix - viewX) * zoom, toY = (iy: number) => h / 2 + (iy - viewY) * zoom;
-    ctx.imageSmoothingEnabled = zoom < 1;
-    ctx.drawImage(image, toX(0), toY(0), image.width * zoom, image.height * zoom);
+    // only the player's section of a map that has sections (bounds): nothing of the others is drawn
+    const b = bounds();
+    ctx.save();
+    if (section) { ctx.beginPath(); ctx.rect(toX(b.x), toY(b.y), b.w * zoom, b.h * zoom); ctx.clip(); }
+    ctx.imageSmoothingEnabled = zoom * mapScale < 1;
+    ctx.drawImage(image, toX(0), toY(0), mapW() * zoom, mapH() * zoom);
+    if (mapScale > 1 && zoom >= DETAIL_FROM) {
+      // the full-detail pieces in view (a piece still loading leaves the coarse image showing)
+      ctx.imageSmoothingEnabled = false;
+      const left = Math.max(b.x, viewX - w / 2 / zoom), right = Math.min(b.x + b.w - 1, viewX + w / 2 / zoom);
+      const top = Math.max(b.y, viewY - h / 2 / zoom), bottom = Math.min(b.y + b.h - 1, viewY + h / 2 / zoom);
+      const x0 = Math.max(0, Math.floor(left / DETAIL_TILES)), x1 = Math.min(Math.ceil(mapW() / DETAIL_TILES) - 1, Math.floor(right / DETAIL_TILES));
+      const y0 = Math.max(0, Math.floor(top / DETAIL_TILES)), y1 = Math.min(Math.ceil(mapH() / DETAIL_TILES) - 1, Math.floor(bottom / DETAIL_TILES));
+      for (let ry = y0; ry <= y1; ry++) for (let rx = x0; rx <= x1; rx++) {
+        const piece = detailPiece(rx, ry);
+        if (piece) ctx.drawImage(piece, toX(rx * DETAIL_TILES), toY(ry * DETAIL_TILES), piece.width * zoom, piece.height * zoom);
+      }
+    }
     // (no outline round the image: USER REQUEST 2026-10-03 "Remove the borders in the map image")
 
     const tw = window.mapData?.tilewidth || 16, th = window.mapData?.tileheight || 16;
@@ -304,6 +363,7 @@ function draw() {
     for (const warp of warps) {
       const px = (Number(warp.position?.x ?? 0) + Number(warp.size?.width ?? 0) / 2) / tw;
       const py = (Number(warp.position?.y ?? 0) + Number(warp.size?.height ?? 0) / 2) / th;
+      if (px < b.x || py < b.y || px >= b.x + b.w || py >= b.y + b.h) continue;
       const sx = toX(px), sy = toY(py);
       if (sx < -20 || sy < -20 || sx > w + 20 || sy > h + 20) continue;
       ctx.fillStyle = "#7fd0ff";
@@ -318,6 +378,7 @@ function draw() {
         ctx.fillStyle = "#cfeeff"; ctx.fillText(label, sx, sy - 10);
       }
     }
+    ctx.restore();
     // the player
     const me: any = Array.from(cache.players).find((p: any) => p.id === cachedPlayerId);
     if (me?.position) {

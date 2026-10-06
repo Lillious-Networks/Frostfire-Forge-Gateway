@@ -215,7 +215,7 @@ const serverConfig: any = {
     if (url.pathname === "/heartbeat" && req.method === "POST") {
       try {
         const body = await req.json();
-        const { id, activeConnections, cpuUsage, ramUsage, authKey, rtt } = body;
+        const { id, activeConnections, cpuUsage, ramUsage, authKey, rtt, whitelisted } = body;
 
         if (authKey !== config.authKey) {
           return new Response(JSON.stringify({ error: "Invalid authentication key" }), {
@@ -231,6 +231,9 @@ const serverConfig: any = {
 
           if (cpuUsage !== undefined) server.cpuUsage = cpuUsage;
           if (ramUsage !== undefined) server.ramUsage = ramUsage;
+
+          // A realm's whitelist can be switched while it runs; older game servers do not send it here.
+          if (typeof whitelisted === "boolean") server.whitelisted = whitelisted;
 
           if (rtt !== undefined) {
             server.latency = Math.round(rtt / 2);

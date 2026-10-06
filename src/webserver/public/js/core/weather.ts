@@ -3,6 +3,7 @@ import {
   windBurst,
   calculateWindSpeed
 } from "./windphysics.ts";
+import { windStreaks } from "./windstreaks.ts";
 
 const isMobileDevice = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 const buffer = 200;
@@ -264,8 +265,23 @@ class SnowParticle {
   }
 }
 
+/** Below this temperature (Fahrenheit, as the weather table keeps it) rain falls as snow. */
+const FREEZING = 32;
+/** A weather sent without a precipitation falls this much of the full amount: the rain and snow there always was. */
+const USUAL_FALL = 0.8;
+/** A weather named for what falls never falls less than this, whatever its precipitation says. */
+const LEAST_FALL = 0.1;
+
+/** How much of the full rain or snow is drawn, 0 to 1, from the weather's precipitation (0 to 100). */
+function fallShare(weatherData: any): number {
+  const precipitation = Number(weatherData?.precipitation ?? NaN);
+  if (!Number.isFinite(precipitation)) return USUAL_FALL;
+  return Math.min(1, Math.max(LEAST_FALL, precipitation / 100));
+}
+
+// The full amounts: a precipitation of 80 (the seeded thunderstorm) draws what was always drawn, 100 a quarter more.
 const rainParticles: RainParticle[] = [];
-const rainCount = isMobileDevice ? 25 : 100;
+const rainCount = isMobileDevice ? 31 : 125;
 for (let i = 0; i < rainCount; i++) {
   rainParticles.push(new RainParticle(Math.random() * height));
 }
@@ -308,7 +324,7 @@ class MeltParticle {
 }
 
 const snowParticles: SnowParticle[] = [];
-const snowCount = isMobileDevice ? 80 : 400;
+const snowCount = isMobileDevice ? 100 : 500;
 for (let i = 0; i < snowCount; i++) {
   snowParticles.push(new SnowParticle(Math.random() * height));
 }
@@ -500,9 +516,16 @@ function weather(type: string, weatherData?: any): void {
 
   updateLightning(deltaTime);
 
-  if (type === "rainy" || type === "thunderstorm") {
+  // What falls is rain, or snow when the weather is "snowy" or it is freezing; how much is the weather's precipitation.
+  const wet = type === "rainy" || type === "thunderstorm";
+  const freezing = Number(weatherData?.temperature ?? NaN) < FREEZING;
+  const share = fallShare(weatherData);
 
-    for (const p of rainParticles) {
+  if (wet && !freezing) {
+
+    const count = Math.round(rainParticles.length * share);
+    for (let i = 0; i < count; i++) {
+      const p = rainParticles[i];
       p.update(deltaTime, windSpeed, windDirection);
       p.draw(weatherCtx);
     }
@@ -511,13 +534,11 @@ function weather(type: string, weatherData?: any): void {
       s.update(deltaTime);
       s.draw(weatherCtx);
     }
+  } else if (type === "snowy" || wet) {
 
-    if (type === "thunderstorm") {
-      drawBolts();
-    }
-  } else if (type === "snowy") {
-
-    for (const p of snowParticles) {
+    const count = Math.round(snowParticles.length * share);
+    for (let i = 0; i < count; i++) {
+      const p = snowParticles[i];
       p.update(deltaTime, windSpeed, windDirection);
       p.draw(weatherCtx);
     }
@@ -527,6 +548,12 @@ function weather(type: string, weatherData?: any): void {
       m.draw(weatherCtx);
     }
   }
+
+  if (type === "thunderstorm") {
+    drawBolts();
+  }
+
+  windStreaks(weatherCtx, deltaMs, windSpeed, windDirection, cameraOffsetX, cameraOffsetY, width, height, buffer);
 }
 
 function updateWeatherCanvas(cameraX: number, cameraY: number): void {

@@ -222,6 +222,9 @@ export default async function loadMap(metadata: any): Promise<boolean> {
       warps: metadata?.warps || null,
       graveyards: metadata?.graveyards || null,
       shadowLayerNames: metadata?.shadowLayerNames || null,
+      // the map's sections, when it has them (rectangles in tiles: the cave systems of a world's underworld); the
+      // world map shows only the one the player is in (worldmap.ts)
+      sections: Array.isArray(metadata?.sections) ? metadata.sections : null,
       objectLayers: objectLayers,
       requestChunk: async (chunkX: number, chunkY: number) => {
         return await requestChunk(chunkX, chunkY);

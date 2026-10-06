@@ -5,7 +5,7 @@ import pako from "../libs/pako.js";
 import packet from "./packetencoder.ts";
 import Cache from "./cache.ts";
 import { updateTime, setHasWeather, setStormAmbience, setDarknessAmbience } from "./ambience.ts";
-import { setWeatherType, setWeatherData } from "./renderer.ts";
+import { setWeatherType, setWeatherData, getWeatherType } from "./renderer.ts";
 import { addLightningStrike } from "./weather.ts";
 import { setupItemTooltip, removeItemTooltip, hideItemTooltip, setupSpellTooltip } from "./tooltip.ts";
 import { startPersistentSpellCooldown } from "./ui.js";
@@ -1238,7 +1238,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       // One-way push driving time of day. There is no reply: the server
       // refreshes each player's idle timestamp from any inbound packet.
       if (!data) return;
-      updateTime(data);
+      updateTime(data, envelope?.utcOffset);
       break;
     }
     case "EDITOR_TILE_EDIT": {
@@ -1360,15 +1360,15 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       setWeatherType(data.weather);
       setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
       setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
-      if (data.weatherData) {
-        setWeatherData(data.weatherData);
-      }
+      setWeatherData(data.weatherData ?? null);
       break;
     }
     case "CHANGE_WEATHER": {
       if (!data || !data.weather) return;
       const weatherEl = document.getElementById('weather') as HTMLCanvasElement;
-      if (weatherEl) {
+      // The same weather with new values (a save in the weather editor, a new reading of the real weather) is
+      // taken as it comes; only a change of weather fades out and in.
+      if (weatherEl && data.weather !== getWeatherType()) {
         weatherEl.style.transition = 'opacity 0.8s';
         weatherEl.style.opacity = '0';
         setTimeout(() => {
@@ -1376,9 +1376,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           setWeatherType(data.weather);
           setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
           setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
-          if (data.weatherData) {
-            setWeatherData(data.weatherData);
-          }
+          setWeatherData(data.weatherData ?? null);
           weatherEl.style.opacity = '1';
           setTimeout(() => {
             weatherEl.style.transition = '';
@@ -1389,9 +1387,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         setWeatherType(data.weather);
         setStormAmbience(data.weather === "thunderstorm", data.weatherData?.ambience);
         setDarknessAmbience(data.weather === "darkness", data.weatherData?.ambience);
-        if (data.weatherData) {
-          setWeatherData(data.weatherData);
-        }
+        setWeatherData(data.weatherData ?? null);
       }
       break;
     }
@@ -2161,9 +2157,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               setWeatherType(pendingWeather.weather);
               setStormAmbience(pendingWeather.weather === "thunderstorm", pendingWeather.weatherData?.ambience);
               setDarknessAmbience(pendingWeather.weather === "darkness", pendingWeather.weatherData?.ambience);
-              if (pendingWeather.weatherData) {
-                setWeatherData(pendingWeather.weatherData);
-              }
+              setWeatherData(pendingWeather.weatherData ?? null);
             }
             delete (window as any).__pendingWeather;
           }
@@ -2229,9 +2223,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
               setWeatherType(pendingWeather.weather);
               setStormAmbience(pendingWeather.weather === "thunderstorm", pendingWeather.weatherData?.ambience);
               setDarknessAmbience(pendingWeather.weather === "darkness", pendingWeather.weatherData?.ambience);
-              if (pendingWeather.weatherData) {
-                setWeatherData(pendingWeather.weatherData);
-              }
+              setWeatherData(pendingWeather.weatherData ?? null);
             }
             delete (window as any).__pendingWeather;
           }
@@ -2414,6 +2406,22 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "SPELL_EDITOR_UPDATED": {
       import("./spelleditor.js").then((m) => m.default.onUpdated(data));
+      break;
+    }
+    case "TOGGLE_WEATHER_EDITOR": {
+      import("./weathereditor.js").then((m) => m.default.toggle());
+      break;
+    }
+    case "WEATHER_EDITOR_DATA": {
+      import("./weathereditor.js").then((m) => m.default.onData(data));
+      break;
+    }
+    case "WEATHER_EDITOR_RESULT": {
+      import("./weathereditor.js").then((m) => m.default.onResult(data));
+      break;
+    }
+    case "WEATHER_EDITOR_UPDATED": {
+      import("./weathereditor.js").then((m) => m.default.onUpdated(data));
       break;
     }
     case "PLAYER_EDITOR_OPEN": {

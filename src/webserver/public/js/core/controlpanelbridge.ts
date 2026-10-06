@@ -65,6 +65,7 @@ const ACTION_LABELS: Record<string, string> = {
   "player.kick": "Kick", "player.ban": "Ban", "player.unban": "Unban", "player.admin": "Admin role", "player.give": "Give item",
   "permission.add": "Give permission", "permission.remove": "Take permission away", "permission.set": "Set permissions", "permission.clear": "Clear permissions",
   "server.broadcast": "Message", "server.whitelist.add": "Add to whitelist", "server.whitelist.remove": "Remove from whitelist",
+  "server.whitelist.on": "Turn whitelist on", "server.whitelist.off": "Turn whitelist off",
   "server.restart": "Schedule restart", "server.restart.cancel": "Cancel restart", "server.shutdown": "Shut down",
   "world.reloadmap": "Reload map", "world.warp": "Warp", "world.weather": "Weather",
   "item.drop": "Drop item", "chest.spawn": "Spawn chest",
@@ -1655,22 +1656,49 @@ class ControlPanel {
     });
 
     const origin = "server.whitelist";
-    const whitelist = this.card(grid, "Whitelist", "Who may log in to this realm while the whitelist is on.", origin);
+    // The switch is kept by the running server only, so the card says where it comes from after a restart.
+    const whitelist = this.card(grid, "Whitelist", "Who may log in to this realm while the whitelist is on. The switch lasts until the server restarts: the WHITELIST setting decides how it starts.", origin);
     whitelist.root.classList.add("tl-span-6");
-    const wl = this.data!.status.whitelist;
-    whitelist.tools.appendChild(tag(wl.enabled ? `On · ${count(wl.size, "name")}` : "Off", wl.enabled ? "good" : "muted"));
-    const username = this.textInput(this.drafts.whitelist, "Username", (value) => (this.drafts.whitelist = value), 64, "whitelist.name");
-    const form = el("div", "tl-form");
-    this.field(form, "Player", username);
-    whitelist.body.appendChild(form);
-    const change = (mode: "add" | "remove", label: string) => this.button(label, (fk) => {
-      const target = this.drafts.whitelist.trim();
-      if (!target) return this.fail(origin, ["Type a username first."]);
-      this.act(`server.whitelist.${mode}`, { target }, { key: origin, fk, done: () => (this.drafts.whitelist = "") });
-    }, { action: `server.whitelist.${mode}`, kind: mode === "add" ? "primary" : undefined });
-    const controls = [change("add", "Add to whitelist"), change("remove", "Remove from whitelist")];
-    if (!wl.enabled) for (const control of [username, ...controls]) forbid(control, "The whitelist is not turned on for this realm.");
-    this.actions(whitelist.body, form, ...controls);
+    this.follow(() => {
+      const wl = this.data!.status.whitelist;
+      whitelist.tools.replaceChildren(tag(wl.enabled ? `On · ${count(wl.size, "name")}` : "Off", wl.enabled ? "good" : "muted"));
+    }, () => JSON.stringify(this.data!.status.whitelist));
+    // Drawn again when it is switched (here, by another admin or with /whitelist), not while a username is being typed.
+    this.follow(() => {
+      const wl = this.data!.status.whitelist;
+      whitelist.body.replaceChildren();
+      const rows = el("div", "tl-rows");
+      whitelist.body.appendChild(rows);
+      const action = wl.enabled ? "server.whitelist.off" : "server.whitelist.on";
+      const switchKey = "server.whitelist.switch";
+      const toggle = el("button", "tl-switch");
+      toggle.type = "button";
+      toggle.dataset.fk = switchKey;
+      toggle.setAttribute("role", "switch");
+      toggle.setAttribute("aria-checked", String(wl.enabled));
+      toggle.setAttribute("aria-label", "Whitelist");
+      toggle.appendChild(el("span", "tl-switch-knob"));
+      toggle.addEventListener("click", () => this.act(action, {}, { key: origin, fk: switchKey }));
+      if (!this.can[action]) forbid(toggle, NOT_ALLOWED);
+      else if (this.lost) forbid(toggle, NOT_ANSWERING);
+      if (this.pending?.origin.fk === switchKey) this.busy(toggle);
+      this.row(rows, `The whitelist is ${wl.enabled ? "on" : "off"}`, wl.enabled
+        ? "Only the names on it can log in. Players who were already online stay."
+        : "Anyone can log in. Turning it on puts you on the list and checks new logins; players already online stay.", toggle);
+
+      const username = this.textInput(this.drafts.whitelist, "Username", (value) => (this.drafts.whitelist = value), 64, "whitelist.name");
+      const form = el("div", "tl-form cp-whitelist-form");
+      this.field(form, "Player", username);
+      whitelist.body.appendChild(form);
+      const change = (mode: "add" | "remove", label: string) => this.button(label, (fk) => {
+        const target = this.drafts.whitelist.trim();
+        if (!target) return this.fail(origin, ["Type a username first."]);
+        this.act(`server.whitelist.${mode}`, { target }, { key: origin, fk, done: () => (this.drafts.whitelist = "") });
+      }, { action: `server.whitelist.${mode}`, kind: mode === "add" ? "primary" : undefined });
+      const controls = [change("add", "Add to whitelist"), change("remove", "Remove from whitelist")];
+      if (!wl.enabled) for (const control of [username, ...controls]) forbid(control, "The whitelist is not turned on for this realm.");
+      this.actions(whitelist.body, form, ...controls);
+    }, () => `${this.data!.status.whitelist.enabled}:${this.pending?.requestId ?? ""}:${this.lost}`);
 
     const restartKey = "server.restart";
     // What happens after the server stops is up to whatever runs it, so the page says both cases.

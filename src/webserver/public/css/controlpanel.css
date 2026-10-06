@@ -187,6 +187,9 @@ button.cp-bar-row:hover .cp-bar-fill { filter: brightness(1.2); }
 .cp-meter-value { color: var(--text-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
 .cp-meter { height: 8px; border-radius: var(--r-pill); background: var(--accent-soft); overflow: hidden; }
 .cp-meter-fill { display: block; min-width: 4px; height: 100%; border-radius: var(--r-pill); background: var(--accent); }
+
+/* The names of the whitelist, under the switch that turns it on. */
+.cp-whitelist-form { margin-top: var(--s-4); padding-top: 14px; border-top: 1px solid var(--border); }
 .cp-meter-warning { background: var(--warning-soft); }
 .cp-meter-warning .cp-meter-fill { background: var(--warning); }
 .cp-meter-danger { background: var(--danger-soft); }

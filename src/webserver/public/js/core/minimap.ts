@@ -7,7 +7,7 @@ import { getSkeletonSpriteUrl } from "./skeletons.js";
 import { renderMinimapMap } from "./glmap/index.js";
 import { renderMinimapMap as renderMinimapMapMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
-import { bakedMap } from "./bakedmap.js";
+import { bakedMap, mapDetailPiece, DETAIL_TILES } from "./bakedmap.js";
 
 const cache = Cache.getInstance();
 
@@ -118,7 +118,11 @@ function renderMinimap() {
   const tw = window.mapData.tilewidth || 16, th = window.mapData.tileheight || 16;
   const pxPerTile = ZOOM_LEVELS[zoomIndex]!;
   const editing = !!(window as any).tileEditor?.isActive;
-  const baked = editing ? null : bakedMap().image;
+  // A world's image is several tiles to a pixel (bakedmap.ts scale): close in, the live render shows more than it
+  // could, so that is drawn; zoomed out past what the live render reaches (LIVE_MAX_ZOOM), the image is drawn with
+  // its full-detail pieces over it (USER FEEDBACK 2026-10-05: "I can't zoom the minimap out anymore" on a world).
+  const bakedNow = bakedMap(), bakedScale = bakedNow.scale;
+  const baked = editing || (bakedScale !== 1 && tw / pxPerTile <= LIVE_MAX_ZOOM) ? null : bakedNow.image;
   // the overlays' scale; the live render can only cover the loaded chunks, so it stops at LIVE_MAX_ZOOM
   minimapZoom = baked ? tw / pxPerTile : Math.min(LIVE_MAX_ZOOM, tw / pxPerTile);
 
@@ -184,13 +188,25 @@ function renderMinimap() {
     ctx.fillStyle = "#0a0a0a";
     ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
     const span = MINIMAP_SIZE / pxPerTile;
-    ctx.imageSmoothingEnabled = pxPerTile < 1;
+    // a world's coarse image is smoothed (it is only what shows until its pieces load)
+    ctx.imageSmoothingEnabled = bakedScale !== 1 || pxPerTile < 1;
     ctx.imageSmoothingQuality = "high";
     const sx = playerX / tw - span / 2, sy = playerY / th - span / 2;
-    // the part of the view inside the image, drawn where it falls on the minimap
-    const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(baked.naturalWidth, sx + span), y1 = Math.min(baked.naturalHeight, sy + span);
+    // the part of the view inside the image (in tiles), drawn where it falls on the minimap
+    const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(baked.naturalWidth * bakedScale, sx + span), y1 = Math.min(baked.naturalHeight * bakedScale, sy + span);
     if (x1 > x0 && y1 > y0) {
-      ctx.drawImage(baked, x0, y0, x1 - x0, y1 - y0, (x0 - sx) * pxPerTile, (y0 - sy) * pxPerTile, (x1 - x0) * pxPerTile, (y1 - y0) * pxPerTile);
+      ctx.drawImage(baked, x0 / bakedScale, y0 / bakedScale, (x1 - x0) / bakedScale, (y1 - y0) / bakedScale, (x0 - sx) * pxPerTile, (y0 - sy) * pxPerTile, (x1 - x0) * pxPerTile, (y1 - y0) * pxPerTile);
+      if (bakedScale !== 1) {
+        // the world's full-detail pieces under the view, one pixel per tile like any map's image
+        ctx.imageSmoothingEnabled = pxPerTile < 1;
+        for (let ry = Math.floor(y0 / DETAIL_TILES); ry * DETAIL_TILES < y1; ry++) for (let rx = Math.floor(x0 / DETAIL_TILES); rx * DETAIL_TILES < x1; rx++) {
+          const piece = mapDetailPiece(rx, ry);
+          if (!piece) continue;
+          const px = rx * DETAIL_TILES, py = ry * DETAIL_TILES;
+          const a0 = Math.max(x0, px), b0 = Math.max(y0, py), a1 = Math.min(x1, px + piece.naturalWidth), b1 = Math.min(y1, py + piece.naturalHeight);
+          if (a1 > a0 && b1 > b0) ctx.drawImage(piece, a0 - px, b0 - py, a1 - a0, b1 - b0, (a0 - sx) * pxPerTile, (b0 - sy) * pxPerTile, (a1 - a0) * pxPerTile, (b1 - b0) * pxPerTile);
+        }
+      }
     }
   } else if (!MOBILE_RENDERER) {
     ctx.imageSmoothingEnabled = true;
