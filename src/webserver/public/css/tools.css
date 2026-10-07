@@ -263,6 +263,15 @@
 [hidden] { display: none !important; }
 
 html, body { height: 100%; margin: 0; }
+/* On a touch screen a tool window is not zoomed (js/core/toolback.ts says why, and stops the rest): a double tap
+   does not zoom it, and a phone held sideways does not make its text bigger by itself. */
+@media (hover: none) and (pointer: coarse) {
+  html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* Pinned to the top of the screen, and as tall as what is seen of it (js/core/toolback.ts measures that, and
+     says why): a phone turned upright and back left the window laid out for the way it had been held. */
+  html.tl-touch, html.tl-touch body { height: var(--tl-vh, 100%); }
+  html.tl-touch body { position: fixed; top: 0; left: 0; right: 0; }
+}
 body {
   overflow: hidden;
   background: var(--bg);
@@ -484,6 +493,15 @@ strong { font-weight: 600; }
 .tl-btn-danger:hover:not(:disabled) { border-color: var(--danger); background: var(--danger-soft); }
 .tl-btn-danger-solid { border-color: transparent; background: var(--danger-solid); color: #fff; font-weight: 600; }
 .tl-btn-danger-solid:hover:not(:disabled) { border-color: transparent; background: #b91c1c; }
+/* The way back to the game, first in the top bar of a tool window on a touch screen (js/core/toolback.ts). It keeps
+   its size when the bar is short of room, and is not there at all with a mouse. */
+.tl-back { flex-shrink: 0; }
+.tl-back[hidden] { display: none; }
+/* (a phone held upright has no room for its words: the arrow alone, which still says "Back to game" to a screen reader) */
+@media (max-width: 480px) {
+  .tl-back { width: 36px; padding: 0; }
+  .tl-back span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
 .tl-btn-quiet, .tl-btn-quiet-danger { border-color: transparent; background: none; color: var(--text-muted); }
 .tl-btn-quiet:hover:not(:disabled) { border-color: transparent; background: var(--surface-hover); color: var(--text); }
 /* Dangerous, but one of many in a list: red only under the pointer or the focus. */
@@ -1263,6 +1281,61 @@ th.tl-num .tl-sort { flex-direction: row-reverse; }
 /* Smaller than the tools are meant for: one column, so nothing is cut off. */
 @media (max-width: 899px) {
   .tl-grid > * { grid-column: span 12; }
+}
+
+/*
+ * An editor on a small window: a phone, upright or on its side (USER REQUEST 2026-10-07: "Update other panels to
+ * work on mobile landscape and portrait"). A full window has the list of records down its left, 300 px wide, and
+ * the open record beside it. A phone has 390 px across upright: the record was left 90 of them.
+ *
+ * So the list is not beside the page there but slides over it, from the left, on the button at the start of the
+ * top bar (tooleditor.ts, showList), and goes away on a tap beside it, on a record or on New. The record has the
+ * whole window.
+ */
+.tl-list-toggle, .tl-scrim { display: none; }
+@media (max-width: 899px), (max-height: 600px) {
+  /* (the map editor and the animation editor are laid out the same way, and are given the same button by toolback.ts) */
+  :is(.tl-app-editor, .me-app, .an-app) { grid-template-columns: minmax(0, 1fr); }
+  :is(.tl-app-editor, .me-app, .an-app) .tl-side {
+    position: fixed;
+    z-index: 60;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(320px, 88vw);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.5);
+    transform: translateX(-105%);
+    visibility: hidden;
+    transition: transform 0.18s ease, visibility 0s linear 0.18s;
+  }
+  :is(.tl-app-editor, .me-app, .an-app).is-list-open .tl-side { transform: none; visibility: visible; transition: transform 0.18s ease; }
+  :is(.tl-app-editor, .me-app, .an-app).is-list-open .tl-scrim { display: block; position: fixed; inset: 0; z-index: 59; background: rgba(2, 6, 23, 0.62); }
+  .tl-list-toggle { display: inline-flex; flex-shrink: 0; }
+  .tl-page { padding: var(--s-4) var(--s-4) var(--s-6); }
+  .tl-topbar { gap: var(--s-3); padding: 0 var(--s-4); }
+  .tl-banner { padding-left: var(--s-4); padding-right: var(--s-4); }
+  /* The top bar keeps the record's name and what can be done to it; its picture and the line under its name go. */
+  .tl-record-thumb, .tl-record-note { display: none; }
+  .tl-record .tl-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* A phone held upright: fields that were set two and three across are one over the other, and Save keeps its
+   picture alone. */
+@media (max-width: 600px) {
+  .tl-fields-2, .tl-fields-3 { grid-template-columns: minmax(0, 1fr); }
+  .tl-fields { grid-template-columns: repeat(auto-fill, minmax(min(208px, 100%), 1fr)); }
+  .tl-topbar-actions { gap: var(--s-1); }
+  .tl-topbar-rule { display: none; }
+  .tl-record-state .tl-pill { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+  /* (Save keeps its picture and its place; its word is still read out) */
+  .tl-topbar-actions > .tl-btn[data-act="save"] { width: 36px; padding: 0; }
+  .tl-topbar-actions > .tl-btn[data-act="save"] > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* A screen with no pointer to hover with: what a row of the list offers (delete, duplicate) is shown, not kept for a
+   hover that never comes. */
+@media (hover: none) {
+  .tl-list-row .tl-list-actions { position: static; display: flex; padding: 0 var(--s-1) 0 0; background: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

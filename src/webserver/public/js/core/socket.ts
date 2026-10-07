@@ -88,6 +88,10 @@ import { setSelfDead, setSelfGhost, clearSelfDeath, showReviveOfferPopup, hideRe
 import { updateFriendsList, updateIgnoredList } from "./friends.ts";
 import { startStatPreview, noteSelfSpritesChanged } from "./preview.js";
 import { createInvitationPopup } from "./invites.ts";
+import { showTrade, closeTrade } from "./trade.ts";
+import { showVendor, closeVendor, refreshVendor } from "./vendor.ts";
+import { startItemCooldown, refreshHotbarItems, clearItemCooldowns } from "./consumables.ts";
+import { showNotification } from "./notifications.ts";
 import { updateFriendOnlineStatus } from "./friends.js";
 import loadMap, { isChunkCached } from "./map.ts";
 import {
@@ -116,8 +120,6 @@ import {
   critChanceLabel,
   critDamageLabel,
   avoidanceLabel,
-  notificationContainer,
-  notificationMessage,
   collectablesUI,
   castSpell,
   spellBookUI,
@@ -132,10 +134,11 @@ import {
   startSpellCooldown,
   startSpellLockout,
   spellCooldowns,
+  clearSpellCooldowns,
   flushInventorySlots,
 } from "./ui.ts";
 import { updateXp } from "./xp.ts";
-import { createNPC, reinitNpcSprite } from "./npc.ts";
+import { createNPC, reinitNpcSprite, sellsThings } from "./npc.ts";
 import { applyCreatureSpawn, applyCreatureDespawn, applyCreatureMove, applyCreatureState, applyCreatureHealth, applyCreatureCombatText, applyCreatureAttackStopped, applyCreatureTap, applyCreatureLootable, applyCreatureXp, applyCreatureCast, applyCreatureCastEnd, applyCreatureAuras, clearCreatures, parseCreatureTarget, creaturePositionFor } from "./creature.ts";
 import parseAPNG from "../libs/apng_parser.js";
 import { getCookie } from "./cookies.ts";
@@ -196,8 +199,6 @@ async function buildWebTransportOptions(server: any): Promise<any> {
 
 let sentRequests: number = 0,
   receivedResponses: number = 0;
-
-let clearNotificationTimeout: any = null;
 
 let lastInventorySlotCount = 25;
 
@@ -1432,13 +1433,15 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       const questList = envelope?.quests ?? (data as any)?.quests;
       const spriteSheets = envelope?.spriteSheets ?? (data as any)?.spriteSheets;
       const icons = envelope?.icons ?? (data as any)?.icons;
+      // The items there are, for picking what a vendor stocks.
+      const items = envelope?.items ?? (data as any)?.items;
 
       if ((window as any).npcEditor && (window as any).npcEditor.setNpcs) {
-        (window as any).npcEditor.setNpcs(npcRows, questList, { spriteSheets, icons });
+        (window as any).npcEditor.setNpcs(npcRows, questList, { spriteSheets, icons, items });
       } else {
         import('./npceditor.js').then((module) => {
           if (module.default && module.default.setNpcs) {
-            module.default.setNpcs(npcRows, questList, { spriteSheets, icons });
+            module.default.setNpcs(npcRows, questList, { spriteSheets, icons, items });
           }
         });
       }
@@ -1479,6 +1482,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           liveNpc.gossipReturnTo = undefined;
         }
         if (updatedNpc.hidden !== undefined) liveNpc.hidden = updatedNpc.hidden;
+        // Stock that was just given or taken away in the editor makes it a vendor, or no longer one.
+        if (updatedNpc.vendor !== undefined || updatedNpc.vendor_items !== undefined) liveNpc.vendor = sellsThings(updatedNpc);
+        // The same for an inn it was just given, or no longer keeps.
+        if (updatedNpc.innkeeper !== undefined) liveNpc.innkeeper = updatedNpc.innkeeper === true;
         if (updatedNpc.particles !== undefined) liveNpc.particles = resolveParticles(updatedNpc.particles || []);
         if (updatedNpc.quest !== undefined) liveNpc.quest = updatedNpc.quest || null;
         // Update sprite and reinit if changed
@@ -1512,6 +1519,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           location: { x: updatedNpc.position?.x ?? 0, y: updatedNpc.position?.y ?? 0, direction: updatedNpc.position?.direction || "down" },
           dialog: updatedNpc.dialog || "",
           gossip: updatedNpc.gossip || "",
+          vendor: sellsThings(updatedNpc),
+          innkeeper: updatedNpc.innkeeper === true,
           hidden: updatedNpc.hidden ?? false,
           particles: resolveParticles(updatedNpc.particles || []),
           quest: updatedNpc.quest || null,
@@ -1760,6 +1769,42 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
     }
     case "UPDATE_IGNORES": {
       updateIgnoredList(Array.isArray(data?.ignored) ? data.ignored : []);
+      break;
+    }
+    case "TRADE_STATE": {
+      showTrade(data);
+      break;
+    }
+    case "TRADE_CLOSED": {
+      closeTrade();
+      if (data?.message) showNotification(data.message, true, false);
+      break;
+    }
+    case "VENDOR_STOCK": {
+      showVendor(data);
+      break;
+    }
+    case "VENDOR_CLOSED": {
+      closeVendor();
+      if (data?.message) showNotification(data.message, true, false);
+      break;
+    }
+    case "ITEM_COOLDOWN": {
+      // A cooldown on the player's consumables started, or is still running as they log in.
+      if (data) startItemCooldown(data.kind, Number(data.remaining), Number(data.total));
+      break;
+    }
+    case "MAP_MARKERS": {
+      // Where the inns, caves and houses of the map are, for the minimap and the world map.
+      import("./mapmarkers.js").then((m) => m.setMapMarkers(data));
+      break;
+    }
+    case "COOLDOWNS_RESET": {
+      // An admin ended every cooldown of this player: spells, the spell lockout and items.
+      pendingSpellCooldowns = null;
+      pendingSpellLockout = 0;
+      clearSpellCooldowns();
+      clearItemCooldowns();
       break;
     }
     case "UPDATE_ONLINE_STATUS": {
@@ -2837,7 +2882,9 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
           const { resetCameraInitialized } = await import('./renderer.js');
           resetCameraInitialized();
-          (window as any).__resetEditorCamera = true;
+          // Only when the editor is open, and so opens again on the new map (below): it then looks at where the
+          // player arrives (renderer.ts). An editor opened by hand later starts from the camera, as ever.
+          (window as any).__resetEditorCamera = !!teWasActive;
 
           (window as any).__suppressLoadingScreen = useBlackFade;
           (window as any).__firstFrameRendered = false;
@@ -2868,7 +2915,13 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         }
 
         if (loaded) {
-          if (teWasActive) await te.toggle();
+          // The editor that was open before the warp opens again on the new map. Not waited for: opening it waits
+          // for the server's answer (EDITOR_SYNC_READY), and packets are handled one at a time, so this one has to
+          // end before that answer can be read. Waiting here stopped every packet after it for good.
+          // USER REPORT 2026-10-06: "Opening the tile editor while warping, breaks the game".
+          if (teWasActive) {
+            void Promise.resolve(te.toggle()).catch((error: unknown) => console.error("The tile editor could not be opened again after the warp:", error));
+          }
 
           const ne = (window as any).npcEditor;
           if (ne?.isActive) ne.refresh();
@@ -3635,6 +3688,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
 
         lastInventorySlotCount = slots;
         rebuildInventoryGrid();
+        // Consumables on the hotbar show how many are left.
+        refreshHotbarItems();
       }
       break;
     case "BAGS": {
@@ -3675,9 +3730,23 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
             img.src = iconUrl;
             el.appendChild(img);
           });
-          el.ondblclick = () => {
+          const unequip = () => {
             hideItemTooltip();
             sendRequest({ type: 'BAG_UNEQUIP', data: { slot: slotName } });
+          };
+          el.ondblclick = unequip;
+          // A second tap within 300 ms does the same on a touch screen, where a double click does not reliably come
+          // (as for the slots of the bags themselves, ui.ts). USER REPORT 2026-10-07: "I cannot unequip bags on mobile".
+          el.ontouchend = (event) => {
+            const now = Date.now();
+            if (now - ((el as any)._lastTap || 0) < 300) {
+              // (and no double click after it, which would ask for the same bag to be taken off twice)
+              event.preventDefault();
+              (el as any)._lastTap = 0;
+              unequip();
+            } else {
+              (el as any)._lastTap = now;
+            }
           };
           setupItemTooltip(el, () => {
             const n = el.dataset.itemName;
@@ -3691,6 +3760,7 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
           el.style.outline = '';
           el.style.outlineOffset = '';
           el.ondblclick = null;
+          el.ontouchend = null;
         }
 
         if (!(el as any)._bagDropInit) {
@@ -4605,6 +4675,8 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
       }
 
       updateCurrencyDisplay();
+      // What can be afforded at an open vendor follows the coins.
+      refreshVendor();
       break;
     }
     case "MAP_CHUNK": {
@@ -4776,50 +4848,6 @@ if (version) {
   versionText.style.userSelect = "none";
   versionText.innerText = `v${version}`;
   document.body.appendChild(versionText);
-}
-
-function showNotification(
-  message: string,
-  autoClose: boolean = true,
-  reconnect: boolean = false
-) {
-  if (!notificationContainer || !notificationMessage) return;
-
-  notificationMessage.innerText = message;
-  notificationContainer.style.display = "flex";
-
-  const baseTimeout = 5000;
-  const timePerChar = 100;
-  const timeout = baseTimeout + message.length * timePerChar;
-
-  if (autoClose) {
-
-    if (clearNotificationTimeout) {
-      clearTimeout(clearNotificationTimeout);
-    }
-    clearNotificationTimeout = setTimeout(() => {
-      if (!notificationContainer || !notificationMessage) return;
-      notificationContainer.style.display = "none";
-
-      if (reconnect) {
-        if (window.navigator.userAgent === "@Electron/Frostfire-Forge-Client") {
-          window.close();
-        } else {
-
-          window.location.href = "/";
-        }
-      }
-    }, timeout);
-  } else if (reconnect) {
-
-    setTimeout(() => {
-      if (window.navigator.userAgent === "@Electron/Frostfire-Forge-Client") {
-        window.close();
-      } else {
-        window.location.href = "/";
-      }
-    }, timeout);
-  }
 }
 
 let loaded: boolean = false;
@@ -5019,7 +5047,7 @@ window.addEventListener('beforeunload', () => {
   flushInventorySlots();
 });
 
-export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, itemsByName };
+export { sendRequest, cachedPlayerId, getIsLoaded, getMovementAllowed, itemsByName, showNotification };
 (window as any).itemsByName = itemsByName;
 
 

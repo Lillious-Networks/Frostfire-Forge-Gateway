@@ -5,6 +5,7 @@ const cache = Cache.getInstance();
 import { cast } from "./input.js";
 import { hideItemTooltip, setupItemTooltip, removeItemTooltip, setupSpellTooltip, formatDuration } from "./tooltip.js";
 import { config } from "../web/global.js";
+import { itemForSlot, placeItemOnHotbar, refreshHotbarItems, useItem } from "./consumables.js";
 const debugContainer = document.getElementById("debug-container") as HTMLDivElement;
 const statUI = document.getElementById("stat-screen") as HTMLDivElement;
 const positionText = document.getElementById("position") as HTMLDivElement;
@@ -53,8 +54,6 @@ const armorLabel = document.getElementById("stats-screen-armor-label") as HTMLDi
 const critChanceLabel = document.getElementById("stats-screen-crit-chance-label") as HTMLDivElement;
 const critDamageLabel = document.getElementById("stats-screen-crit-damage-label") as HTMLDivElement;
 const avoidanceLabel = document.getElementById("stats-screen-avoidance-label") as HTMLDivElement;
-const notificationContainer = document.getElementById("game-notification-container");
-const notificationMessage = document.getElementById("game-notification-message");
 const serverTime = document.getElementById("server-time-value") as HTMLDivElement;
 const ambience = document.getElementById("ambience-overlay") as HTMLDivElement;
 const ambienceCool = document.getElementById("ambience-cool-overlay") as HTMLDivElement;
@@ -120,6 +119,8 @@ hotbarSlots.forEach((slot, index) => {
       const spells = Cache.getInstance().spells;
       return spells ? spells[spellName] : null;
     }, { anchor: "bottom-right" });
+    // A slot that holds a consumable shows the item's tooltip instead.
+    setupItemTooltip(slot, () => itemForSlot(slot));
   }
 });
 
@@ -357,6 +358,16 @@ function tickSpellCooldowns() {
   cooldownRaf = active ? requestAnimationFrame(tickSpellCooldowns) : 0;
 }
 
+/** Every spell cooldown and the spell lockout end now: an admin reset them (COOLDOWNS_RESET). */
+export function clearSpellCooldowns() {
+  // Each is over as the clock next reads it, which takes its overlay off and flashes its slot.
+  spellCooldowns.forEach((cd) => {
+    cd.end = 0;
+  });
+  tickSpellCooldowns();
+  startSpellLockout(0);
+}
+
 export function refreshSpellbookCooldowns() {
   if (spellCooldowns.size > 0 && !cooldownRaf) {
     cooldownRaf = requestAnimationFrame(tickSpellCooldowns);
@@ -411,6 +422,8 @@ function startSpellLockout(durationSec: number) {
 
 function saveHotbarConfiguration() {
   const hotbarConfig: { [key: string]: string | null } = {};
+  // The hotbar was just rearranged: the slots that hold items are drawn again, with how many are left.
+  refreshHotbarItems();
 
   hotbarSlots.forEach((slot, index) => {
     const spellName = slot.dataset.spellName;
@@ -493,6 +506,13 @@ hotbarSlots.forEach((slot, index) => {
     slot.style.backgroundColor = "";
 
     if (event.dataTransfer) {
+      // A consumable dragged from the bags goes on the slot. Any other item does nothing here.
+      const droppedItem = event.dataTransfer.getData("inventory-item-name");
+      if (droppedItem) {
+        if (placeItemOnHotbar(slot, droppedItem)) saveHotbarConfiguration();
+        return;
+      }
+
       const sourceIndex = event.dataTransfer.getData("hotbar-source-index");
       const spellName = event.dataTransfer.getData("text/plain");
       const imageSrc = event.dataTransfer.getData("image/src");
@@ -1196,6 +1216,8 @@ document.addEventListener("touchend", (e: TouchEvent) => {
     if (inventoryPendingSlot) {
       inventoryPendingSlot.style.opacity = "1";
     }
+    // Dropped on the hotbar: a consumable goes on the slot.
+    if (hotbarSlot && touchDragSpellName && placeItemOnHotbar(hotbarSlot, touchDragSpellName)) saveHotbarConfiguration();
     const invTarget = target?.closest("#inventory .slot") as HTMLDivElement;
     const invSlots = inventoryGrid.querySelectorAll(".slot");
     const targetIndex = invTarget ? Array.from(invSlots).indexOf(invTarget) : -1;
@@ -1971,7 +1993,10 @@ async function loadHotbarConfiguration(hotbarConfig: any) {
 
     const spellName = typeof slotData === 'string' ? slotData : slotData?.name;
 
-    if (spellName) {
+    if (typeof spellName === "string" && spellName.startsWith("item:")) {
+      // A consumable: drawn from the bags, below.
+      slot.dataset.spellName = spellName;
+    } else if (spellName) {
 
       slot.dataset.spellName = spellName;
 
@@ -1996,6 +2021,7 @@ async function loadHotbarConfiguration(hotbarConfig: any) {
       if (existingKey) slot.appendChild(existingKey);
     }
   });
+  refreshHotbarItems();
 }
 
 if (guildMemberInviteButton) {
@@ -2070,7 +2096,7 @@ export {
     friendsListUI, inventoryUI, spellBookUI, questFrameUI, questLogUI, questTrackerUI, pauseMenu, menuElements, chatInput, canvas, ctx, fpsSlider, healthBar,
     staminaBar, xpBar, musicSlider, effectsSlider, mutedCheckbox, statUI, overlay,
     packetsSentReceived, optionsMenu, friendsList, friendsListSearch, onlinecount, progressBar, progressBarContainer,
-    inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel, notificationContainer, notificationMessage,
+    inventoryGrid, chatMessages, loadingScreen, usernameLabel, levelLabel, healthLabel, manaLabel, damageLabel, armorLabel, critChanceLabel, critDamageLabel, avoidanceLabel,
     serverTime, ambience, ambienceCool, sunFlare, weatherCanvas, weatherCtx, lightCanvas, lightCtx, lightDodgeCanvas, lightDodgeCtx, ghostCanvas, ghostCtx, aboveCanvas, aboveCtx, guildContainer, guildName, guildRank, guildMembersList,
     guildMemberCount, guildMemberInviteInput, guildMemberInviteButton, collisionDebugCheckbox, chunkOutlineDebugCheckbox,
     collisionTilesDebugCheckbox, noPvpDebugCheckbox, wireframeDebugCheckbox, showGridCheckbox, astarDebugCheckbox, shadowsDebugCheckbox, loadedChunksText, collectablesUI, timeOverrideSlider, timeOverrideLabel, timeOverrideCheckbox, timelapseBtn,
@@ -2104,6 +2130,11 @@ function setupInventorySlotHandlers() {
   inventorySlots.forEach((slot, index) => {
 
     slot.addEventListener("dblclick", () => {
+      // A consumable is used: the server answers with the bags and stats as they then are.
+      if (slot.dataset.itemType === "consumable" && slot.dataset.itemName) {
+        useItem(slot.dataset.itemName);
+        return;
+      }
       if (slot.dataset.itemType === "equipment" && slot.dataset.itemName) {
         hideItemTooltip();
         if (slot.dataset.equipmentSlot === "bag") {
@@ -2144,6 +2175,11 @@ function setupInventorySlotHandlers() {
       const now = Date.now();
       if (now - lastTapTime < 300) {
         e.preventDefault();
+        if (slot.dataset.itemType === "consumable" && slot.dataset.itemName) {
+          useItem(slot.dataset.itemName);
+          lastTapTime = 0;
+          return;
+        }
         if (slot.dataset.itemType === "equipment" && slot.dataset.itemName) {
           hideItemTooltip();
           if (slot.dataset.equipmentSlot === "bag") {

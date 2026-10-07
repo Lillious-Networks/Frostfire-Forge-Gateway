@@ -1,6 +1,9 @@
 import Cache from "./cache.js";
 import { cachedPlayerId, sendRequest } from "./socket.js";
 import { bakedMap, mapDetailPiece, DETAIL_TILES } from "./bakedmap.js";
+import { getCachedImage } from "./images.js";
+import { markerAt, markerIconUrl, markersVersion } from "./mapmarkers.js";
+import { drawMapPicture } from "./mappin.js";
 
 /**
  * Full world map (M): the whole map at once from its baked image (bakedmap.ts: the asset server bakes one pixel per tile
@@ -258,6 +261,45 @@ function displayName(name: string): string {
   return name.replace(/\.json$/i, "").replace(/[-_]+/g, " ").trim().replace(/(^|\s)(\S)/g, (_m, sp: string, c: string) => sp + c.toUpperCase());
 }
 
+/** A warp as the map draws it: what it is, where its middle and its top edge are (tiles), and what is written by it. */
+interface MapPlace {
+  kind: "house" | "cave" | "warp";
+  px: number;
+  py: number;
+  top: number;
+  /** A house with an inn in it: the inn's name. */
+  label: string | null;
+  /** Where any other warp leads, as shown. */
+  leadsTo: string;
+}
+
+// The map's warps, each worked out once: which are houses and caves (mapmarkers.ts: the server says), and what is
+// written by them. Kept until the map's warps or its markers change. The world has hundreds of them, and the map is
+// drawn every frame: looking each one up again every frame was part of what made the map crawl.
+let places: MapPlace[] = [];
+let placesOf: { warps: unknown; markers: number; map: string; tw: number; th: number } | null = null;
+
+function mapPlaces(tw: number, th: number): MapPlace[] {
+  const warps = window.mapData?.warps, markers = markersVersion(), map = mapName();
+  if (placesOf && placesOf.warps === warps && placesOf.markers === markers && placesOf.map === map && placesOf.tw === tw && placesOf.th === th) return places;
+  placesOf = { warps, markers, map, tw, th };
+  places = [];
+  // (the tile editor keeps a map's warps by name while it is open: there is no list to draw then)
+  for (const warp of Array.isArray(warps) ? warps : []) {
+    const middleX = Number(warp.position?.x ?? 0) + Number(warp.size?.width ?? 0) / 2, topY = Number(warp.position?.y ?? 0);
+    const kind = markerAt("house", middleX, topY, map) ? "house" : markerAt("cave", middleX, topY, map) ? "cave" : "warp";
+    places.push({
+      kind,
+      px: middleX / tw,
+      py: (topY + Number(warp.size?.height ?? 0) / 2) / th,
+      top: topY / th,
+      label: kind === "house" ? markerAt("inn", middleX, topY, map)?.name ?? null : null,
+      leadsTo: displayName(String(warp.map ?? "")),
+    });
+  }
+  return places;
+}
+
 /** Picks up the shared baked image; fits the view the first time a map's image is there. */
 function syncImage() {
   const b = bakedMap();
@@ -324,6 +366,8 @@ function ease(dt: number) {
 
 function draw() {
   if (!open || !canvas || !ctx) return;
+  // walked into a building with the map open: it closes (there is no world map indoors, see openWorldMap)
+  if (window.mapData?.interior) { closeWorldMap(); return; }
   syncImage();
   const now = performance.now();
   if (image) ease(Math.min(0.1, Math.max(0, (now - lastFrame) / 1000)));
@@ -356,26 +400,46 @@ function draw() {
     // (no outline round the image: USER REQUEST 2026-10-03 "Remove the borders in the map image")
 
     const tw = window.mapData?.tilewidth || 16, th = window.mapData?.tileheight || 16;
-    // warps: where each leads
-    const warps: any[] = Array.isArray(window.mapData?.warps) ? window.mapData.warps : [];
+    // warps: a house on each door into one, a cave mouth on each cave, and a mark on any other, with where it leads
+    const housePicture = getCachedImage(markerIconUrl("house")), cavePicture = getCachedImage(markerIconUrl("cave"));
+    const houseReady = housePicture.complete && housePicture.naturalWidth > 0, caveReady = cavePicture.complete && cavePicture.naturalWidth > 0;
+    const labelled = zoom >= coverZoom * 2;
     ctx.font = "600 11px sans-serif";
     ctx.textAlign = "center";
-    for (const warp of warps) {
-      const px = (Number(warp.position?.x ?? 0) + Number(warp.size?.width ?? 0) / 2) / tw;
-      const py = (Number(warp.position?.y ?? 0) + Number(warp.size?.height ?? 0) / 2) / th;
-      if (px < b.x || py < b.y || px >= b.x + b.w || py >= b.y + b.h) continue;
-      const sx = toX(px), sy = toY(py);
-      if (sx < -20 || sy < -20 || sx > w + 20 || sy > h + 20) continue;
+    for (const place of mapPlaces(tw, th)) {
+      if (place.px < b.x || place.py < b.y || place.px >= b.x + b.w || place.py >= b.y + b.h) continue;
+      const sx = toX(place.px), sy = toY(place.py);
+      if (sx < -40 || sy < -40 || sx > w + 40 || sy > h + 40) continue;
+      // A door into a house is drawn as a house, standing on the door. USER REQUEST 2026-10-06: "use house.png for
+      // houses on the main map (not minimap)".
+      // A house or a cave whose picture is still on its way is left off until it has come: it is not a plain warp,
+      // and is not drawn as one meanwhile (USER REPORT 2026-10-07: "blue diamonds show before the icons load"). One
+      // whose picture could not be fetched at all is still marked, as a plain warp.
+      if ((place.kind === "house" && !housePicture.complete) || (place.kind === "cave" && !cavePicture.complete)) continue;
+      if (place.kind === "house" && houseReady) {
+        const top = drawMapPicture(ctx, housePicture, sx, toY(place.top), zoom);
+        // an inn's house is named, zoomed in; any other house needs no label
+        if (labelled && place.label) {
+          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.strokeText(place.label, sx, top - 4);
+          ctx.fillStyle = "#ffe9a8"; ctx.fillText(place.label, sx, top - 4);
+        }
+        continue;
+      }
+      // A cave (a way into another world) is drawn as a cave mouth, over the way in itself. Every one of them leads
+      // to the same place, so none is labelled. USER FEEDBACK 2026-10-06: "cave icons are not on the world map".
+      if (place.kind === "cave" && caveReady) {
+        drawMapPicture(ctx, cavePicture, sx, sy, zoom, true);
+        continue;
+      }
       ctx.fillStyle = "#7fd0ff";
       ctx.strokeStyle = "#0b1a26";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 5, sy); ctx.lineTo(sx, sy + 6); ctx.lineTo(sx - 5, sy); ctx.closePath();
       ctx.stroke(); ctx.fill();
-      if (zoom >= coverZoom * 2) {
-        const label = displayName(String(warp.map ?? ""));
-        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.strokeText(label, sx, sy - 10);
-        ctx.fillStyle = "#cfeeff"; ctx.fillText(label, sx, sy - 10);
+      if (labelled) {
+        ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.8)"; ctx.strokeText(place.leadsTo, sx, sy - 10);
+        ctx.fillStyle = "#cfeeff"; ctx.fillText(place.leadsTo, sx, sy - 10);
       }
     }
     ctx.restore();
@@ -397,6 +461,9 @@ export function isWorldMapOpen(): boolean {
 }
 
 export function openWorldMap() {
+  // USER REQUEST 2026-10-06 ("disable the world map for interiors"): the inside of a building is one room, and the
+  // minimap shows all of it. Its map says so (the Tiled map property "interior", sent with the map's metadata).
+  if (window.mapData?.interior) return;
   build();
   if (!root) return;
   open = true;

@@ -12,8 +12,44 @@ import {
 } from "./toolkit.js";
 
 type Page = "dashboard" | "players" | "reports" | "communication" | "server" | "world" | "items";
+
+/**
+ * What a weather reads, each as a name and a value: degrees Fahrenheit and miles an hour, as the weather table
+ * keeps them, and where the wind blows to on the screen. Nothing for a clear sky, which reads nothing.
+ */
+function weatherReadings(conditions: WeatherConditions | null | undefined): Array<[string, string]> {
+  if (!conditions) return [];
+  const blowing = conditions.wind_direction && conditions.wind_direction !== "none" ? `, blowing ${conditions.wind_direction}` : "";
+  return [
+    ["Temperature", `${num(conditions.temperature)}°F`],
+    ["Humidity", `${num(conditions.humidity)}%`],
+    ["Wind", conditions.wind_speed > 0 ? `${num(conditions.wind_speed)} mph${blowing}` : "Calm"],
+    // (0 to 100 in the weather table: the share of the heaviest fall that is drawn)
+    ["Rain or snow", conditions.precipitation > 0 ? `${num(conditions.precipitation)}% of full` : "None"],
+  ];
+}
+
+/** The same readings as one short line, for a row of a table: "54°F · humidity 82% · wind 9 mph left · rain or snow 50%". */
+function weatherLine(conditions: WeatherConditions | null | undefined): string {
+  if (!conditions) return "";
+  const wind = conditions.wind_speed > 0
+    ? `wind ${num(conditions.wind_speed)} mph${conditions.wind_direction && conditions.wind_direction !== "none" ? ` ${conditions.wind_direction}` : ""}`
+    : "no wind";
+  const fall = conditions.precipitation > 0 ? `rain or snow ${num(conditions.precipitation)}%` : "dry";
+  return [`${num(conditions.temperature)}°F`, `humidity ${num(conditions.humidity)}%`, wind, fall].join(" · ");
+}
 /** A mute as the server holds it: times are milliseconds since the epoch, and no `expires_at` is a mute until it is lifted. */
 type Mute = { username: string; muted_by: string; reason: string | null; created_at: number; expires_at: number | null };
+/** What one player handed over in a trade, and a trade two players completed. */
+type Gave = { items: Array<{ name: string; quantity: number }>; coins: { gold: number; silver: number; copper: number } };
+type Trade = { id: number; player_a: string; player_b: string; a_gave: Gave; b_gave: Gave; created_at: number };
+
+/** What one side of a trade handed over, in words: "4 Iron Ore, 1s 60c", or "nothing". */
+function gaveText(gave: Gave): string {
+  const { gold, silver, copper } = gave.coins;
+  const coins = [gold ? `${num(gold)}g` : "", silver ? `${silver}s` : "", copper ? `${copper}c` : ""].filter(Boolean).join(" ");
+  return [...gave.items.map((item) => `${num(item.quantity)} ${item.name}`), ...(coins ? [coins] : [])].join(", ") || "nothing";
+}
 /** A player's report of another, with the reported player's lines that reached the one who reported. */
 type Report = {
   id: number; reporter: string; target: string; category: string; details: string | null;
@@ -154,6 +190,8 @@ class ControlPanel {
   private showPermissions = false;
   /** Whether the selected player is muted, and how many open reports name them. */
   private moderation: { target: string; mute: Mute | null; openReports: number } | null = null;
+  /** The selected player's latest trades, the newest first, as last read. */
+  private trades: { target: string; trades: Trade[] } | null = null;
   /** The reports as last read: the open ones newest first, and the latest that were resolved. */
   private reportList: { open: Report[]; resolved: Report[] } | null = null;
   /** The report the Reports page shows in full. */
@@ -287,6 +325,9 @@ class ControlPanel {
       if (this.page === "items") this.renderPage();
     } else if (data?.kind === "moderation") {
       this.moderation = { target: data.target, mute: data.mute ?? null, openReports: Number(data.openReports) || 0 };
+      this.refresh(false);
+    } else if (data?.kind === "trades") {
+      this.trades = { target: data.target, trades: Array.isArray(data.trades) ? data.trades : [] };
       this.refresh(false);
     } else if (data?.kind === "reports") {
       this.reportList = { open: Array.isArray(data.open) ? data.open : [], resolved: Array.isArray(data.resolved) ? data.resolved : [] };
@@ -445,6 +486,11 @@ class ControlPanel {
     if (this.selected && this.can["query.moderation"]) this.request("CONTROL_PANEL_QUERY", { kind: "moderation", target: this.selected });
   }
 
+  /** The selected player's latest trades: asked of the server, for whoever may read the trade log. */
+  private askTrades(): void {
+    if (this.selected && this.can["query.trades"]) this.request("CONTROL_PANEL_QUERY", { kind: "trades", target: this.selected });
+  }
+
   private askReports(): void {
     if (this.can["query.reports"]) this.request("CONTROL_PANEL_QUERY", { kind: "reports" });
   }
@@ -453,6 +499,7 @@ class ControlPanel {
     this.selected = username.toLowerCase();
     if (this.permissions?.target !== this.selected) this.permissions = null;
     if (this.moderation?.target !== this.selected) this.moderation = null;
+    if (this.trades?.target !== this.selected) this.trades = null;
     this.drafts.permission = "";
     this.drafts.muteLength = "";
     this.drafts.muteReason = "";
@@ -460,6 +507,7 @@ class ControlPanel {
     for (const key of [...this.errors.keys()]) if (key.startsWith("players.")) this.errors.delete(key);
     this.askPermissions();
     this.askModeration();
+    this.askTrades();
     this.renderPage();
   }
 
@@ -734,7 +782,10 @@ class ControlPanel {
     this.errors.clear();
     if (page === "reports") this.askReports();
     // The mute shown for the selected player may have been set from another page.
-    if (page === "players") this.askModeration();
+    if (page === "players") {
+      this.askModeration();
+      this.askTrades();
+    }
     this.paintChrome();
     this.renderPage();
     this.pageEl.scrollTop = 0;
@@ -1443,6 +1494,9 @@ class ControlPanel {
     chat.appendChild(chatState);
     const account = group("Account", "user", origin);
     const items = group("Items", "box", "players.items");
+    // What they traded with other players: only for those who may read the trade log.
+    const traded = group("Trades", "coins", "players.trades");
+    traded.parentElement!.hidden = !this.can["query.trades"];
 
     this.follow(() => {
       const live = this.data!.players.find((p) => p.username === who);
@@ -1488,6 +1542,18 @@ class ControlPanel {
         }
       }
 
+      traded.replaceChildren();
+      if (this.can["query.trades"]) {
+        const held = this.trades?.target === who ? this.trades.trades : null;
+        if (!held) this.row(traded, "Reading…", "");
+        else if (held.length === 0) this.row(traded, "No trades", `${name} has completed no trade on record.`);
+        for (const trade of held ?? []) {
+          const first = trade.player_a === who;
+          const [partner, gave, got] = first ? [trade.player_b, trade.a_gave, trade.b_gave] : [trade.player_a, trade.b_gave, trade.a_gave];
+          this.row(traded, `With ${shown(partner)}, ${dayAndTime(trade.created_at).toLowerCase()}`, `Gave ${gaveText(gave)}. Got ${gaveText(got)}.`);
+        }
+      }
+
       account.replaceChildren();
       const admin = (wanted: boolean) => {
         const label = wanted ? "Make admin" : "Remove admin";
@@ -1506,7 +1572,7 @@ class ControlPanel {
       this.renderPermissions(account, who, self);
     }, () => {
       const live = this.data!.players.find((p) => p.username === who);
-      return JSON.stringify([live ? { ...live, onlineFor: live.onlineFor === null } : null, this.permissions, this.showPermissions, this.moderation, this.pending?.requestId ?? "", this.lost]);
+      return JSON.stringify([live ? { ...live, onlineFor: live.onlineFor === null } : null, this.permissions, this.showPermissions, this.moderation, this.trades, this.pending?.requestId ?? "", this.lost]);
     });
     // The time they have been online counts up without the buttons under it being built again.
     this.follow(() => {
@@ -2019,6 +2085,10 @@ class ControlPanel {
         const weather = el("td");
         weather.appendChild(el("span", "", w.showing));
         if (w.weather !== w.showing) weather.appendChild(el("span", "tl-muted", ` · set to ${w.weather}`));
+        // What that weather reads now, on a line of its own under its name. It wraps where the table is narrow (a
+        // phone): a table's cells do not, by themselves, and the line pushed the players' column off the screen.
+        const line = weatherLine(w.conditions);
+        if (line) weather.appendChild(el("div", "tl-row-note cp-weather-line", line));
         row.appendChild(weather);
         row.appendChild(el("td", "tl-num", num(w.players)));
         body.appendChild(row);
@@ -2037,16 +2107,30 @@ class ControlPanel {
     grid.appendChild(side);
 
     const weatherKey = "world.weather";
-    const weather = this.card(side, "Weather", `Changes the weather of the map you are on, ${viewer.map}.`, weatherKey);
-    const weatherForm = el("div", "tl-form");
-    const now = el("span", "tl-field-hint");
-    const weatherField = this.field(weatherForm, "Weather", this.choice(weathers, this.drafts.weather, (value) => (this.drafts.weather = value), "Pick a weather"));
-    weatherField.appendChild(now);
-    weather.body.appendChild(weatherForm);
+    const weather = this.card(side, "Weather", `The weather over the map you are on, ${viewer.map}, and a control to change it.`, weatherKey);
+    // What is over the map now, and what it reads (USER REQUEST 2026-10-07: "Show the current weather in the control
+    // panel"). What a world is set to is not always what it has: "random" is whichever weather the server settled
+    // on, and "weather_api" is the last reading of the real place the world follows.
+    // Its name first, on a line of its own, then its readings side by side: four across where there is room, two
+    // by two on a phone (USER FEEDBACK 2026-10-07: "weather isn't designed correctly for mobile").
+    const current = el("div", "cp-weather-now");
+    const name = el("div", "cp-weather-name");
+    const readings = el("dl", "tl-facts cp-weather-readings");
+    current.append(name, readings);
+    weather.body.appendChild(current);
     this.follow(() => {
       const w = this.data!.world;
-      now.textContent = `Showing ${w.showing} now${w.weather === w.showing ? "" : `, set to ${w.weather}`}. With “random”, the server picks one.`;
-    });
+      name.replaceChildren(el("span", "tl-fact-label", "Now"), el("span", "cp-weather-shown", w.showing));
+      if (w.weather !== w.showing) name.appendChild(el("span", "tl-fact-note", `set to ${w.weather}`));
+      readings.replaceChildren();
+      for (const [label, value] of weatherReadings(w.conditions)) this.fact(readings, label, value);
+      readings.hidden = !w.conditions;
+    }, () => JSON.stringify([this.data!.world.weather, this.data!.world.showing, this.data!.world.conditions]));
+    const weatherForm = el("div", "tl-form");
+    const now = el("span", "tl-field-hint", "With “random”, the server picks one. With “weather_api”, it follows a real place.");
+    const weatherField = this.field(weatherForm, "Change it to", this.choice(weathers, this.drafts.weather, (value) => (this.drafts.weather = value), "Pick a weather"));
+    weatherField.appendChild(now);
+    weather.body.appendChild(weatherForm);
     this.actions(weather.body, weatherForm, this.button("Change weather", (fk) => {
       if (!this.drafts.weather) return this.fail(weatherKey, ["Pick a weather first."]);
       this.act("world.weather", { weather: this.drafts.weather }, { key: weatherKey, fk });

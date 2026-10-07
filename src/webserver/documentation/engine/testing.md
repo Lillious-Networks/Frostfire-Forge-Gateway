@@ -1,38 +1,36 @@
 ---
 title: Testing
-description: The three checks that guard every commit (ESLint, the TypeScript compiler and bun test), the Husky pre-commit hook, and how the tests replace the database and caches with mocks.
+description: The two checks that guard every commit (bun check and bun test), the Husky pre-commit hook, and how the tests replace the database and caches with mocks.
 order: 200
 ---
 
-Three checks run before every commit: a linter, the type checker and the unit tests. None of them needs a database, the gateway or the asset server. This page shows how to run them, what they enforce, and how to write a test in the style of the existing ones.
+Two checks run before every commit: the type checker and the unit tests. Neither needs a database, the gateway or the asset server. This page shows how to run them, what they enforce, and how to write a test in the style of the existing ones.
 
-## The three checks
+## The two checks
 
 ```bash title="Run everything the pre-commit hook runs"
-bun eslint
-bun run --bun tsc --noEmit
+bun check
 bun test
 ```
 
 | Check | Command | Looks at | Fails on |
 |-------|---------|----------|----------|
-| Lint | `bun eslint` | Every `.ts` file, rules from `eslint.config.mjs` | A rule violation |
-| Types | `bun run --bun tsc --noEmit` | The whole project, settings from `tsconfig.json` | A type error, an unused variable or parameter, a `switch` fall through |
+| Types | `bun check` | The whole project, settings from `tsconfig.json` | A type error, an unused variable or parameter, a `switch` fall through |
 | Tests | `bun test` | `src/tests/*.test.ts` | A failed expectation |
 
+`bun check` is Bun's own type checker. It reports the same errors as the TypeScript compiler and replaced both ESLint and `tsc` here. To check only some files and what they import, name them: `bun check src/systems/vendors.ts`.
+
 :::note No build step
-The engine runs TypeScript directly under Bun. `tsc` is only used to check types: `noEmit` is set, so it never writes files.
+The engine runs TypeScript directly under Bun. Types are only checked: `noEmit` is set, so nothing is ever written.
 :::
 
 ## The pre-commit hook
 
-The repository uses Husky. The hook file runs the three checks in order and stops the commit at the first one that fails:
+The repository uses Husky. The hook file runs the two checks in order and stops the commit at the first one that fails:
 
 ```bash title=".husky/pre-commit"
-echo "Running ESLint..."
-bun eslint
-echo "Running TypeScript compiler..."
-bun run --bun tsc --noEmit
+echo "Running checks..."
+bun check
 echo "Running Unit Tests..."
 bun test
 ```
@@ -41,32 +39,9 @@ bun test
 `husky` is a dev dependency, but `package.json` has no `prepare` script that activates it during `bun install`. If your commits skip the checks, run `bunx husky` once in the repository. It points Git at the `.husky` folder.
 :::
 
-Running the same three commands by hand before you commit saves a failed commit.
+Running the same two commands by hand before you commit saves a failed commit.
 
-## ESLint
-
-The configuration is a flat config in `eslint.config.mjs`. It applies the recommended JavaScript and TypeScript rule sets to every `.ts` file, with a few rules switched off:
-
-```js title="eslint.config.mjs"
-export default defineConfig(
-    {
-        rules: {
-            "@typescript-eslint/no-explicit-any": "off",
-            "@typescript-eslint/no-unused-expressions": "off",
-            "no-useless-escape": "off",
-            "@typescript-eslint/no-unused-vars": "off",
-            "no-async-promise-executor": "off",
-        },
-        files: ["**/*.ts"],
-        extends: [
-            eslint.configs.recommended,
-            ...tseslint.configs.recommended,
-        ],
-    }
-);
-```
-
-So `any` is allowed, and unused variables are not reported by the linter. They are still an error, because the compiler catches them (next section).
+There is no linter. `any` is allowed, and what a linter would usually catch that matters here, such as an unused variable, is an error of the type check (next section).
 
 ## Type checking
 
@@ -146,6 +121,7 @@ describe("isStunned", () => {
 |--------|-----------|
 | `mockQuery(sql, params)` | A `query` that always resolves to an empty array |
 | `databaseModule({ default })` | Wraps the fake you hand to `mock.module("../controllers/sqldatabase", ...)` and adds the layer's other exports. Its `transaction` hands each statement to your `default` in order and undoes nothing, so give it a `transaction` of your own when a test is about a write that fails part way. |
+| `standInFor(path, standIn)` | Puts a stand-in in place of one of the engine's own modules while the test file runs, and the real module back when the file is done. See "Stand-ins outlive the file" below. |
 | `mockAssetCache` | `get`, `set`, `add` and `getNested`. `get` returns a small fixed data set for `items`, `spells`, `mounts`, `quests`, `weather`, `worlds`, `mapProperties`, `particles`, `npcs` and `audio`. |
 | `mockPlayerCache` | `get`, `set`, `has` and `delete`. `get` returns a level 1 player named `test_player`. |
 | `mockLog` | A logger that writes to the console |
@@ -232,6 +208,35 @@ Four habits from the existing tests are worth copying:
 | Call `clearCaches()` from `src/services/datacache` in `beforeEach` | Systems keep copies of rows (see [Caching](#/engine/caching)). Without it, one test reads the rows of the previous one. |
 | Make the fake database throw on a statement it does not expect | A read that should have come from a cache then fails the test |
 | Restore what you change (`mock.restore()`, `spy.mockRestore()`, environment variables) | Test files share one process |
+
+### Stand-ins outlive the file
+
+`mock.module` is not undone when a test file ends, and `mock.restore()` does not undo it either. A stand-in left in place is what every file that runs afterwards is given instead of the module.
+
+Which files run afterwards is not the same on every machine. On Windows the test files run in name order. On a Linux runner (the release pipeline) they run in the order the filesystem lists them, which changes when a file is added. So a leftover stand-in can pass on your machine and fail in the pipeline.
+
+Two rules keep a file independent of the others:
+
+| What the file replaces | How |
+|------------------------|-----|
+| The database layer or the asset cache | `mock.module` at the top of the file, as above. Every file that loads a system sets its own, so nothing is inherited. |
+| Any other engine module (a system, `playermanager`, `spriteSheetManager`) | `await standInFor(path, () => ({ ... }))`. It loads the real module, puts your stand-in in its place, and puts the real one back in an `afterAll`. |
+
+```ts title="Replacing a system for one file"
+import { databaseModule, standInFor } from "./setup";
+
+mock.module("../controllers/sqldatabase", () => databaseModule({ default: async () => [] }));
+
+await standInFor("../systems/inventory", () => ({
+  default: { get: async () => [], add: async () => ({ affectedRows: 1 }) },
+}));
+
+const rewards = await import("../systems/quests/rewards");
+```
+
+### Generated config files
+
+`src/config/settings.json` and `src/config/aoi.json` are generated when the server starts and are not checked in, so the pipeline has none. Several engine modules import them. `src/tests/preload.ts` (loaded through `bunfig.toml` before any test file) puts the same small stand-ins in place for every file, on every machine. A test never reads your real config, and you do not need to mock these two files yourself.
 
 ## An example test
 

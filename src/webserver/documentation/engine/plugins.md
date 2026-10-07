@@ -352,5 +352,5 @@ To add a spell from code instead, use [`engine.registerSpell`](#/engine/engine-a
 2. Export a default object with `register` from the entry file.
 3. Import engine modules through `@engine/`, and never import `@engine/socket/server`.
 4. Log through `@engine/modules/logger`.
-5. Run the engine's checks: `bun eslint`, `bun run --bun tsc --noEmit` and `bun test`. Plugin files sit under `src/`, so the type check covers them too. See [Testing](#/engine/testing).
+5. Run the engine's checks: `bun check` and `bun test`. Plugin files sit under `src/`, so the type check covers them too. See [Testing](#/engine/testing).
 6. Start the server with `bun development` and look for `Loaded plugin` and `Registered plugin` in the log.

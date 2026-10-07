@@ -2,6 +2,7 @@
 // menu, rendered into the two-page #quest-frame-container book panel.
 import { sendRequest } from "./socket.js";
 import Cache from "./cache.js";
+import { coinHtml } from "./coins.js";
 import {
   getQuest,
   getEntry,
@@ -89,18 +90,7 @@ function rewardsScrollHtml(quest: QuestDef): string {
 
 // XP and copper live in the pinned footer under the icons, never floating at
 // the top of the page. Money shows real coin icons, not letter shorthands.
-export function coinHtml(totalCopper: number): string {
-  const total = Math.max(0, Math.floor(Number(totalCopper) || 0));
-  if (total <= 0) return "";
-  const gold = Math.floor(total / 10000);
-  const silver = Math.floor((total % 10000) / 100);
-  const copper = total % 100;
-  const parts: string[] = [];
-  if (gold > 0) parts.push(`<span class="quest-coin ui"><span class="currency-icon currency-icon-gold"></span>${gold}</span>`);
-  if (silver > 0) parts.push(`<span class="quest-coin ui"><span class="currency-icon currency-icon-silver"></span>${silver}</span>`);
-  if (copper > 0 || parts.length === 0) parts.push(`<span class="quest-coin ui"><span class="currency-icon currency-icon-copper"></span>${copper}</span>`);
-  return parts.join("");
-}
+export { coinHtml };
 
 function payoutHtml(quest: QuestDef): string {
   const coins = coinHtml(quest.copper_reward);
@@ -270,7 +260,7 @@ export function openTurnIn(npcId: number | null, quest: QuestDef): void {
   showFrame();
 }
 
-export function openGossip(npcId: number, name: string | null, gossipText: string | null, quests: any[]): void {
+export function openGossip(npcId: number, name: string | null, gossipText: string | null, quests: any[], vendor = false, innkeeper = false): void {
   frameState.mode = "gossip";
   frameState.npcId = npcId;
   frameState.questId = null;
@@ -297,11 +287,26 @@ export function openGossip(npcId: number, name: string | null, gossipText: strin
     frameState.gossip.length > 0
       ? frameState.gossip.map((offer: any) => `<div class="quest-gossip-row ui" data-quest-id="${offer.questId}">${markerIcon(offer.marker)}${escapeHtml(offer.name)}</div>`).join("")
       : ""
+  ) + (
+    // A vendor's goods are one more thing to talk about, under its quests.
+    vendor ? `<div class="quest-gossip-row quest-gossip-vendor ui"><span class="currency-icon currency-icon-gold"></span> Browse goods</div>` : ""
+  ) + (
+    // An innkeeper's inn can be made the player's home, where their home item takes them.
+    innkeeper ? `<div class="quest-gossip-row quest-gossip-inn ui">Make this inn your home</div>` : ""
   ) + `</div>` + footHtml("", [{ id: "quest-gossip-close-btn", label: "Goodbye" }]);
   right.innerHTML = "";
   right.style.display = "none";
   left.querySelectorAll(".quest-gossip-row").forEach((row) => {
     row.addEventListener("click", () => {
+      if (row.classList.contains("quest-gossip-vendor")) {
+        hideFrame();
+        sendRequest({ type: "VENDOR_OPEN", data: { npcId } });
+        return;
+      }
+      if (row.classList.contains("quest-gossip-inn")) {
+        confirmHome(npcId);
+        return;
+      }
       const questId = Number((row as HTMLElement).dataset.questId);
       if (!Number.isFinite(questId)) return;
       sendRequest({ type: "QUEST_SELECT", data: { npcId, questId } });
@@ -309,6 +314,21 @@ export function openGossip(npcId: number, name: string | null, gossipText: strin
   });
   document.getElementById("quest-gossip-close-btn")?.addEventListener("click", () => hideFrame());
   showFrame();
+}
+
+/** Asks before an inn becomes the player's home: from then on their home item brings them back to it. */
+function confirmHome(npcId: number): void {
+  const left = leftEl();
+  if (!left) return;
+  // The innkeeper's name is who they are, not where the inn is: the question names no place.
+  const question = "Make this inn your home? Your home item will bring you back here.";
+  left.innerHTML = `<div class="quest-scroll ui"><div class="quest-text ui">${escapeHtml(question)}</div></div>`
+    + footHtml("", [{ id: "quest-home-yes-btn", label: "Make it my home" }, { id: "quest-home-no-btn", label: "Never mind" }]);
+  document.getElementById("quest-home-yes-btn")?.addEventListener("click", () => {
+    hideFrame();
+    sendRequest({ type: "SET_HOME", data: { npcId } });
+  });
+  document.getElementById("quest-home-no-btn")?.addEventListener("click", () => hideFrame());
 }
 
 export function closeQuestFrame(): void {
@@ -398,8 +418,9 @@ export function onGossip(data: any): void {
   // No quests: bubble only. The chain was already advanced when the player
   // interacted (tryInteractNpc / tap), so advancing again here would skip a
   // line — the server echo must not move the conversation.
-  if (quests.length === 0) return;
-  openGossip(Number(data?.npcId), data?.name ?? null, data?.gossipText ?? null, quests);
+  // An innkeeper always has something to offer, so its frame opens with no quests too.
+  if (quests.length === 0 && data?.innkeeper !== true) return;
+  openGossip(Number(data?.npcId), data?.name ?? null, data?.gossipText ?? null, quests, data?.vendor === true, data?.innkeeper === true);
 }
 
 export function onCompleted(data: any): void {

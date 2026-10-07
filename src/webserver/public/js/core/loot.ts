@@ -319,7 +319,10 @@ export function renderLootInteractionHint(
   ctx.lineWidth = 2;
 
   const dpr = window.devicePixelRatio || 1;
-  const x = (nearestLoot.x - cameraX + canvasWidth / (dpr * 2)) * dpr;
+  // A map narrower than the screen is drawn centred sideways (renderer.ts): the hint moves with it.
+  const mapWidth = Number(window.mapData?.width) * Number(window.mapData?.tilewidth);
+  const mapCenterOffsetX = mapWidth < window.innerWidth ? (window.innerWidth - mapWidth) / 2 : 0;
+  const x = (nearestLoot.x - cameraX + mapCenterOffsetX + canvasWidth / (dpr * 2)) * dpr;
   const y = (nearestLoot.y - 70 - cameraY + canvasHeight / (dpr * 2)) * dpr;
   const radius = 14 * dpr;
 
@@ -401,7 +404,10 @@ export function renderChestInteractionHint(
   if (!nc) return;
   ctx.shadowBlur = 0; ctx.shadowColor = "transparent"; ctx.globalAlpha = 1; ctx.lineWidth = 2;
   const dpr = window.devicePixelRatio || 1;
-  const rx = (nc.x - cameraX + canvasWidth / (dpr * 2)) * dpr;
+  // A map narrower than the screen is drawn centred sideways (renderer.ts): the hint moves with it.
+  const mapWidth = Number(window.mapData?.width) * Number(window.mapData?.tilewidth);
+  const mapCenterOffsetX = mapWidth < window.innerWidth ? (window.innerWidth - mapWidth) / 2 : 0;
+  const rx = (nc.x - cameraX + mapCenterOffsetX + canvasWidth / (dpr * 2)) * dpr;
   const ry = (nc.y - 72 - cameraY + canvasHeight / (dpr * 2)) * dpr;
   const rr = 15 * dpr;
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);

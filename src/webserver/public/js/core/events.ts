@@ -1,4 +1,5 @@
-import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName } from "./socket.js";
+import { sendRequest, getIsLoaded, getMovementAllowed, cachedPlayerId, itemsByName, showNotification } from "./socket.js";
+import { teleportsHome } from "./consumables.js";
 import { isSelfDead, isSelfActionLocked } from "./death.js";
 import Cache from "./cache.js";
 const cache = Cache.getInstance();
@@ -20,6 +21,8 @@ import { getUserHasInteracted, setUserHasInteracted, setControllerConnected, get
     closeAllPanels} from "./input.js";
 import { friendsListSearch } from "./friends.js";
 import { createContextMenu, createPartyContextMenu, createGuildContextMenu, createFriendContextMenu, createIgnoredContextMenu } from "./actions.js";
+import { isTrading, offerItem } from "./trade.js";
+import { isVendorOpen, sellItem } from "./vendor.js";
 import { playerAt } from "./playerpick.js";
 import { closeRadialMenu } from "./mobileui.js";
 import "./creatureinput.js";
@@ -163,7 +166,15 @@ window.addEventListener("gamepaddisconnected", () => {
 });
 
 window.addEventListener("gamepadjoystick", (e: CustomEventInit) => {
-  if (!getIsLoaded() || !getMovementAllowed()) return;
+  if (!getIsLoaded() || !getMovementAllowed()) {
+    // A map is loading (a warp): the server has stopped the player, and nothing is sent to it until the map is in.
+    // What was last sent no longer holds, and is forgotten: a direction is only sent when it differs from the last,
+    // so a stick held the same way through the warp, or let go during it and pushed the same way again, sent nothing
+    // and the player stood still. USER REPORT 2026-10-07: "When warping on mobile, the whole screen becomes
+    // un-interactable".
+    setLastSentDirection("");
+    return;
+  }
   if (isSelfDead()) return;
   if (pauseMenu.style.display == "block") return;
 
@@ -536,6 +547,40 @@ window.addEventListener("orientationchange", () => {
   }, 100);
 });
 
+// The game's page is never meant to be scrolled: everything on it is placed on the screen itself. A phone's browser
+// can still leave it moved: coming back to this tab from another (a tool window) with the phone turned the other
+// way, the page is laid out for the old way up and what is seen of it is shifted, so the joystick, the buttons and
+// the hotbar all stood too high, until the phone was turned upright and back (USER REPORT 2026-10-07: "the whole
+// touch interface gets moved upwards after closing the control panel or player attributes while in portrait mode").
+// So whenever the page is shown again, is given the keyboard's attention again or is turned, it is put back where it
+// belongs and measured again: at once, and a few times after, because the browser is still settling its own bars
+// and the turn's animation when it tells of it.
+function settleViewport() {
+  const active = document.activeElement;
+  // (a field with the keyboard up is where the browser moved the page to on purpose: left alone)
+  const typing = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+  const moved = window.scrollX !== 0 || window.scrollY !== 0 || (window.visualViewport?.offsetTop ?? 0) !== 0 || (window.visualViewport?.offsetLeft ?? 0) !== 0;
+  if (moved && !typing) window.scrollTo(0, 0);
+  if (!(window as any).tileEditor?.isActive) {
+    document.documentElement.style.setProperty('--viewport-height', `${getActualViewportHeight()}px`);
+  }
+  updateOrientationClass();
+  resizeGameCanvas();
+}
+
+function settleViewportSoon() {
+  for (const delay of [0, 120, 400, 900]) setTimeout(settleViewport, delay);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") settleViewportSoon();
+});
+window.addEventListener("pageshow", settleViewportSoon);
+window.addEventListener("focus", settleViewportSoon);
+window.addEventListener("orientationchange", settleViewportSoon);
+// (and when the browser moves what is seen of the page by itself)
+window.visualViewport?.addEventListener("scroll", settleViewport);
+
 updateOrientationClass();
 
 window.addEventListener("blur", () => {
@@ -617,6 +662,30 @@ effectsSlider.addEventListener("input", () => {
   });
 });
 
+// On a touch screen there is no right-click, which is how an item in the bags is offered in a trade or sold to a
+// vendor (the contextmenu handler below). Two taps on the item do the same there. Heard before the bag slot's own
+// two-tap handler (which equips or uses the item) and kept from it: while a trade or a vendor is open, the item goes
+// to them.
+let lastBagTap: { slot: Element; at: number } | null = null;
+document.addEventListener("touchend", (event) => {
+  const bagSlot = (event.target as HTMLElement | null)?.closest?.("#inventory .slot") as HTMLElement | null;
+  const name = bagSlot?.dataset.itemName;
+  if (!bagSlot || !name || (!isTrading() && !isVendorOpen())) {
+    lastBagTap = null;
+    return;
+  }
+  // (a finger that dragged the item, to move it in the bags, is not a tap)
+  if ((window as any).__touchDragActive) return;
+  const now = Date.now();
+  const second = lastBagTap !== null && lastBagTap.slot === bagSlot && now - lastBagTap.at < 300;
+  lastBagTap = second ? null : { slot: bagSlot, at: now };
+  if (!second) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (isTrading()) offerItem(name);
+  else sellItem(name);
+}, { capture: true });
+
 document.addEventListener("contextmenu", (event) => {
   if (!getIsLoaded()) return;
 
@@ -672,6 +741,20 @@ document.addEventListener("contextmenu", (event) => {
       if (nameEl?.textContent) {
         createFriendContextMenu(event, nameEl.textContent);
       }
+      event.preventDefault();
+      return;
+    }
+
+    // While trading, a right-click on an item in the bags puts it on this player's side of the trade.
+    const bagSlot = (event.target as HTMLElement).closest("#inventory .slot") as HTMLElement;
+    if (bagSlot?.dataset.itemName && isTrading()) {
+      offerItem(bagSlot.dataset.itemName);
+      event.preventDefault();
+      return;
+    }
+    // At a vendor, the same right-click sells the item: all of it that is spare.
+    if (bagSlot?.dataset.itemName && isVendorOpen()) {
+      sellItem(bagSlot.dataset.itemName);
       event.preventDefault();
       return;
     }
@@ -1096,6 +1179,13 @@ document.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
   // Don't close if clicking radial menu items - they toggle panels themselves
   if (target.closest(".radial-item") || target.closest(".radial-menu-btn") || target.closest("#radial-menu")) return;
+  // A trade or a sale is made from the bags: tapping the trade or vendor window leaves them open.
+  if (target.closest("#trade-window") || target.closest("#vendor-window")) return;
+  // What was tapped has since been taken off the page: a panel drew itself anew in answer to the tap (the innkeeper's
+  // "Make this inn your home" row is replaced by the question it asks). It is in no panel any more, and read as a tap
+  // outside them all, which closed the panel that had just asked. USER REPORT 2026-10-07: "on mobile when I click
+  // 'make this inn your home' the UI just disappears".
+  if (!target.isConnected) return;
 
   const openPanels = document.querySelectorAll("#inventory.open, #spell-book-container.open, #collectables-container.open, #quest-frame-container.open, #quest-log-container.open, #friends-list-container.open, #guild-container.open");
   if (openPanels.length === 0) return;
@@ -1129,6 +1219,11 @@ canvas.addEventListener("drop", (e: DragEvent) => {
   const cache = Cache.getInstance();
   const lowerName = itemName.toLowerCase();
   const invItem = (cache.inventory || []).find((i: any) => i.name.toLowerCase() === lowerName);
+  // The home item stays with its player: the server refuses too.
+  if (teleportsHome(invItem)) {
+    showNotification(`${invItem.name} cannot be destroyed.`, true, false);
+    return;
+  }
   const quality = invItem?.quality || "common";
   const qty = invItem?.quantity || 1;
   const requiresTyping = quality.toLowerCase() === "legendary" || quality.toLowerCase() === "epic";

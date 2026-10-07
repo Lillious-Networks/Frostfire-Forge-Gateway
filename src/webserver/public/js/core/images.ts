@@ -22,9 +22,14 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
 
   // For Asset Server icon requests that return direct PNG files
   if (src && src.includes("/icon?")) {
+    // An icon is put on the page, and the same one can be wanted in two places at once (a bag in its bag slot and
+    // the spare one of it in the bags): an element can only be in one place, so each caller is given one of its own.
+    // The image kept is only copied from, and its picture is already loaded for every copy.
+    const ownCopy = (kept: HTMLImageElement) => kept.cloneNode(false) as HTMLImageElement;
+
     // Check cache first
     if (imageCache.has(src)) {
-      return imageCache.get(src)!;
+      return ownCopy(imageCache.get(src)!);
     }
 
     return new Promise((resolve) => {
@@ -35,7 +40,7 @@ export async function createCachedImage(src: string): Promise<HTMLImageElement> 
         newImg.removeEventListener("load", handleLoad);
         newImg.removeEventListener("error", handleError);
         imageCache.set(src, newImg);
-        resolve(newImg);
+        resolve(ownCopy(newImg));
       };
 
       const handleError = () => {

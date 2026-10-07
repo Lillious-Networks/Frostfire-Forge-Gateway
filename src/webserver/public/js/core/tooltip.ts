@@ -1,4 +1,6 @@
 import Cache from "./cache.js";
+import { coinHtml, sellPriceOf } from "./coins.js";
+import { useText } from "./consumables.js";
 
 // Buff/debuff durations: plain seconds under a minute, whole minutes above
 // (e.g. 45, 1m, 15m). Shared by the buff bar, the in-world icons, and
@@ -14,6 +16,8 @@ const tooltipName = document.getElementById("tooltip-name") as HTMLDivElement;
 const tooltipType = document.getElementById("tooltip-type") as HTMLDivElement;
 const tooltipStats = document.getElementById("tooltip-stats") as HTMLDivElement;
 const tooltipDescription = document.getElementById("tooltip-description") as HTMLDivElement;
+const tooltipSell = document.getElementById("tooltip-sell") as HTMLDivElement | null;
+const tooltipUse = document.getElementById("tooltip-use") as HTMLDivElement | null;
 
 let currentTooltipElement: HTMLElement | null = null;
 let currentItemData: any = null;
@@ -131,10 +135,38 @@ function showItemTooltip(element: HTMLElement, itemData: any, mouseX: number, mo
     tooltipStats.style.display = "block";
   }
 
+  // What using it does, and where it cannot be used. Nothing is said of an item with no use.
+  const use = useText(itemData);
+  if (tooltipUse) {
+    tooltipUse.style.display = use ? "block" : "none";
+    tooltipUse.replaceChildren();
+    if (use) {
+      const line = document.createElement("div");
+      line.innerText = use;
+      tooltipUse.appendChild(line);
+      const noCombat = itemData.no_combat && itemData.no_combat !== "0";
+      if (noCombat) {
+        const limit = document.createElement("div");
+        limit.className = "tooltip-use-limit ui";
+        limit.innerText = "Cannot be used in combat.";
+        tooltipUse.appendChild(limit);
+      }
+    }
+  }
+
   if (itemData.description) {
+    // Shown again: an item before this one that had none hid it.
+    tooltipDescription.style.display = "block";
     tooltipDescription.innerText = itemData.description;
   } else {
     tooltipDescription.style.display = "none";
+  }
+
+  // What a vendor pays for one. Nothing is said of an item vendors do not buy.
+  const sells = sellPriceOf(itemData);
+  if (tooltipSell) {
+    tooltipSell.style.display = sells > 0 ? "flex" : "none";
+    tooltipSell.innerHTML = sells > 0 ? `<span>Sells for</span>${coinHtml(sells)}` : "";
   }
 
   tooltip.style.display = "block";
@@ -224,6 +256,17 @@ function installHoldGuards(): void {
     holdOpenEl = null;
     hideItemTooltip();
   }, { passive: true, capture: true });
+  // A finger lifted ends its hold, whoever else has the touch. The slot's own handler (below) ends it too, but a
+  // handler heard before it can keep the touch from reaching the slot: the second tap that offers an item in a trade
+  // or sells it to a vendor does (events.ts). The hold then ran on with no finger down, and opened the tooltip over
+  // the trade. USER REPORT 2026-10-07: "double tapping to add an item to trade is also opening the tooltip".
+  const endHold = (e: TouchEvent) => {
+    const slot = (e.target as HTMLElement | null)?.closest?.("[data-hold-tip]") as HTMLElement | null;
+    const st = (slot as any)?._holdTip as HoldState | undefined;
+    if (st?.timer) { clearTimeout(st.timer); st.timer = null; }
+  };
+  document.addEventListener("touchend", endHold, { capture: true });
+  document.addEventListener("touchcancel", endHold, { capture: true });
   // A quick, still tap on the slot with an open hold-tooltip only dismisses:
   // stop it here (capture runs before the slot's own bubble handlers) so it
   // cannot complete a double-tap equip/unequip/select.
@@ -432,6 +475,9 @@ function showSpellTooltip(element: HTMLElement, spellData: any, mouseX: number, 
   tooltipType.innerText = "";
   tooltipStats.innerHTML = "";
   tooltipDescription.innerText = "";
+  // A spell is not something a vendor buys, nor an item to use.
+  if (tooltipSell) tooltipSell.style.display = "none";
+  if (tooltipUse) tooltipUse.style.display = "none";
 
   const rawName = spellData.name || "Unknown Spell";
   tooltipName.innerText = rawName.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());

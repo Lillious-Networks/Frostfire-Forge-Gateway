@@ -38,7 +38,7 @@ The editor uses the shared workbench described in [Tools Overview](#/tools/overv
 | --- | --- |
 | Side pane | Search field, the NPCs of the current map, and New |
 | Top bar | The open NPC, its state, then Delete and Save |
-| Tabs | General, Appearance, Dialogue, Quests, Effects |
+| Tabs | General, Appearance, Dialogue, Quests, Vendor & Inn, Effects |
 | Page | The form, with the "At a glance" card beside it |
 
 There is no Duplicate button: an NPC is placed, not copied.
@@ -119,6 +119,55 @@ The script field has the same suggestion list, offering the NPC's own members su
 
 The two pickers are the other side of "Given by" and "Turned in to" in the [Quest Editor](#/tools/quest-editor). Either tool can make the link. A quest that no longer exists is left out when the NPC is saved.
 
+## Vendor & Inn tab
+
+### Inn
+
+| Field | Notes |
+| --- | --- |
+| Innkeeper | Players who talk to this NPC can make its inn their home |
+
+Talking to an innkeeper lists a "Make this inn your home" line, under its quests and its goods if it has any. A player who confirms it arrives there whenever they use their home item: at the spot they were standing on when they set it, so pick a place for the innkeeper that players can stand beside.
+
+The home is kept as the NPC, not as a place on the map. Move the innkeeper and the homes set there move with it. Delete it, hide it or turn the switch off, and those players go to the world's starting point until they set a new home.
+
+Nothing limits how many innkeepers a map has. The home item itself is set in the [Item Editor](#/tools/item-editor).
+
+:::note Inns and vendors on the minimap
+Players see a pin on their minimap for each inn and each vendor. Place the NPC inside the house's own map: the pin is then drawn in the world outside, on the door that leads into that map. Saving the NPC updates the pins for everyone online. An innkeeper or vendor placed in a world itself, out in the open, is marked where it stands.
+
+| Pin | Picture |
+| --- | --- |
+| Inn | `inn.png` in the asset server's icons folder |
+| Vendor | `ui-gold-currency.png`, the game's own gold coin |
+| Cave (a warp from one world into another) | `cave.png` in the asset server's icons folder |
+
+An NPC that is both an innkeeper and a vendor gets both pins, side by side. On the world map, every house is drawn with `house.png` and every cave with `cave.png`, both from the same icons folder.
+:::
+
+### Vendor
+
+What the NPC sells. An NPC with at least one item in stock is a vendor: players who talk to it get the vendor window, and it buys what they sell.
+
+Select **Add item** to add a card, then fill it in:
+
+| Field | Notes |
+| --- | --- |
+| Item | Picked from the items made in the [Item Editor](#/tools/item-editor), with search |
+| Price | What one costs to buy here, as gold, silver and copper. A newly picked item starts at four times its sell price. |
+
+The line under each card's title says what the item is sold for and what vendors pay for it. The arrows move a card up or down, which is the order players see, and the bin removes it. A vendor stocks up to 40 different items, and never runs out.
+
+| Rule | What happens |
+| --- | --- |
+| A price below the item's sell price | Players are charged the sell price instead, and the card says so. Sold for less, the item could be bought and sold back for a profit. |
+| A price of nothing | The item is free, unless it has a sell price, in which case the rule above applies |
+| An item that no longer exists | Left out when the NPC is saved |
+
+What a vendor pays for an item is not set here. It is the item's own sell price, the same at every vendor.
+
+When an NPC has both quests and stock, players see its quests first, with a "Browse goods" line under them.
+
 ## Effects tab
 
 | Field | Notes |
@@ -142,6 +191,10 @@ Ctrl+S in the tool window saves the open NPC.
 
 :::note Map particle NPCs are not listed
 NPCs that exist only to carry particles placed in the map file are edited with the map, not here. The editor leaves them out of its list.
+:::
+
+:::note NPCs placed by a map are not listed either
+A map file can place a whole NPC itself: a point of type `npc` on one of its object layers. The point is where the NPC stands, its name is the NPC's name, and its properties are `direction`, `dialog`, `gossip`, `sprite_type`, the `sprite_*` sheets and `innkeeper`. These NPCs are drawn and talked to like any other, and an innkeeper among them can be made a home, but they are changed in the map, not here. Each needs a name: its id is made from the map's name and its own, so renaming it or its map makes it a new NPC, and homes set at the old one fall back to the world's starting point.
 :::
 
 ## Tips

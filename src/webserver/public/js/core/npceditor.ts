@@ -25,6 +25,8 @@ class NpcEditor {
   private availableParticles: string[] = [];
   private availableQuests: Array<{ id: number; name: string }> = [];
   private availableSprites: { spriteSheets: Record<string, any>; icons: any[] } = { spriteSheets: {}, icons: [] };
+  /** The items there are (name, icon, quality, sell price), for picking what a vendor stocks. */
+  private availableItems: any[] = [];
   private selectedParticles: string[] = [];
   private isDirty: boolean = false;
   private hasPendingNew: boolean = false;
@@ -202,6 +204,7 @@ class NpcEditor {
       quests: this.availableQuests,
       spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
       icons: this.withAssetUrls(this.availableSprites.icons),
+      items: this.availableItems,
       selectedParticles: this.selectedParticles,
       selectedNpc: this.selectedNpc,
       selectedNpcId: this.selectedNpc ? this.selectedNpc.id : null,
@@ -569,6 +572,8 @@ class NpcEditor {
       particles: [],
       questsGiven: [],
       questsEnded: [],
+      vendor_items: [],
+      innkeeper: false,
       sprite_type: "none",
       sprite_body: null, sprite_head: null, sprite_helmet: null,
       sprite_shoulderguards: null, sprite_neck: null, sprite_hands: null,
@@ -622,6 +627,9 @@ class NpcEditor {
       if (Array.isArray(assets.icons)) {
         this.availableSprites.icons = assets.icons;
       }
+      if (Array.isArray(assets.items)) {
+        this.availableItems = assets.items;
+      }
     }
     // Merge with existing to preserve unsaved edits
     for (const newNpc of npcs) {
@@ -650,6 +658,7 @@ class NpcEditor {
       quests: this.availableQuests,
       spriteSheets: this.withAssetUrls(this.availableSprites.spriteSheets),
       icons: this.withAssetUrls(this.availableSprites.icons),
+      items: this.availableItems,
     });
 
     if (this.pendingSelectId !== null) {

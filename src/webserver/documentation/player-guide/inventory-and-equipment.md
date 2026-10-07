@@ -31,8 +31,8 @@ The inventory window has four bag slots. Each bag you equip adds more item slots
 
 | What you want | How to do it |
 |---------------|--------------|
-| Equip a bag | Double-click the bag, or drag it onto a bag slot |
-| Take a bag off | Double-click it in its bag slot |
+| Equip a bag | Double-click the bag, or drag it onto a bag slot. On a phone or tablet, double-tap it. |
+| Take a bag off | Double-click it in its bag slot. On a phone or tablet, double-tap it. |
 
 You cannot take a bag off while items sit in the slots it adds. Move those items first.
 
@@ -46,7 +46,13 @@ A destroyed item is gone. It cannot be brought back.
 
 ## Using items
 
-The items you can use straight from your inventory are equipment and bags. Double-click one to equip it. On a touch screen, double-tap it.
+Double-click an item to use it. On a touch screen, double-tap it.
+
+| Item | What a double-click does |
+|------|--------------------------|
+| Equipment and bags | Equips it |
+| Consumables, such as potions and food | Uses one. See [Consumables](#/player-guide/consumables). |
+| Your home item | Starts the cast that takes you home. See [Inns and Your Home](#/player-guide/inns). |
 
 ## Equipment
 
@@ -80,7 +86,7 @@ There are three coins: **gold**, **silver** and **copper**.
 | 1 silver | 100 copper |
 | 1 gold | 100 silver |
 
-Coins convert upwards automatically, so you never carry more than 99 copper or 99 silver. You earn coins from defeated creatures and from quest rewards.
+Coins convert upwards automatically, so you never carry more than 99 copper or 99 silver. You earn coins from defeated creatures, from quest rewards and by selling items to [vendors](#/player-guide/vendors).
 
 ## Loot from creatures
 

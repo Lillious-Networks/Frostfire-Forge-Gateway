@@ -46,6 +46,22 @@ The SQLite file is created under the operating system's temporary directory (`os
 The query worker also contains a `postgres` branch, but there is no PostgreSQL setup script and parts of the engine write MySQL specific SQL. Treat it as unsupported.
 :::
 
+### Statements are written for MySQL
+
+The systems write MySQL's SQL. SQLite does not read two of its forms, so `sqlWrapper` (`src/controllers/sqlescape.ts`) rewrites them when the engine is SQLite. Single queries and transactions both pass through it.
+
+| Written in a system | Sent to SQLite |
+|---------------------|----------------|
+| `INSERT IGNORE INTO ...` | `INSERT OR IGNORE INTO ...` |
+| `... ON DUPLICATE KEY UPDATE a = ?` | `... ON CONFLICT DO UPDATE SET a = ?` |
+| `VALUES(a)` inside that update | `excluded.a` |
+
+Only the statement's own words are rewritten. A value that happens to contain them, or a quoted part of the statement, is left as it is. Nothing else is translated: a statement that uses another MySQL-only function or type will fail on SQLite, so write new statements with SQL both engines read.
+
+:::note Rows changed by an upsert
+MySQL counts an upsert as 1 row when it inserts, 2 when it updates, and 0 when the row already held the same values. SQLite counts 1 for both. Do not put `mustChange` (see Transactions below) on an upsert that may write the same values back.
+:::
+
 Several systems compare names the way the database would, so that a cached list and a `WHERE name = ?` agree:
 
 ```ts title="src/systems/weather.ts"
@@ -334,7 +350,7 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 
 | Table | Holds | Key columns |
 |-------|-------|-------------|
-| `items` | Item definitions | `name`, `type`, `quality`, `equipment_slot`, `level_requirement`, the `stat_*` columns |
+| `items` | Item definitions. `sell_price` is what a vendor pays for one, in copper (1 unless set, 0 for an item vendors do not buy). A consumable gives back `restore_health` and `restore_stamina` when used, and `no_combat` (0 or 1) keeps it from being used in a fight. `teleports_home` (0 or 1) marks the one home item. | `name`, `type`, `quality`, `equipment_slot`, `level_requirement`, `sell_price`, `restore_health`, `restore_stamina`, `no_combat`, `teleports_home`, the `stat_*` columns |
 | `inventory` | What each player carries | `username`, `item`, `quantity`, `equipped`, `slot`, `bag_slot` |
 | `equipment` | What each player wears, one column per slot | `username`, `helmet`, `chestplate`, `weapon` and the other slots |
 | `bags` | Equipped bags | `username`, `slot_1` to `slot_4` |
@@ -352,7 +368,7 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | `quests` | Quest definitions. See [Quests](#/engine/quests). | `id`, `name`, `required_level`, `xp_reward`, `repeatable` |
 | `quest_prerequisites`, `quest_objectives`, `quest_rewards`, `npc_quests` | The parts of a quest | `quest_id` |
 | `quest_log`, `quest_objective_progress` | Each player's quest state and progress | `username`, `quest_id` |
-| `npcs` | NPCs, their position, dialog and sprites | `id`, `name`, `map`, `position`, `dialog`, `quest_giver` |
+| `npcs` | NPCs, their position, dialog and sprites. `vendor_items` is what a vendor stocks, as JSON: a list of `{ item, price }` with the price in copper. `innkeeper` (0 or 1) lets players make the NPC's inn their home. | `id`, `name`, `map`, `position`, `dialog`, `quest_giver`, `vendor_items`, `innkeeper` |
 | `particles` | Particle definitions | `name` |
 | `weather` | Weathers. See [Weather](#/engine/weather). | `name`, `temperature`, `humidity`, `wind_speed`, `wind_direction`, `precipitation`, `ambience` |
 | `worlds` | Each world and the weather it is set to | `name`, `weather` |
@@ -365,6 +381,8 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | `ignores` | Who each player ignores, one row per pair | `username`, `ignored`, `created_at` |
 | `mutes` | Chat mutes. No `expires_at` is a mute until it is lifted. | `username`, `muted_by`, `reason`, `created_at`, `expires_at` |
 | `reports` | Reports players sent about each other, with the chat lines attached | `id`, `reporter`, `target`, `category`, `details`, `chat_log`, `status`, `resolved_by`, `resolution` |
+| `player_home` | Each player's home. `npc_id` is the innkeeper it was set at (empty: none, the world's spawn is used), `offset_x` and `offset_y` are where the player stood from that NPC, and `used_at` is when they last went home, in milliseconds (0: never). The hour between uses is counted from it. | `username`, `npc_id`, `offset_x`, `offset_y`, `used_at` |
+| `trade_log` | Every trade two players completed. `a_gave` and `b_gave` are JSON: the items and coins each handed over. | `id`, `player_a`, `player_b`, `a_gave`, `b_gave`, `created_at` |
 | `parties` | Parties: the leader and the member list | `id`, `leader`, `members` |
 | `guilds` | Guilds, their members, bank and rank permissions | `id`, `name`, `leader`, `members`, `bank`, `rank_permissions` |
 
@@ -386,8 +404,12 @@ Created by `src/utility/database_setup.ts`. Column lists are shortened to the on
 | Table | MySQL script | SQLite script |
 |-------|--------------|---------------|
 | `allowed_ips`, `blocked_ips` | Not created | Created (`127.0.0.1` and `::1` are inserted as allowed) |
-| `bags` | Created | Not created |
-| `loot_tables`, `loot_table_items` | Created | Not created |
+
+Apart from that, the SQLite script gives every table the same columns as the MySQL one.
+
+An older SQLite database may lack tables and columns that were added to the script later: `bags`, `loot_tables`, `loot_table_items`, the `slot` and `bag_slot` columns of `inventory`, `bag_slots` on `items`, and the `name` and `sprite_*` columns of `npcs`. Run `bun setup-localdb` again to add them. The script is safe to run again and keeps your rows.
+
+The two-factor columns of `accounts` (`twofa_pending` and the rest) are added by the Gateway's own setup script on both engines, so run that as well.
 
 ## Adding your own table
 

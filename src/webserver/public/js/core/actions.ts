@@ -4,6 +4,7 @@ const cache = Cache.getInstance();
 import { overlay } from './ui.js';
 import playerEditor from './playereditor.js';
 import { openReportDialog } from './report.js';
+import { isTrading } from './trade.js';
 
 const partyContextActions: Record<string, { only_self: boolean, allowed_self: boolean, label: string, handler: (username: string) => void }> = {
   'kick-player': {
@@ -88,6 +89,17 @@ const contextActions: Record<string, { allowed_self: boolean, admin_only?: boole
       });
     }
   },
+  // Asks them to trade: the window opens for both once they accept.
+  'trade-player': {
+    label: 'Trade',
+    allowed_self: false,
+    handler: (id) => {
+      sendRequest({
+        type: "TRADE_REQUEST",
+        data: { id: id },
+      });
+    }
+  },
   'add-friend': {
     label: 'Add Friend',
     allowed_self: false,
@@ -159,30 +171,32 @@ const contextActions: Record<string, { allowed_self: boolean, admin_only?: boole
   },
 };
 
+/**
+ * Puts a menu where it was asked for (px on the screen), moved as far as it takes to be whole on the screen. It
+ * opens to the right of and below the point, and on the other side of it where there is no room. Measured once it
+ * is on the page, because its entries decide its size: each menu used to guess one (200 by 150), and the menu on a
+ * player has grown to nine entries, taller than that on any phone. USER REPORT 2026-10-07: "the right click menu on
+ * mobile is going off the screen in some cases".
+ */
+function placeMenu(menu: HTMLElement, x: number, y: number): void {
+  const width = window.visualViewport?.width || window.innerWidth, height = window.visualViewport?.height || window.innerHeight;
+  const margin = 8;
+  // (more entries than a small screen is tall: the menu scrolls)
+  menu.style.maxHeight = `${Math.max(0, height - margin * 2)}px`;
+  menu.style.overflowY = "auto";
+  const box = menu.getBoundingClientRect();
+  const left = x + box.width + margin > width ? x - box.width : x;
+  const top = y + box.height + margin > height ? y - box.height : y;
+  menu.style.left = `${Math.round(Math.max(margin, Math.min(left, width - box.width - margin)))}px`;
+  menu.style.top = `${Math.round(Math.max(margin, Math.min(top, height - box.height - margin)))}px`;
+}
+
 function createPartyContextMenu(event: MouseEvent, username: string) {
   if (!getIsLoaded()) return;
   document.getElementById("context-menu")?.remove();
 
   const contextMenu = document.createElement("div");
   contextMenu.id = 'context-menu';
-  contextMenu.style.left = `${event.clientX}px`;
-  contextMenu.style.top = `${event.clientY}px`;
-
-  if (event.clientX + 200 > window.innerWidth) {
-    contextMenu.style.left = `${event.clientX - 200}px`;
-  }
-
-  if (event.clientX - 200 < 0) {
-    contextMenu.style.left = `${event.clientX + 50}px`;
-  }
-
-  if (event.clientY + 150 > window.innerHeight) {
-    contextMenu.style.top = `${event.clientY - 150}px`;
-  }
-
-  if (event.clientY - 150 < 0) {
-    contextMenu.style.top = `${event.clientY + 50}px`;
-  }
 
   contextMenu.dataset.username = username.toLowerCase();
   const ul = document.createElement("ul");
@@ -207,6 +221,7 @@ function createPartyContextMenu(event: MouseEvent, username: string) {
 
   contextMenu.appendChild(ul);
   overlay.appendChild(contextMenu);
+  placeMenu(contextMenu, event.clientX, event.clientY);
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 
@@ -216,24 +231,6 @@ function createGuildContextMenu(event: MouseEvent, username: string) {
 
   const contextMenu = document.createElement("div");
   contextMenu.id = 'context-menu';
-  contextMenu.style.left = `${event.clientX}px`;
-  contextMenu.style.top = `${event.clientY}px`;
-
-  if (event.clientX + 200 > window.innerWidth) {
-    contextMenu.style.left = `${event.clientX - 200}px`;
-  }
-
-  if (event.clientX - 200 < 0) {
-    contextMenu.style.left = `${event.clientX + 50}px`;
-  }
-
-  if (event.clientY + 150 > window.innerHeight) {
-    contextMenu.style.top = `${event.clientY - 150}px`;
-  }
-
-  if (event.clientY - 150 < 0) {
-    contextMenu.style.top = `${event.clientY + 50}px`;
-  }
 
   contextMenu.dataset.username = username.toLowerCase();
   const ul = document.createElement("ul");
@@ -266,6 +263,7 @@ function createGuildContextMenu(event: MouseEvent, username: string) {
 
   contextMenu.appendChild(ul);
   overlay.appendChild(contextMenu);
+  placeMenu(contextMenu, event.clientX, event.clientY);
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 
@@ -273,29 +271,8 @@ function createContextMenu(event: MouseEvent, id: string) {
   if (!getIsLoaded()) return;
   document.getElementById("context-menu")?.remove();
 
-  const vw = window.visualViewport?.width || window.innerWidth;
-  const vh = window.visualViewport?.height || window.innerHeight;
-
   const contextMenu = document.createElement("div");
   contextMenu.id = 'context-menu';
-  contextMenu.style.left = `${event.clientX}px`;
-  contextMenu.style.top = `${event.clientY}px`;
-
-  if (event.clientX + 200 > vw) {
-    contextMenu.style.left = `${event.clientX - 200}px`;
-  }
-
-  if (event.clientX - 200 < 0) {
-    contextMenu.style.left = `${event.clientX + 50}px`;
-  }
-
-  if (event.clientY + 150 > vh) {
-    contextMenu.style.top = `${event.clientY - 150}px`;
-  }
-
-  if (event.clientY - 150 < 0) {
-    contextMenu.style.top = `${event.clientY + 50}px`;
-  }
 
   contextMenu.dataset.id = id;
 
@@ -316,6 +293,9 @@ function createContextMenu(event: MouseEvent, id: string) {
     if (action === 'invite-to-party' && isInParty) return;
 
     if (action === 'invite-to-guild' && isInGuild) return;
+
+    // One trade at a time: not offered while the window is open.
+    if (action === 'trade-player' && isTrading()) return;
 
     if (action === 'add-friend' && isFriend) return;
 
@@ -341,6 +321,7 @@ function createContextMenu(event: MouseEvent, id: string) {
 
   contextMenu.appendChild(ul);
   overlay.appendChild(contextMenu);
+  placeMenu(contextMenu, event.clientX, event.clientY);
 
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
@@ -351,24 +332,6 @@ function createFriendContextMenu(event: MouseEvent, username: string) {
 
   const contextMenu = document.createElement("div");
   contextMenu.id = 'context-menu';
-  contextMenu.style.left = `${event.clientX}px`;
-  contextMenu.style.top = `${event.clientY}px`;
-
-  if (event.clientX + 200 > window.innerWidth) {
-    contextMenu.style.left = `${event.clientX - 200}px`;
-  }
-
-  if (event.clientX - 200 < 0) {
-    contextMenu.style.left = `${event.clientX + 50}px`;
-  }
-
-  if (event.clientY + 80 > window.innerHeight) {
-    contextMenu.style.top = `${event.clientY - 80}px`;
-  }
-
-  if (event.clientY - 80 < 0) {
-    contextMenu.style.top = `${event.clientY + 50}px`;
-  }
 
   contextMenu.dataset.username = username.toLowerCase();
   const ul = document.createElement("ul");
@@ -400,6 +363,7 @@ function createFriendContextMenu(event: MouseEvent, username: string) {
 
   contextMenu.appendChild(ul);
   overlay.appendChild(contextMenu);
+  placeMenu(contextMenu, event.clientX, event.clientY);
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 
@@ -410,8 +374,6 @@ function createIgnoredContextMenu(event: MouseEvent, username: string) {
 
   const contextMenu = document.createElement("div");
   contextMenu.id = 'context-menu';
-  contextMenu.style.left = `${event.clientX + 200 > window.innerWidth ? event.clientX - 200 : event.clientX}px`;
-  contextMenu.style.top = `${event.clientY + 80 > window.innerHeight ? event.clientY - 80 : event.clientY}px`;
   contextMenu.dataset.username = username.toLowerCase();
 
   const ul = document.createElement("ul");
@@ -429,6 +391,7 @@ function createIgnoredContextMenu(event: MouseEvent, username: string) {
 
   contextMenu.appendChild(ul);
   overlay.appendChild(contextMenu);
+  placeMenu(contextMenu, event.clientX, event.clientY);
   document.addEventListener("click", () => contextMenu.remove(), { once: true });
 }
 

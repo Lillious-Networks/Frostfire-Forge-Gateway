@@ -206,12 +206,13 @@ Nothing under `src/` imports `config.json`. The gateway server takes the same se
 | `bun docker:prod:down` | Stops the production containers. |
 | `bun docker:prod:logs` | Follows the production container logs. |
 
-Two checks are not package.json scripts but are run by the pre-commit hook, in this order:
+One check is not a package.json script but is run by the pre-commit hook:
 
-```bash title="Checks"
-bun eslint
-bun run --bun tsc --noEmit
+```bash title="Check"
+bun check
 ```
+
+It is Bun's own type checker, and it replaced ESLint and `tsc`.
 
 The setup script creates the database if it is missing, creates the `allowed_ips` and `blocked_ips` tables, whitelists `127.0.0.1` and `::1`, and adds the two-factor columns to `accounts` (`totp_secret`, `totp_enabled`, `webauthn_credentials`, `webauthn_enabled`, `twofa_pending`, `pending_email`, `require_webauthn`, `require_totp`, `require_email_2fa`, `email_verified`).
 

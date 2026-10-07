@@ -47,10 +47,12 @@ Most commands take `<username | id>`. A value that is not a number is matched ag
 | `/mute <username> [duration] [reason]` | none | `admin.mute` or `admin.*` | Mutes a player's chat without telling them |
 | `/unmute <username>` | none | `admin.unmute` or `admin.*` | Lifts a mute |
 | `/reports [view <number> \| resolve <number> [note]]` | none | `admin.reports` or `admin.*` | Lists, shows or resolves the reports players have sent |
+| `/trades <username>` | none | `admin.trades` or `admin.*` | Lists the latest trades a player completed |
 | `/admin <username \| id>` | `/setadmin` | `server.admin` or `server.*` | Toggles the admin role of an account |
 | `/kill [username \| id]` | none | `admin.kill` or `admin.*` | Kills an online player through the normal death flow |
 | `/revive [username \| id]` | none | `admin.revive` or `admin.*` | Revives a dead or ghost player in place |
 | `/respawn [username \| id]` | none | `admin.respawn` or `admin.*` | Sends a player to the default map's spawn at full health |
+| `/cooldowns [username \| id]` | `/resetcooldowns` | `admin.cooldowns` or `admin.*` | Ends every cooldown an online player is waiting on |
 | `/summon <username \| id>` | none | `admin.summon` or `admin.*` | Brings an online player to you |
 | `/goto <username \| id>` | `/teleport` | `admin.summon` or `admin.*` | Takes you to an online player |
 | `/permission <mode> <username \| id> [permissions]` | `/permissions` | `admin.permission` or `admin.*`, plus the mode's own permission | Reads or changes a player's permissions |
@@ -153,6 +155,22 @@ Players send reports with `/report` or from the menu on another player (see [Pla
 
 A report carries the reported player's latest chat lines that reached the reporter, up to 20 from the half hour before. A whisper to somebody else is never attached. The control panel's Reports page shows the same and adds Mute, Kick and Ban.
 
+### /trades
+
+```text title="Syntax"
+/trades <username>
+```
+
+Lists the latest trades a player completed, newest first and ten at most. Each line says who the trade was with, how long ago, what the player gave and what they got.
+
+```text title="Example answer"
+Aria's latest trades: 2
+#41 with Borin, 5m ago: gave nothing, got 12g
+#37 with Cale, 1h ago: gave 4 Iron Ore, 1s 60c, got 5 Health Potion
+```
+
+Every completed trade is written to the `trade_log` table in the same transaction as the swap. The engine holds the latest 500 in memory, and this command and the control panel read from those. Older trades stay in the table. A trade that was cancelled or refused is not recorded.
+
 ### /admin
 
 ```text title="Syntax"
@@ -184,6 +202,35 @@ All three act on yourself when no player is named.
 /kill alice
 /revive alice
 /respawn
+```
+
+### /cooldowns
+
+```text title="Syntax"
+/cooldowns [username | id]
+/resetcooldowns [username | id]
+```
+
+Ends every cooldown a player is waiting on, at once. It acts on yourself when no player is named, and the player has to be online.
+
+| Cooldown | Where it is kept |
+|----------|------------------|
+| Spell cooldowns | In memory |
+| The spell lockout after an interrupt | In memory |
+| The 30 seconds all consumables share | In memory |
+| The home item's hour | `player_home.used_at` in the database |
+
+The player's home is left as it is, and so are their buffs and debuffs. Their game is sent `COOLDOWNS_RESET`, which takes the clocks off their hotbar, spell book and bags.
+
+| Answer | When |
+|--------|------|
+| `Reset the cooldowns of <Name>` | It was done |
+| `Player must be online to reset their cooldowns` | No online player has that name or id |
+| `The home cooldown of <Name> could not be reset. The others were.` | The database write failed. The other three are reset regardless. |
+
+```text title="Example"
+/cooldowns
+/cooldowns alice
 ```
 
 ### /summon and /goto

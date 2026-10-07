@@ -53,7 +53,35 @@ The **At a glance** card beside the form shows the item as its fields describe i
 | Quality | Common, Uncommon, Rare, Epic or Legendary. Sets the colour of the name and the icon frame. |
 | Icon | Picked from the icons the asset server has |
 | Level requirement | Shown here for items that are not equipment. At least 1 when set. |
+| Vendor sell price | What any vendor pays a player for one, as gold, silver and copper. A new item starts at 1 copper. Nothing at all means vendors will not buy it. Quest items are never bought, whatever is set. |
 | Description | Shown in the item's tooltip. Up to 255 characters. |
+
+Players see the sell price at the bottom of the item's tooltip. Which NPCs sell an item, and what they charge for it, is set on the NPC: see the Vendor & Inn tab of the [NPC Editor](#/tools/npc-editor).
+
+:::note A vendor never charges less than this
+An item is always sold for at least its sell price, whatever price a vendor's stock gives it. Otherwise a player could buy it and sell it straight back for a profit. Raising an item's sell price therefore raises what it costs at any vendor that was selling it for less.
+:::
+
+### Using it
+
+An item of type Consumable gets a second card on the General tab, **Using it**. It sets what happens when a player uses one from their bags or hotbar.
+
+| Field | Notes |
+| --- | --- |
+| Restores health | Given at once, up to the most the player can have |
+| Restores stamina | The same for stamina |
+| Cannot be used in combat | For food and the like. Players in a fight are told it cannot be used. |
+| Home item | Makes this the item that takes a player to their home inn. See below. |
+
+A consumable has to restore health or stamina, or be the home item. The server refuses to save one that does nothing.
+
+Using a consumable takes one from the stack and starts a 30 second cooldown that all consumables share. The level requirement on the General tab applies to using it.
+
+:::note The home item
+One item is the home item. Using it starts a 10 second cast that any damage or movement breaks, takes the player to the inn they set as their home, and then cannot be used again for 1 hour. It is never used up, and players cannot delete, trade or sell it.
+
+Every player is given the home item when they log in without one. Database setup creates it as "Home Stone". You can rename it and give it an icon here, but you cannot turn the switch on for a second item: the server refuses while another item is the home item. Innkeepers are set in the [NPC Editor](#/tools/npc-editor).
+:::
 
 ## Equipment tab
 

@@ -362,9 +362,21 @@ export function hasGossip(npcId: number): boolean {
   return npcGossipLines(npcId).length > 0;
 }
 
-/** Interactable when the NPC has gossip to share or quest business. */
+/** Whether the NPC sells things (the server says so when it sends the NPC). */
+export function isVendor(npcId: number): boolean {
+  const npc = (Cache.getInstance().npcs || []).find((n: any) => Number(n.id) === Number(npcId));
+  return (npc as any)?.vendor === true;
+}
+
+/** Whether the NPC keeps an inn the player can make their home (the server says so when it sends the NPC). */
+export function isInnkeeper(npcId: number): boolean {
+  const npc = (Cache.getInstance().npcs || []).find((n: any) => Number(n.id) === Number(npcId));
+  return (npc as any)?.innkeeper === true;
+}
+
+/** Interactable when the NPC has gossip to share, quest business, things to sell, or an inn. */
 export function canInteractWith(npcId: number): boolean {
-  return hasGossip(npcId) || hasQuestBusiness(npcId);
+  return hasGossip(npcId) || hasQuestBusiness(npcId) || isVendor(npcId) || isInnkeeper(npcId);
 }
 
 export function tryInteractNpc(): void {

@@ -159,7 +159,6 @@ body {
 #overlay a,
 #overlay label[for],
 #overlay .slot,
-#game-notification-container,
 #pause-menu-container,
 #options-menu-container,
 #chat-container,
@@ -1346,9 +1345,8 @@ input {
   top: 25px;
   left: 25px;
   z-index: 100;
-  background: url("../img/ui/ui-stats-container.png");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
+  /* (its picture, ui-stats-container.png, is no longer in img/ui, and a picture that cannot be found stops the
+     whole page from being built: /game was a white screen. The frame itself is no longer on the page.) */
   will-change: transform;
   transform: scaleX(var(--xscale, 1));
   width: 330px;
@@ -2069,21 +2067,27 @@ body.timelapse-active .ui-hidden-in-timelapse {
   background-repeat: no-repeat;
 }
 
-#stat-screen-close {
-  display: none;
+/*
+ * The X that closes a window: the character sheet's own (in the page), and the one input.ts puts on
+ * each panel (.panel-close). At the top right corner of the window's frame.
+ */
+#stat-screen-close,
+.panel-close {
+  display: flex;
   position: absolute;
   top: 42px;
   right: 42px;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   margin: 0;
-  border: none;
   outline: none;
   background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
   color: #FFF1DA;
-  font-size: 1em;
+  font-family: 'Comic Relief';
+  font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   border-radius: 4px;
   border: 2px solid #7a3838;
   cursor: pointer;
@@ -2094,9 +2098,61 @@ body.timelapse-active .ui-hidden-in-timelapse {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.2);
 }
 
-#stat-screen-close:active {
+#stat-screen-close:hover,
+.panel-close:hover {
+  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+}
+
+#stat-screen-close:active,
+.panel-close:active {
   transform: scale(0.95);
   background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+}
+
+/*
+ * A panel's X sits on the top right corner of its frame, half outside it, where it covers nothing
+ * of the panel's own (the bags have a slot right in that corner). USER FEEDBACK 2026-10-06: "the X
+ * button on UIs are not placed very well".
+ */
+.panel-close {
+  top: -9px;
+  right: -9px;
+}
+
+/* The guild's frame is drawn inside its picture, with room round it: its corner is further in. */
+#guild-container > .panel-close {
+  top: 10px;
+  right: 12px;
+}
+
+/*
+ * On a phone the panels are drawn smaller, each by its own amount (--pz, set beside its zoom: the
+ * bags at about four fifths, the others at about three fifths), and the X with them. Its sizes are
+ * divided by that amount here, so it comes out the same on every panel. USER FEEDBACK 2026-10-06:
+ * "inventory ui, the X is way bigger than the others".
+ */
+@media (hover: none) and (pointer: coarse) {
+  .panel-close {
+    width: calc(24px / var(--pz, 1));
+    height: calc(24px / var(--pz, 1));
+    font-size: calc(11px / var(--pz, 1));
+    top: calc(-9px / var(--pz, 1));
+    right: calc(-9px / var(--pz, 1));
+  }
+
+  #guild-container > .panel-close {
+    top: calc(4px / var(--pz, 1));
+    right: calc(5px / var(--pz, 1));
+  }
+
+  /* The character sheet is drawn at about two thirds: its X, in the bar across its top, the same. */
+  #stat-screen-close {
+    width: 36px;
+    height: 36px;
+    font-size: 17px;
+    top: 37px;
+    right: 38px;
+  }
 }
 
 #stats-screen-username-container {
@@ -2283,61 +2339,169 @@ body.timelapse-active .ui-hidden-in-timelapse {
   z-index: 1001;
 }
 
-#game-notification-container {
+/*
+ * Notifications (js/core/notifications.ts): stacked at the bottom right, the newest lowest, so each
+ * one that arrives moves the others up. Over every other layer of the page, the loading screen
+ * included: the z-index is the most there is.
+ */
+#game-notifications {
   position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  height: 2em;
-  z-index: 1006;
-  background: linear-gradient(
-    to right,
-    rgba(0, 20, 40, 0) 0%,
-    rgba(0, 20, 40, 0.4) 25%,
-    rgba(0, 20, 40, 0.4) 75%,
-    rgba(0, 20, 40, 0) 100%
-  ),
-  linear-gradient(
-    to bottom,
-    rgba(0, 20, 40, 0.4) 0%,
-    rgba(0, 20, 40, 0.4) 25%,
-    rgba(0, 20, 40, 0) 100%
-  );
-  display: none;
-  align-items: center;
-  justify-content: center;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    black 25%,
-    black 75%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0%,
-    black 25%,
-    black 75%,
-    transparent 100%
-  );
-  -webkit-box-shadow: 0 2px 4px rgba(0, 20, 40, 0.2);
-  box-shadow: 0 2px 4px rgba(0, 20, 40, 0.2);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  right: max(20px, env(safe-area-inset-right, 20px));
+  bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: min(360px, calc(100vw - 40px));
+  /* Only the notifications themselves take clicks: the game under the gaps stays reachable. */
+  pointer-events: none;
 }
 
-#game-notification-message {
-  position: absolute;
-  width: 100%;
-  font-size: 1em;
+.game-notification {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 10px 10px 10px 14px;
+  overflow: hidden;
+  pointer-events: auto;
+  background: linear-gradient(135deg, rgba(20, 15, 30, 0.97), rgba(30, 20, 40, 0.97));
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  border-radius: 8px;
+  -webkit-box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
   font-family: 'Comic Relief';
+  color: #FFF1DA;
+  /* Comes in from the right, and goes the way it came while the stack closes up over it. */
+  opacity: 0;
+  transform: translateX(24px);
+  transition: opacity 0.2s ease, transform 0.2s ease, height 0.2s ease, margin 0.2s ease, padding 0.2s ease, border-width 0.2s ease;
+}
+
+.game-notification.in {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.game-notification.leaving {
+  opacity: 0;
+  transform: translateX(24px);
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  pointer-events: none;
+}
+
+/* The same message arrived again while it was shown. */
+.game-notification.again {
+  animation: game-notification-again 0.35s ease;
+}
+
+@keyframes game-notification-again {
+  0% { border-color: rgba(255, 215, 0, 1); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 215, 0, 0.6); }
+  100% { border-color: rgba(255, 215, 0, 0.4); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7); }
+}
+
+.game-notification-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  font-size: 0.9em;
   font-weight: 600;
+  line-height: 1.35;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  /* A message of several lines (a list an admin asked for) keeps them. */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.game-notification-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: -2px 0 0 0;
+  border: none;
+  outline: none;
+  border-radius: 4px;
+  background: rgba(255, 241, 218, 0.1);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 12px;
+  line-height: 22px;
   text-align: center;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
-  white-space: nowrap;
-  overflow: visible;
-  color: #FFFFFF;
+  cursor: pointer;
+}
+
+.game-notification-close:hover,
+.game-notification-close:focus-visible {
+  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-notification,
+  .game-notification.again {
+    transition: none;
+    animation: none;
+  }
+}
+
+/*
+ * On a phone or tablet the bottom right is where the thumb plays, so notifications go to the top
+ * of the screen, in the middle, between the player's frame and the minimap. The newest is at the
+ * top and moves the others down. USER REQUEST 2026-10-06: "The notifications should show top and
+ * center on mobile".
+ */
+@media (hover: none) and (pointer: coarse) {
+  #game-notifications {
+    top: max(8px, env(safe-area-inset-top, 8px));
+    bottom: auto;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    flex-direction: column-reverse;
+    align-items: center;
+    width: min(340px, calc(100vw - 24px));
+  }
+
+  .game-notification {
+    margin-top: 0;
+    margin-bottom: 6px;
+    padding: 8px 8px 8px 12px;
+    /* Comes down from the top edge, and goes back up to it. */
+    transform: translateY(-16px);
+  }
+
+  .game-notification.in {
+    transform: translateY(0);
+  }
+
+  .game-notification.leaving {
+    transform: translateY(-16px);
+    margin-bottom: 0;
+  }
+
+  .game-notification-text {
+    font-size: 0.8em;
+    max-height: 30vh;
+  }
+}
+
+/*
+ * A phone held sideways has the player's frame at the top left and the minimap at the top right,
+ * and the frame is the wider of the two: the notifications are narrower there and a little right of
+ * the middle, which is the middle of the room between them.
+ */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 450px) {
+  #game-notifications {
+    width: min(300px, calc(100vw - 24px));
+    left: calc(50% + 44px);
+  }
 }
 
 .alert {
@@ -2774,6 +2938,642 @@ input[type=range]:disabled {
 #report-cancel:hover {
   background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
   transform: translateY(-2px);
+}
+
+/* Trading with another player (js/core/trade.ts): this player's side and the other's, each a
+   grid of item slots over a row of coins, and the two buttons an invitation has. Sits above the
+   middle of the screen, clear of the bags it is filled from. */
+#trade-window {
+  position: fixed;
+  z-index: 1003;
+  top: 18%;
+  left: 50%;
+  width: 516px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  padding: 30px 28px 24px;
+  background: url("../img/ui/ui-book.png") no-repeat;
+  background-size: 100% 100%;
+  border-radius: 6px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: 'Comic Relief', sans-serif;
+  color: #FFF1DA;
+}
+
+/* As the heading of an invitation, and of the other windows that ask something of the player. */
+#trade-window h2 {
+  margin: 0;
+  font-family: 'Comic Relief';
+  font-size: 1.4em;
+  font-weight: 600;
+  text-align: center;
+  color: #FFF1DA;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5px;
+}
+
+#trade-window .trade-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+#trade-window .trade-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* A side whose player has accepted, and this player's side while an item is dragged over it. */
+#trade-window .trade-side.accepted {
+  border-color: #5a8f5a;
+  background: rgba(90, 143, 90, 0.18);
+}
+
+#trade-window .trade-side.drop {
+  border-color: #FFD700;
+}
+
+#trade-window h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+/* A long name is cut short: the word beside it is not. */
+#trade-window .trade-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#trade-window .trade-accepted {
+  flex: none;
+  font-size: 11px;
+  color: #8fd18f;
+}
+
+#trade-window .trade-slots {
+  display: grid;
+  grid-template-columns: repeat(4, 44px);
+  gap: 5px;
+  justify-content: center;
+}
+
+#trade-window .trade-slot {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+#trade-window .trade-count,
+#trade-window .trade-amount {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: 11px;
+  color: #FFF1DA;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 1);
+}
+
+/* A stack's amount on this player's side: a field that reads like the count it replaces. */
+#trade-window .trade-amount {
+  width: 34px;
+  height: 19px;
+  /* As for the coins: more above than below, so the digits sit in the middle. */
+  padding: 2px 2px 0;
+  line-height: normal;
+  box-sizing: border-box;
+  text-align: right;
+  border: 1px solid rgba(255, 241, 218, 0.35);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.65);
+  outline: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+#trade-window .trade-amount:focus,
+#trade-window .trade-coin:focus {
+  border-color: #FFD700;
+}
+
+#trade-window input::-webkit-outer-spin-button,
+#trade-window input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#trade-window .trade-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #7a3838;
+  border-radius: 50%;
+  background: #a85555;
+  color: #FFF1DA;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#trade-window .trade-slot:hover .trade-remove,
+#trade-window .trade-remove:focus-visible {
+  display: flex;
+}
+
+/* No hover on a touch screen: the button is always there. */
+@media (hover: none) {
+  #trade-window .trade-remove {
+    display: flex;
+  }
+}
+
+#trade-window .trade-coins {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* The digits of this font sit a pixel above the middle of their line: the padding puts them back in the middle of the field. */
+#trade-window .trade-coin {
+  width: 34px;
+  height: 22px;
+  padding: 3px 3px 1px;
+  line-height: normal;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 241, 218, 0.35);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #FFF1DA;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: 12px;
+  outline: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+#trade-window .trade-coin[data-coin="gold"] {
+  width: 64px;
+}
+
+#trade-window .trade-status {
+  min-height: 1.3em;
+  margin: 0;
+  font-size: 12px;
+  text-align: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+#trade-window .button-container {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  justify-content: center;
+}
+
+#trade-accept,
+#trade-cancel {
+  width: 100px;
+  height: 32px;
+  outline: none;
+  cursor: pointer;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-weight: 600;
+  font-size: 0.9em;
+  border-radius: 5px;
+  -webkit-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  transition: all 0.2s ease;
+}
+
+#trade-accept {
+  background: linear-gradient(180deg, #5a8f5a 0%, #4a7a4a 100%);
+  border: 2px solid #3d6b3d;
+}
+
+#trade-accept:hover:not(:disabled) {
+  background: linear-gradient(180deg, #6aa06a 0%, #5a8f5a 100%);
+  transform: translateY(-2px);
+}
+
+/* Not to be pressed yet (the offer just changed), or already pressed. */
+#trade-accept:disabled {
+  cursor: default;
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+#trade-cancel {
+  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+  border: 2px solid #7a3838;
+}
+
+#trade-cancel:hover {
+  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+  transform: translateY(-2px);
+}
+
+/* A narrow screen: the two sides one over the other. */
+@media (max-width: 500px) {
+  #trade-window {
+    top: 8px;
+    padding: 22px 16px 16px;
+  }
+
+  #trade-window .trade-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+
+/*
+ * A phone held sideways (the only way the game is played on one) has less height than the trade
+ * window where it usually stands: there it is at the top left of the screen, a little narrower and
+ * closer set, so it fits and the bags stay open beside it for the items to be offered from.
+ */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  #trade-window {
+    top: 6px;
+    left: max(8px, env(safe-area-inset-left, 8px));
+    transform: none;
+    width: 460px;
+    padding: 22px 14px 14px;
+    gap: 6px;
+  }
+
+  /* The bags stand a little further in from the right than they did, for their X: the two sides are closer set to leave them the room. */
+  #trade-window .trade-body {
+    gap: 10px;
+  }
+
+  #trade-window h2 {
+    margin-bottom: 0;
+  }
+}
+
+/* Buying from and selling to an NPC (js/core/vendor.ts): the vendor's goods, or what the player
+   sold lately, as a list of rows, under a heading like an invitation's. Sits above the middle of
+   the screen, clear of the bags that selling is done from. */
+#vendor-window {
+  position: fixed;
+  z-index: 1003;
+  top: 14%;
+  left: 50%;
+  width: 440px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  padding: 30px 28px 24px;
+  background: url("../img/ui/ui-book.png") no-repeat;
+  background-size: 100% 100%;
+  border-radius: 6px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: 'Comic Relief', sans-serif;
+  color: #FFF1DA;
+}
+
+#vendor-window h2 {
+  margin: 0;
+  font-family: 'Comic Relief';
+  font-size: 1.4em;
+  font-weight: 600;
+  text-align: center;
+  color: #FFF1DA;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#vendor-window .vendor-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+#vendor-window .vendor-tab {
+  padding: 4px 14px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#vendor-window .vendor-tab:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#vendor-window .vendor-tab[aria-selected="true"] {
+  border-color: #8b7030;
+  background: rgba(139, 112, 48, 0.45);
+}
+
+#vendor-window .vendor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  height: 250px;
+  max-height: 50vh;
+  padding: 6px;
+  overflow-y: auto;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+#vendor-window .vendor-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+#vendor-window .vendor-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 241, 218, 0.35);
+  border-radius: 2px;
+}
+
+#vendor-window .vendor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* The name takes the room there is, and is cut short before it pushes the price or the button out. */
+#vendor-window .vendor-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+#vendor-window .vendor-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: 12px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 1);
+}
+
+/* More than the player has. */
+#vendor-window .vendor-price.short {
+  color: #ff6b6b;
+}
+
+#vendor-window .vendor-amount {
+  flex: none;
+  width: 40px;
+  height: 22px;
+  /* As for a trade's coins: the digits of this font sit a pixel high, and the padding puts them in the middle. */
+  padding: 3px 3px 1px;
+  line-height: normal;
+  box-sizing: border-box;
+  text-align: right;
+  border: 1px solid rgba(255, 241, 218, 0.35);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #FFF1DA;
+  font-family: 'Alfa Slab One', sans-serif;
+  font-size: 12px;
+  outline: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+#vendor-window .vendor-amount:focus {
+  border-color: #FFD700;
+}
+
+#vendor-window input::-webkit-outer-spin-button,
+#vendor-window input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+#vendor-window .vendor-buy {
+  flex: none;
+  min-width: 52px;
+  height: 24px;
+  padding: 0 8px;
+  border: 2px solid #3d6b3d;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #5a8f5a 0%, #4a7a4a 100%);
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-size: 0.75em;
+  font-weight: 600;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+}
+
+#vendor-window .vendor-buy:hover:not(:disabled) {
+  background: linear-gradient(180deg, #6aa06a 0%, #5a8f5a 100%);
+}
+
+/* Cannot be paid for. */
+#vendor-window .vendor-buy:disabled {
+  cursor: default;
+  filter: grayscale(0.8);
+  opacity: 0.6;
+}
+
+#vendor-window .vendor-none,
+#vendor-window .vendor-hint {
+  margin: 0;
+  font-size: 12px;
+  text-align: center;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+#vendor-window .vendor-none {
+  margin: auto 12px;
+  opacity: 0.85;
+}
+
+#vendor-window .button-container {
+  display: flex;
+  justify-content: center;
+}
+
+#vendor-close {
+  width: 100px;
+  height: 32px;
+  outline: none;
+  cursor: pointer;
+  color: #FFF1DA;
+  font-family: 'Comic Relief';
+  font-weight: 600;
+  font-size: 0.9em;
+  border-radius: 5px;
+  border: 2px solid #7a3838;
+  background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+  -webkit-box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 1px 2px rgba(255, 255, 255, 0.3);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  transition: all 0.2s ease;
+}
+
+#vendor-close:hover {
+  background: linear-gradient(180deg, #b86565 0%, #a85555 100%);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 500px) {
+  #vendor-window {
+    top: 8px;
+    padding: 22px 16px 16px;
+  }
+
+  #vendor-window .vendor-list {
+    height: 240px;
+  }
+
+  /* On a narrow screen the name has the line beside the icon to itself, and the price and the button go under it. */
+  #vendor-window .vendor-row {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 4px;
+  }
+
+  #vendor-window .vendor-name {
+    flex-basis: calc(100% - 50px);
+  }
+}
+
+/* A phone held sideways: as the trade window, at the top left and closer set, with a list as tall as the screen leaves room for, so it fits beside the bags. */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  #vendor-window {
+    top: 6px;
+    left: max(8px, env(safe-area-inset-left, 8px));
+    transform: none;
+    padding: 22px 20px 14px;
+    gap: 6px;
+  }
+
+  #vendor-window h2 {
+    margin-bottom: 0;
+  }
+
+  #vendor-window .vendor-list {
+    height: auto;
+    max-height: calc(100vh - 205px);
+  }
+}
+
+/* What a vendor pays for an item, at the foot of its tooltip. */
+#tooltip-sell {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 0.8em;
+  color: #FFF1DA;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* A vendor's goods, as a line of the things to talk to it about. */
+.quest-gossip-vendor .currency-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+}
+
+/* What using an item does, in its tooltip between its stats and its description. */
+#tooltip-use {
+  display: none;
+  font-size: 0.9em;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  color: #4ade80;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+#tooltip-use .tooltip-use-limit {
+  color: #ff9f43;
+  font-size: 0.9em;
+}
+
+/* A consumable on the hotbar: how many are left, and greyed when there are none. */
+#hotbar #grid .slot .hotbar-item-count {
+  position: absolute;
+  /* The corner away from the slot's key. */
+  top: 0;
+  right: 2px;
+  font-size: 10px;
+  color: #FFF1DA;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 1);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* How long is left of an item's cooldown, written over its clock. */
+.cooldown-overlay.item-cooldown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cooldown-overlay.item-cooldown .cooldown-time {
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1;
+  color: #FFF1DA;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 1), 0 0 3px rgba(0, 0, 0, 1);
+  pointer-events: none;
+}
+
+#hotbar #grid .slot.item-out img {
+  filter: grayscale(1);
+  opacity: 0.45;
 }
 
 /* Same size as the green confirm buttons (the shared decline rule is 100px). */
@@ -3672,13 +4472,6 @@ body.mobile-landscape {
     transform-origin: bottom right;
   }
 
-  #game-notification-container {
-    height: 1.8em;
-  }
-
-  #game-notification-message {
-    font-size: 0.85em;
-  }
 }
 
 body.ios-device.mobile-landscape #chat-container {
@@ -3715,9 +4508,6 @@ body.ios-device #chat-messages .message {
 body.ios-device .notification {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.35);
 }
-body.ios-device #game-notification-message {
-  text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
-}
 body.ios-device .currency-amount {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.5);
 }
@@ -3751,6 +4541,61 @@ body.ios-device .guild-input {
 body.ios-device .guild-button {
   text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
 }
+/* The trade and vendor windows, as the windows above: an iPhone draws a text shadow far heavier than
+   a desktop does. USER REPORT 2026-10-07: "text shadows on the trading window on mobile are wrong". */
+body.ios-device #trade-window h2,
+body.ios-device #vendor-window h2 {
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+}
+body.ios-device #trade-window h3,
+body.ios-device #trade-window .trade-status,
+body.ios-device #trade-accept,
+body.ios-device #trade-cancel,
+body.ios-device #vendor-window .vendor-name,
+body.ios-device #vendor-window .vendor-buy,
+body.ios-device #vendor-window .vendor-none,
+body.ios-device #vendor-window .vendor-hint,
+body.ios-device #vendor-close {
+  text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
+}
+body.ios-device #trade-window .trade-count,
+body.ios-device #trade-window .trade-amount,
+body.ios-device #vendor-window .vendor-price {
+  text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.5);
+}
+/* The windows that ask something of the player (an invitation such as "Trade Request", a report, dying and being
+   revived, destroying an item, disbanding a guild), for the same reason. USER REPORT 2026-10-07: "popups like
+   'Trade Request' have incorrect text shadow". */
+body.ios-device #invitation-popup h2,
+body.ios-device #report-popup h2,
+body.ios-device #death-popup h2,
+body.ios-device #revive-popup h2,
+body.ios-device #graveyard-resurrect-popup h2,
+body.ios-device #delete-item-popup h2,
+body.ios-device #guild-confirm-popup h2 {
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+}
+body.ios-device #invitation-popup p,
+body.ios-device #death-popup p,
+body.ios-device #revive-popup p,
+body.ios-device #graveyard-resurrect-popup p,
+body.ios-device #delete-item-popup p,
+body.ios-device #guild-confirm-popup p,
+body.ios-device #report-popup .report-reason[aria-checked="true"],
+body.ios-device #accept-invitation,
+body.ios-device #decline-invitation,
+body.ios-device #decline-graveyard-revive,
+body.ios-device #report-send,
+body.ios-device #report-cancel,
+body.ios-device #release-spirit,
+body.ios-device #confirm-revive,
+body.ios-device #confirm-graveyard-revive,
+body.ios-device #confirm-delete-item,
+body.ios-device #cancel-delete-item,
+body.ios-device #confirm-disband,
+body.ios-device #cancel-disband {
+  text-shadow: 0.5px 0.5px 1px rgba(0,0,0,0.4);
+}
 
 body.ios-device.mobile-landscape #inventory.open {
   right: 175px;
@@ -3761,15 +4606,13 @@ body.ios-device.mobile-landscape #quest-frame-container,
 body.ios-device.mobile-landscape #quest-log-container,
 body.ios-device.mobile-landscape #friends-list-container,
 body.ios-device.mobile-landscape #guild-container {
-  right: 16px !important;
-  top: 14px !important;
   transform: none !important;
   zoom: 0.8;
+  --pz: 0.8;
 }
 body.ios-device.mobile-landscape #inventory {
-  right: 10px !important;
-  top: 10px !important;
   zoom: 1;
+  --pz: 1;
 }
 
 body.ipad-device.landscape-mode #chat-container {
@@ -3832,11 +4675,6 @@ body.tiny-landscape #party-container {
   left: 25px;
   transform: scale(0.4);
   transform-origin: bottom left;
-}
-
-body.tiny-landscape #game-notification-container {
-  transform: translateX(-50%) scale(0.75);
-  transform-origin: top center;
 }
 
 body.tiny-landscape .notification {
@@ -4454,14 +5292,6 @@ body.small-landscape #stats-container {
 
 body.tiny-landscape #stats-container {
   transform: scale(calc(0.65 * var(--xscale, 1)), 0.65) !important;
-}
-
-body.mobile-landscape #game-notification-container,
-body.small-landscape #game-notification-container,
-body.tiny-landscape #game-notification-container,
-body.ipad-device #game-notification-container {
-  z-index: 1003 !important;
-  pointer-events: none !important;
 }
 
 #mobile-ui-backdrop {
@@ -5155,6 +5985,11 @@ body.ipad-device #game-notification-container {
   margin: 0;
 }
 
+/* An entry that is not for this player (one for admins): not there at all. */
+.radial-item[hidden] {
+  display: none;
+}
+
 .radial-menu.active .radial-item {
   opacity: 1;
   transform: scale(1);
@@ -5505,15 +6340,6 @@ body.ipad-device #game-notification-container {
     text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45) !important;
   }
 
-  #game-notification-container {
-    z-index: 1003 !important;
-    pointer-events: none !important;
-  }
-
-  #game-notification-message {
-    pointer-events: none !important;
-  }
-
   /* a row under the player's frame and its buffs: the right edge now holds the minimap and the quest tracker (a
      column of five 52 px frames there was as tall as the screen) */
   #party-container {
@@ -5553,14 +6379,38 @@ body.ipad-device #game-notification-container {
     margin-bottom: 2px !important;
   }
 
+  /*
+   * Where the windows stand on a touch screen: far enough from the top right corner of the screen
+   * that the X on their own corner, which hangs 9 px outside them, is whole and clear of a phone's
+   * rounded corner and notch. USER FEEDBACK 2026-10-06: "the UIs with the x need to be moved down
+   * left more because the X overflows the screen". --pz is the window's zoom: lengths inside a
+   * zoomed window are divided by it to come out at the size written. (The guild's frame is drawn
+   * inside its picture, and its X with it: it needs less room.) Of a phone's notch inset only
+   * 12 px is taken: all of it (about 50 px on a phone with a notch) put the windows well into the
+   * screen. USER FEEDBACK 2026-10-07: "The UIs are too far left".
+   */
+  #inventory,
+  #spell-book-container,
+  #collectables-container,
+  #quest-frame-container,
+  #quest-log-container,
+  #friends-list-container {
+    top: calc((20px + min(env(safe-area-inset-top, 0px), 12px)) / var(--pz, 1)) !important;
+    right: calc((20px + min(env(safe-area-inset-right, 0px), 12px)) / var(--pz, 1)) !important;
+  }
+
+  #guild-container {
+    top: calc((10px + min(env(safe-area-inset-top, 0px), 12px)) / var(--pz, 1)) !important;
+    right: calc((10px + min(env(safe-area-inset-right, 0px), 12px)) / var(--pz, 1)) !important;
+  }
+
   #inventory {
     position: fixed !important;
-    top: 10px !important;
     bottom: auto !important;
-    right: 10px !important;
     left: auto !important;
 
     zoom: 0.85;
+    --pz: 0.85;
     transform: none !important;
     transition: opacity 0.3s ease, visibility 0.3s ease !important;
     opacity: 0 !important;
@@ -5576,12 +6426,11 @@ body.ipad-device #game-notification-container {
 
   #spell-book-container {
     position: fixed !important;
-    top: 14px !important;
     bottom: auto !important;
-    right: 16px !important;
     left: auto !important;
     transform: none !important;
     zoom: 0.62;
+    --pz: 0.62;
     transition: opacity 0.3s ease, visibility 0.3s ease !important;
     opacity: 0 !important;
     visibility: hidden !important;
@@ -5594,12 +6443,11 @@ body.ipad-device #game-notification-container {
   #friends-list-container,
   #guild-container {
     position: fixed !important;
-    top: 14px !important;
     bottom: auto !important;
-    right: 16px !important;
     left: auto !important;
     transform: none !important;
     zoom: 0.62;
+    --pz: 0.62;
     transition: opacity 0.3s ease, visibility 0.3s ease !important;
     opacity: 0 !important;
     visibility: hidden !important;
@@ -5728,6 +6576,18 @@ body.ipad-device #game-notification-container {
       0 2px 4px rgba(0, 0, 0, 0.6) !important;
   }
 
+  /* A consumable in a slot: how many are left and how long its cooldown has, at the size of the slot's key
+     (the slots are 72 px here and drawn smaller, so the sizes they have with a mouse are too small to read). */
+  #hotbar #grid .slot .hotbar-item-count {
+    font-size: 18px;
+    top: 3px;
+    right: 6px;
+  }
+
+  #hotbar #grid .slot .cooldown-overlay.item-cooldown .cooldown-time {
+    font-size: 21px;
+  }
+
   #hotbar #grid .slot:focus {
     border: 2px solid rgba(255, 255, 255, 0.7) !important;
   }
@@ -5762,6 +6622,7 @@ body.ipad-device #game-notification-container {
   #inventory {
     transform: none !important;
     zoom: 0.72;
+    --pz: 0.72;
   }
 
   #spell-book-container,
@@ -5772,6 +6633,7 @@ body.ipad-device #game-notification-container {
   #guild-container {
     transform: none !important;
     zoom: 0.5;
+    --pz: 0.5;
   }
 }
 
@@ -5975,6 +6837,333 @@ body.ipad-device #game-notification-container {
   .unit-frame .uf-stamina-text {
     text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.7);
   }
+}
+
+/*
+ * Chat on a touch screen (js/core/mobilechat.ts). The chat a mouse has, a frame at the bottom left,
+ * has no room on a phone held sideways: the joystick is there. In its place:
+ *  - a button under the player's own frame, with a count of what has not been read;
+ *  - while the chat is hidden, what was just said, shown beside the button for a few seconds;
+ *  - the chat itself, opened by the button: what was said and the field, between the player's frame
+ *    and the joystick, where nothing else is. The game is played on beside it;
+ *  - while a message is typed, the field alone across the top of the screen: the phone's keyboard
+ *    covers the bottom half.
+ * USER REQUEST 2026-10-07: "a chat bar to mobile that can be hidden and shown, as well as chat history".
+ */
+#mobile-chat-btn,
+#mobile-chat,
+#mobile-chat-peek {
+  display: none;
+  /* An iPhone held sideways makes the text of a wide block bigger by itself. While a message is typed the chat is
+     as wide as the screen, so the first line to come into it was shown several sizes too big. USER REPORT
+     2026-10-07: "Chat becomes huge only when I send a message on mobile". */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  :root {
+    /* Under the player's frame (25 px down, 80 px tall, the last of it empty), and over the joystick, which is
+       smaller on a smaller phone. USER FEEDBACK 2026-10-07: "Move the chat toggle button up a little more and make
+       it slightly larger" (it was 38 px, at 110). */
+    --mobile-chat-top: 100px;
+    --mobile-chat-over: 256px;
+  }
+
+  #mobile-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    z-index: 1001;
+    top: var(--mobile-chat-top);
+    left: 8px;
+    width: 46px;
+    height: 46px;
+    padding: 0;
+    /* The round slot the buttons of the menu wheel have. USER REQUEST 2026-10-07: "for the chat toggle, use
+       ui-action-slot.png". */
+    border: none;
+    border-radius: 0;
+    background: url("../img/ui/ui-action-slot.png") center / contain no-repeat;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  #mobile-chat-btn svg {
+    width: 22px;
+    height: 22px;
+    fill: #FFF1DA;
+    pointer-events: none;
+  }
+
+  /* Open: the slot is lit, as a button of the wheel is when it is pressed. */
+  #mobile-chat-btn.open {
+    filter: brightness(1.2);
+  }
+
+  #mobile-chat-btn.open svg {
+    fill: #FFD700;
+  }
+
+  #mobile-chat-btn:active {
+    transform: scale(0.94);
+  }
+
+  #mobile-chat-unread {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    border: 1px solid #5a2424;
+    background: linear-gradient(180deg, #c05555 0%, #8f3a3a 100%);
+    color: #FFF1DA;
+    font-family: 'Alfa Slab One', sans-serif;
+    font-size: 11px;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  #mobile-chat-unread:empty {
+    display: none;
+  }
+
+  /* Hidden, the chat is see-through and takes no touch, not gone: its field can still be given the
+     keyboard by the game (a whisper started from a player's menu), which brings the chat up. */
+  #mobile-chat {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    z-index: 1001;
+    top: var(--mobile-chat-top);
+    left: 60px;
+    width: min(320px, 44vw);
+    height: min(260px, calc(100vh - var(--mobile-chat-top) - var(--mobile-chat-over)));
+    height: min(260px, calc(100dvh - var(--mobile-chat-top) - var(--mobile-chat-over)));
+    min-height: 110px;
+    font-family: 'Comic Relief', sans-serif;
+    color: #FFF1DA;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #mobile-chat.open,
+  #mobile-chat.typing {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /*
+   * It looks as the chat does with a mouse: the same scroll hanging from its rod, and the same bar for the field
+   * under it (USER REQUEST 2026-10-07: "can we use the same UI as desktop?"). The two pictures are drawn at half
+   * their size, and cut so that only the plain middle of each is stretched to the room there is: the rod and its
+   * ends, and the bar's knob and corners, keep their shape whatever the size of the phone.
+   *
+   * The scroll (400 x 193: the rod is its top 47 px, the cloth hangs 14 px in from each end of it). The chat's
+   * own list of what was said is moved in here, and scrolls on the cloth under the rod.
+   */
+  #mobile-chat #chat-messages {
+    position: static;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    box-sizing: border-box;
+    border-style: solid;
+    border-color: transparent;
+    border-width: 24px 8px 3px;
+    border-image: url("../img/ui/ui-chat-container.png") 47 15 6 fill / 24px 8px 3px stretch;
+    image-rendering: pixelated;
+    padding: 3px 6px 2px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+
+  #mobile-chat #chat-messages .message,
+  #mobile-chat-peek .message {
+    font-size: 12px;
+    line-height: 1.35;
+    color: #FFF1DA;
+    word-break: break-word;
+  }
+
+  #mobile-chat #chat-messages .message {
+    padding: 1px 0;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  #mobile-chat-bar {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  /* The bar (337 x 87: its knob is the first 64 px, its corners the last 34, the bar itself rows 7 to 63). */
+  #mobile-chat-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 44px;
+    box-sizing: border-box;
+    border-style: solid;
+    border-color: transparent;
+    border-width: 0 17px 0 32px;
+    border-image: url("../img/ui/ui-chat-input-container.png") 0 34 0 64 fill / 0 17px 0 32px stretch;
+    image-rendering: pixelated;
+  }
+
+  /* The chat's own field, moved in here, on the bar. 16 px: an iPhone zooms the page in on a field with smaller text. */
+  #mobile-chat #chat-input {
+    display: block;
+    width: 100%;
+    height: 28px;
+    margin-top: 4px;
+    padding: 0 0 0 4px;
+    box-sizing: border-box;
+    border: none;
+    background: none;
+    color: #FFF1DA;
+    font-family: 'Comic Relief', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    /* The soft shadow the rest of the touch HUD's text has (the unit frames, the cast bar): the heavy one the field
+       has with a mouse smears text on a phone. USER FEEDBACK 2026-10-07: "text shadow is wrong". */
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  #mobile-chat #chat-input::placeholder {
+    color: var(--chat-placeholder-color, #FFF1DA);
+    font-family: 'Comic Relief', sans-serif;
+    font-weight: 600;
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
+  }
+
+  #mobile-chat #chat-messages .message {
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Send and the X belong to typing: the open chat has the field alone, and a tap on it starts typing. */
+  #mobile-chat-send,
+  #mobile-chat-done {
+    display: none;
+    flex: none;
+    height: 30px;
+    margin-top: 3px;
+    padding: 0 12px;
+    border-radius: 4px;
+    font-family: 'Comic Relief', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: #FFF1DA;
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  #mobile-chat-send {
+    width: 58px;
+    padding: 0;
+    border: 2px solid #3d6b3d;
+    background: linear-gradient(180deg, #5a8f5a 0%, #4a7a4a 100%);
+  }
+
+  #mobile-chat-done {
+    width: 30px;
+    padding: 0;
+    border: 2px solid #7a3838;
+    background: linear-gradient(180deg, #a85555 0%, #8f4545 100%);
+  }
+
+  #mobile-chat.typing #mobile-chat-send,
+  #mobile-chat.typing #mobile-chat-done {
+    display: block;
+  }
+
+  /* Typing: the bar alone, across the top of the screen, over everything but a notification. What was said is not
+     shown with it (USER FEEDBACK 2026-10-07: "after I send a message, I can see the text history below it which I
+     shouldn't"): it is back, with the message just sent in it, when the keyboard is put away. */
+  #mobile-chat.typing {
+    z-index: 9600;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    padding: max(4px, env(safe-area-inset-top, 4px)) max(10px, env(safe-area-inset-right, 10px)) 0 max(10px, env(safe-area-inset-left, 10px));
+  }
+
+  #mobile-chat.typing #chat-messages {
+    display: none;
+  }
+
+  /* What was just said, while the chat is hidden. A touch on it goes to the game under it. */
+  #mobile-chat-peek {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    position: fixed;
+    z-index: 1001;
+    top: calc(var(--mobile-chat-top) + 3px);
+    left: 60px;
+    width: min(320px, 44vw);
+    pointer-events: none;
+  }
+
+  #mobile-chat-peek .message {
+    max-width: 100%;
+    padding: 1px 6px;
+    box-sizing: border-box;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.45);
+    text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    animation: mobile-chat-peek 6s linear forwards;
+  }
+
+  @media (max-height: 600px) and (orientation: landscape) {
+    :root { --mobile-chat-over: 198px; }
+  }
+
+  @media (max-height: 450px) and (orientation: landscape) {
+    :root { --mobile-chat-over: 152px; }
+  }
+
+  @media (max-height: 380px) and (orientation: landscape) {
+    :root { --mobile-chat-over: 123px; }
+  }
+}
+
+@keyframes mobile-chat-peek {
+  0%, 85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* An iPhone draws a text shadow heavier still: as the other windows are for it. */
+body.ios-device #mobile-chat #chat-input,
+body.ios-device #mobile-chat #chat-input::placeholder,
+body.ios-device #mobile-chat #chat-messages .message,
+body.ios-device #mobile-chat-send,
+body.ios-device #mobile-chat-done,
+body.ios-device #mobile-chat-peek .message {
+  text-shadow: 0.5px 0.5px 1px rgba(0, 0, 0, 0.4);
 }
 
 /* Numbers use the hotbar's number font (see #hotbar .hotbar-key); canvas

@@ -36,9 +36,7 @@
         </div>
       </div>
     </div>
-    <div id="game-notification-container" class="ui">
-      <div id="game-notification-message" class="ui"></div>
-    </div>
+    <div id="game-notifications" class="ui"></div>
     <div id="tile-editor-notification-container" class="ui"></div>
     <div id="pause-menu-container" class="ui">
       <div id="pause-menu" class="ui">
@@ -390,7 +388,9 @@
       <div id="tooltip-name" class="ui"></div>
       <div id="tooltip-type" class="ui"></div>
       <div id="tooltip-stats" class="ui"></div>
+      <div id="tooltip-use" class="ui"></div>
       <div id="tooltip-description" class="ui"></div>
+      <div id="tooltip-sell" class="ui"></div>
     </div>
     <!-- Virtual Joystick -->
     <div id="virtual-joystick-wrapper">
@@ -420,11 +420,28 @@
         <button class="radial-item" data-action="guild" data-hotkey="KeyG" title="Guild (G)">🛡️</button>
         <button class="radial-item" data-action="collectables" data-hotkey="KeyK" title="Collectables (K)">💎</button>
         <button class="radial-item" data-action="settings" data-hotkey="Escape" title="Settings">⚙️</button>
+        <!-- For admins only (js/core/mobileui.ts shows it to them): opens the control panel, as the /cp command does. -->
+        <button class="radial-item" data-action="controlpanel" data-admin="1" title="Control Panel" hidden>🛠️</button>
       </div>
     </div>
 
     <!-- Floating Radial Menu Button -->
     <button id="radial-menu-btn" class="radial-menu-btn" type="button" title="Menu">☰</button>
+
+    <!-- Chat on a touch screen (js/core/mobilechat.ts): its button, what was just said while it is hidden,
+         and the panel that the chat's own messages and field are moved into there. -->
+    <button id="mobile-chat-btn" class="ui" type="button" aria-label="Chat">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h16a1.5 1.5 0 0 1 1.5 1.5v9.5A1.5 1.5 0 0 1 20 17h-7.6l-4.9 3.9V17H4a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 4 4.5z"/></svg>
+      <span id="mobile-chat-unread"></span>
+    </button>
+    <div id="mobile-chat" class="ui">
+      <div id="mobile-chat-bar" class="ui">
+        <div id="mobile-chat-field" class="ui"></div>
+        <button id="mobile-chat-send" class="ui" type="button">Send</button>
+        <button id="mobile-chat-done" class="ui" type="button" aria-label="Put the keyboard away">✕</button>
+      </div>
+    </div>
+    <div id="mobile-chat-peek"></div>
 
     <!-- Rotate-to-landscape prompt for portrait mobile -->
     <div id="rotate-prompt" class="ui">

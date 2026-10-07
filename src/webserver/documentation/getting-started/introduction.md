@@ -18,7 +18,7 @@ A running Frostfire Forge game is three separate servers that work together:
 
 None of them runs alone. The engine registers itself with the gateway and syncs its maps from the asset server, and the browser client talks to all three.
 
-:::note Alpha software
+:::note Beta software
 The project is a work in progress. Expect configuration and file formats to change between versions.
 :::
 

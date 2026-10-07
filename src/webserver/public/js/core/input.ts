@@ -7,6 +7,7 @@ import { toggleWorldMap, isWorldMapOpen, closeWorldMap } from "./worldmap.js";
 const cache = Cache.getInstance();
 import { toggleUI, toggleDebugContainer, handleStatsUI, createGuildUI, collectablesUI, hotbarSlots, spellCooldowns, refreshSpellbookCooldowns, questLogUI, questFrameUI } from "./ui.js";
 import { handleCommand, handleChatMessage } from "./chat.js";
+import { itemOfSlot, useItem } from "./consumables.js";
 import { setDirection, setPendingRequest, getCameraX, getCameraY } from "./renderer.js";
 import { chatInput } from "./chat.js";
 import { friendsListSearch } from "./friends.js";
@@ -55,6 +56,13 @@ function closeOtherPanels(_except: string) {
   if (_except !== "questframe" && questFrameUI && (questFrameUI.style.display === "block" || questFrameUI.style.display === "flex")) {
     import("./questframe.js").then((m) => m.closeQuestFrame());
   }
+}
+
+/** Opens the bags if they are closed: a trade is made from them. */
+function openInventory() {
+  if (toggleInventory) return;
+  closeOtherPanels("inventory");
+  toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
 }
 
 export const keyHandlers = {
@@ -182,6 +190,14 @@ function cast(hotbar_index: number) {
     if (isSelfActionLocked()) return;
     const keyName = `Digit${hotbar_index + 1}`;
     if (isKeyOnCooldown(keyName)) return;
+    // A slot that holds a consumable uses it: no spell is cast.
+    const slotItem = itemOfSlot(hotbarSlots[hotbar_index]);
+    if (slotItem) {
+      selectHotbarSlot(hotbar_index);
+      putKeyOnCooldown(keyName);
+      useItem(slotItem);
+      return;
+    }
     if (Date.now() < cache.spellLockoutUntil) return;
     // A spell that needs you to stand still does nothing while moving: no
     // cast bar, no "interrupted", nothing sent (the server ignores it too).
@@ -309,6 +325,10 @@ function handleEscapeKey() {
 
     return; // Don't open pause menu
   }
+
+  // Windows that are open close, and that is all this press does: the menu opens on the next one. With the menu
+  // itself open, the press closes the menu (below).
+  if (pauseMenu.style.display !== "block" && closeOpenWindows()) return;
 
   const isPauseMenuVisible = pauseMenu.style.display === "block";
   pauseMenu.style.display = isPauseMenuVisible ? "none" : "block";
@@ -448,7 +468,9 @@ async function handleEnterKey() {
     return;
   }
 
-  chatInput.blur();
+  // On a touch screen the field keeps the keyboard for the next message (mobilechat.ts): bringing it up again for
+  // each one is slow there. It is put away by the X beside the field, or by sending nothing (above).
+  if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) chatInput.blur();
   chatInput.value = "";
 
   if (chatInput.dataset.mode) {
@@ -687,34 +709,89 @@ setTimeout(initializeDragListeners, 100);
 (window as any).setupDragListeners = setupDragListeners;
 (window as any).initializeDragListeners = initializeDragListeners;
 
-function closeAllPanels() {
+/** Closes every panel that is open. Whether any was. */
+function closeAllPanels(): boolean {
+  let closed = false;
   if (toggleInventory) {
     toggleInventory = toggleUI(inventoryUI, toggleInventory, -350);
+    closed = true;
   }
   if (toggleSpellBook) {
     toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450);
+    closed = true;
   }
   if (toggleFriendsList) {
     toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450);
+    closed = true;
   }
   if (toggleCollectables) {
     toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450);
+    closed = true;
   }
   if (toggleGuild) {
     toggleGuild = toggleUI(guildContainer, toggleGuild, -450);
+    closed = true;
   }
   if (questLogUI && questLogUI.style.display === "block") {
     questLogUI.style.display = "none";
     questLogUI.classList.remove("open");
+    closed = true;
   }
   if (questFrameUI && (questFrameUI.style.display === "block" || questFrameUI.style.display === "flex")) {
     import("./questframe.js").then((m) => m.closeQuestFrame());
+    closed = true;
   }
+  return closed;
+}
+
+/** The character sheet, which opens on the left and is not one of the panels above. */
+const statScreen = () => document.getElementById("stat-screen");
+
+/**
+ * Closes every window the player has open: the panels, and the character sheet. Whether any was.
+ * USER REQUEST 2026-10-06: "Allow esc to close any UI open like character sheet, spell book etc".
+ */
+function closeOpenWindows(): boolean {
+  let closed = closeAllPanels();
+  if (statScreen()?.style.display === "block") {
+    // (open, so this closes it and stops its preview)
+    handleStatsUI();
+    closed = true;
+  }
+  return closed;
+}
+
+// An X on each window, at its top right corner, that closes it. Each closes its window the way its key does, so
+// what the game knows of which windows are open stays right. USER REQUEST 2026-10-06: "add an X on these UIs to
+// close them manually". (The character sheet has its own, in the page.)
+const CLOSABLE: Array<[element: HTMLElement | null, close: () => void]> = [
+  [inventoryUI, () => { if (toggleInventory) toggleInventory = toggleUI(inventoryUI, toggleInventory, -350); }],
+  [spellBookUI, () => { if (toggleSpellBook) toggleSpellBook = toggleUI(spellBookUI, toggleSpellBook, -450); }],
+  [friendsListUI, () => { if (toggleFriendsList) toggleFriendsList = toggleUI(friendsListUI, toggleFriendsList, -450); }],
+  [collectablesUI, () => { if (toggleCollectables) toggleCollectables = toggleUI(collectablesUI, toggleCollectables, -450); }],
+  [guildContainer, () => { if (toggleGuild) toggleGuild = toggleUI(guildContainer, toggleGuild, -450); }],
+  [questLogUI, () => { questLogUI.style.display = "none"; questLogUI.classList.remove("open"); }],
+  [questFrameUI, () => { import("./questframe.js").then((m) => m.closeQuestFrame()); }],
+];
+for (const [element, close] of CLOSABLE) {
+  if (!element || element.querySelector(":scope > .panel-close")) continue;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "panel-close ui";
+  button.setAttribute("aria-label", "Close");
+  button.textContent = "✕";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    close();
+  });
+  // A press on it is not the start of dragging the window, nor a click on the world behind.
+  for (const type of ["mousedown", "touchstart"]) button.addEventListener(type, (event) => event.stopPropagation(), { passive: true });
+  element.appendChild(button);
 }
 
 export {
     getIsKeyPressed, setIsKeyPressed, pressedKeys, movementKeys, handleKeyPress, stopMovement, setIsMoving, getIsMoving, getUserHasInteracted, setUserHasInteracted,
     getControllerConnected, setControllerConnected, getLastSentDirection, setLastSentDirection, getLastTypingPacket,
     setLastTypingPacket, cooldowns, COOLDOWN_DURATION, getContextMenuKeyTriggered, setContextMenuKeyTriggered, blacklistedKeys,
-    cast, mount, setupDragListeners, closeAllPanels
+    cast, mount, setupDragListeners, closeAllPanels, openInventory
 };

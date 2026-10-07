@@ -7,6 +7,7 @@ import '../core/packets';
 import '../core/gamepad';
 import '../core/virtualcontroller';
 import '../core/mobileui';
+import '../core/mobilechat';
 import '../core/minimap';
 
 // Register Service Worker for sprite/asset caching

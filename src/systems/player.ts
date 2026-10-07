@@ -75,7 +75,7 @@ const player = {
         "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted)",
         (r) => [r.username, 60, 50, 50, 0]
       ),
-      multiInsert("INSERT INTO quest_log (username)", (r) => [r.username]),
+      // (Nothing for the quest log: see register, below.)
       multiInsert(
         "INSERT INTO currency (username, copper, silver, gold)",
         (r) => [r.username, 0, 0, 0]
@@ -138,7 +138,10 @@ const player = {
           sql: "INSERT INTO clientconfig (username, fps, music_volume, effects_volume, muted) VALUES (?, ?, ?, ?, ?)",
           values: [username, 60, 50, 50, 0],
         },
-        { sql: "INSERT INTO quest_log (username) VALUES (?)", values: [username] },
+        // Nothing for the quest log: it holds a row for each quest a player has taken (username, quest_id), and a
+        // new account has taken none. The row once written for it here, a name and no quest, is refused by the
+        // table as it is now ("Field 'quest_id' doesn't have a default value"), and being one transaction, the
+        // whole sign-up was undone with it: no account could be made, a guest's included.
         {
           sql: "INSERT INTO currency (username, copper, silver, gold) VALUES (?, ?, ?, ?)",
           values: [username, 0, 0, 0],

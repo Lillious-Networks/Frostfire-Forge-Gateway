@@ -57,6 +57,10 @@ function getEffectiveTime(): { hours: number; minutes: number } {
     const m = Math.floor((overrideHour - h) * 60 + 0.5);
     return { hours: h, minutes: m };
   }
+  // A map with no entry in the server's worlds table (the inside of a house) is sent no weather, so `hasWeather`
+  // stays off: it has no day and night. The darkening is off there (updateAmbience), and whatever else follows the
+  // clock (sun shadows, particles that come on at night) sees a standing midday.
+  if (!hasWeather) return { hours: 12, minutes: 0 };
   return getServerTime();
 }
 

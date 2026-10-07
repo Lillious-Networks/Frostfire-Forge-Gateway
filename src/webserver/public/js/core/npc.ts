@@ -362,12 +362,24 @@ export function advanceNpcGossip(npcId: number): boolean {
   return true;
 }
 
+/**
+ * Whether an NPC, as the server sent it, sells things: it says so itself (`vendor`), or its stock
+ * came with it (an NPC that was just saved in the editor).
+ */
+export function sellsThings(data: any): boolean {
+  return data?.vendor === true || (Array.isArray(data?.vendor_items) && data.vendor_items.length > 0);
+}
+
 function createNPC(data: any) {
   const npc: NPC = {
     id: data.id,
     name: data.name || "",
     dialog: data.dialog || "",
     gossip: data.gossip ?? null,
+    // Whether it sells things: a vendor can be talked to, though it has nothing to say.
+    vendor: sellsThings(data),
+    // Whether it keeps an inn: an innkeeper can be talked to as well.
+    innkeeper: data?.innkeeper === true,
     hidden: data?.hidden ?? false,
     direction: data.location?.direction || "down",
     sprite_type: data.sprite_type || 'none',
@@ -770,18 +782,21 @@ export function renderNpcInteractBadge(
 ): void {
   if (npcId === null || npcId === undefined) return;
   if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
-  // Interactable only with gossip to share or quest business.
-  if (!hasQuestBusiness(npcId) && !hasNpcGossip(npcId)) return;
   const npc = (cache.npcs || []).find((n: any) => Number(n.id) === Number(npcId));
   if (!npc || npc.hidden) return;
+  // Interactable only with gossip to share, quest business, or things to sell.
+  if (!hasQuestBusiness(npcId) && !hasNpcGossip(npcId) && !npc.vendor && !npc.innkeeper) return;
   const nx = Number(npc.position?.x);
   const ny = Number(npc.position?.y);
   if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
 
   const dpr = window.devicePixelRatio || 1;
+  // A map narrower than the screen is drawn centred sideways (renderer.ts): the badge moves with it.
+  const mapWidth = Number(window.mapData?.width) * Number(window.mapData?.tilewidth);
+  const mapCenterOffsetX = mapWidth < window.innerWidth ? (window.innerWidth - mapWidth) / 2 : 0;
   // Small badge on the NPC's lower body: sprite shows through the fill while
   // a bright ring and letter keep it noticeable.
-  const x = (nx - cameraX + canvasWidth / (dpr * 2)) * dpr;
+  const x = (nx - cameraX + mapCenterOffsetX + canvasWidth / (dpr * 2)) * dpr;
   const y = (ny + 12 - cameraY + canvasHeight / (dpr * 2)) * dpr;
   const radius = 10 * dpr;
 

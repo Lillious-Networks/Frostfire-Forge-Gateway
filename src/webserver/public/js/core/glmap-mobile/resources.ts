@@ -327,7 +327,55 @@ export function updateAnimations(s: any, res: any, now: any) {
 export function invalidateChunk(chunk: any) {
   chunkVersions.set(chunk, (chunkVersions.get(chunk) ?? 0) + 1);
 }
-export function getChunkTexture(s: any, chunk: any) {
+// A chunk's tile ids as the GPU takes them, and which tiles it uses. The same for every surface (the ground, what is
+// over the players, the minimap), so it is worked out for the first of them that asks and handed to the others:
+// each used to walk every cell of every layer again for itself. Let go of once every surface has taken it.
+function chunkTilesFor(s: any, chunk: any, version: any, width: any, height: any, layers: any) {
+  let held = chunkTiles.get(chunk);
+  if (!held || held.version !== version || held.width !== width || held.height !== height || held.layerCount !== layers.length) {
+    const cells = width * height;
+    const data = new Uint32Array(cells * layers.length);
+    const used = new Set;
+    for (let li = 0;li < layers.length; li++) {
+      const src = layers[li]?.data;
+      if (!src)
+        continue;
+      const base = li * cells;
+      const n = Math.min(cells, src.length);
+      for (let i = 0;i < n; i++) {
+        const raw = src[i] >>> 0;
+        data[base + i] = raw;
+        if (raw !== 0)
+          used.add(raw & 268435455);
+      }
+    }
+    held = { version, width, height, layerCount: layers.length, data, used, takenBy: new Set };
+    chunkTiles.set(chunk, held);
+  }
+  held.takenBy.add(s.id);
+  if (held.takenBy.size >= getAllGL().length)
+    chunkTiles.delete(chunk);
+  return held;
+}
+function chunkEntryIsCurrent(entry: any, version: any, width: any, height: any, layerCount: any) {
+  return !!entry && entry.version === version && entry.width === width && entry.height === height && entry.layerCount === layerCount;
+}
+// Whether the chunk has still to be put on this surface's GPU, or has changed since it was.
+export function chunkNeedsUpload(s: any, chunk: any) {
+  const width = chunk.width | 0;
+  const height = chunk.height | 0;
+  const layers = Array.isArray(chunk.layers) ? chunk.layers : [];
+  if (width <= 0 || height <= 0 || layers.length === 0)
+    return false;
+  return !chunkEntryIsCurrent(resourcesFor(s).chunks.get(chunk), chunkVersions.get(chunk) ?? 0, width, height, layers.length);
+}
+// The chunk's texture on this surface. Putting a chunk there is the dear part of a frame (its tiles are read back
+// from a canvas, which Safari is slow at), and walking into new ground brings a row of chunks at once, on every
+// surface: all in one frame, that was a stutter (USER REPORT 2026-10-07: "Map rendering is a bit laggy on mobile
+// safari", "Just while walking into a new area"). So a pass puts one chunk there at most (index.ts says which, with
+// `mayUpload`): without it, a chunk that is not there yet is not drawn this frame, and one that has changed is drawn
+// as it was.
+export function getChunkTexture(s: any, chunk: any, mayUpload = true) {
   const width = chunk.width | 0;
   const height = chunk.height | 0;
   const layers = Array.isArray(chunk.layers) ? chunk.layers : [];
@@ -337,25 +385,12 @@ export function getChunkTexture(s: any, chunk: any) {
   const version = chunkVersions.get(chunk) ?? 0;
   const chunks = resourcesFor(s).chunks;
   let entry = chunks.get(chunk);
-  if (entry && entry.version === version && entry.width === width && entry.height === height && entry.layerCount === layers.length) {
+  if (chunkEntryIsCurrent(entry, version, width, height, layers.length)) {
     return entry;
   }
-  const cells = width * height;
-  const data = new Uint32Array(cells * layers.length);
-  const used = new Set;
-  for (let li = 0;li < layers.length; li++) {
-    const src = layers[li]?.data;
-    if (!src)
-      continue;
-    const base = li * cells;
-    const n = Math.min(cells, src.length);
-    for (let i = 0;i < n; i++) {
-      const raw = src[i] >>> 0;
-      data[base + i] = raw;
-      if (raw !== 0)
-        used.add(raw & 268435455);
-    }
-  }
+  if (!mayUpload)
+    return entry && entry.width === width && entry.height === height && entry.layerCount === layers.length ? entry : null;
+  const { data, used } = chunkTilesFor(s, chunk, version, width, height, layers);
   const res = resourcesFor(s).map;
   if (res)
     ensureTiles(s, res, used);
@@ -397,4 +432,5 @@ function releaseAllChunks(s: any) {
 const ATLAS_PAGE_SIZE = 1024, UPLOAD_UNIT_OFFSET = 4;
 let mapSource: any = null, stagingCanvas: any = null, stagingCtx: any = null;
 const surfaceResources: Map<any, any> = new Map();
+const chunkTiles: WeakMap<any, any> = new WeakMap();
 const chunkVersions: WeakMap<any, any> = new WeakMap();

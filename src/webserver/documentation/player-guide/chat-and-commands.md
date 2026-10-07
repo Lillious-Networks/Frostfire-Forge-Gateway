@@ -10,6 +10,25 @@ Chat is how you meet people in the game. Press **Enter** to open the chat box, t
 Chat and commands need a full account. See [Getting Started](#/player-guide/getting-started) to create one.
 :::
 
+## Chat on a phone or tablet
+
+On a touch screen the chat box is hidden until you ask for it, so it stays out of the way of the joystick.
+
+| What you see | What it does |
+|--------------|--------------|
+| The round chat button under your own frame | Tap it to open the chat. Tap it again to hide it. |
+| A number on the button | How many messages came in while the chat was hidden |
+| Messages beside the button | What was just said. They fade after a few seconds, and taps go through them to the game. |
+
+With the chat open you can scroll back through what was said, and keep playing beside it.
+
+To write a message, tap the field. The keyboard covers the bottom of the screen, so the field moves to the top by itself. The messages come back when you put the keyboard away.
+
+- **Send**, or the keyboard's own send key, sends the message. The keyboard stays up for your next one.
+- The **✕** beside Send puts the keyboard away. Sending an empty message does the same.
+
+Channels, whispers and commands work exactly as described below.
+
 ## Chat channels
 
 | Channel | Who sees it | How to use it |

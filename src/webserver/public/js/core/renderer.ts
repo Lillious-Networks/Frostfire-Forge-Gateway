@@ -125,6 +125,25 @@ function deleteChunkTracking(chunkKey: string) {
   chunkLoadTimes.delete(chunkKey);
 }
 
+// How much of the bottom of the screen the hotbar covers on a touch screen (px), and nothing with a mouse, where the
+// screen is tall and the hotbar a small part of it. Measured from where the hotbar is drawn, which differs with the
+// size of the phone; measured again when the screen or its layout changes, and once a second, not every frame.
+let bottomCover = 0, bottomCoverOf = "", bottomCoverAt = 0;
+function coveredBottom(): number {
+  const of = `${window.innerWidth}x${window.innerHeight}|${document.body.className}`;
+  const now = performance.now();
+  if (of === bottomCoverOf && now - bottomCoverAt < 1000) return bottomCover;
+  bottomCoverOf = of;
+  bottomCoverAt = now;
+  bottomCover = 0;
+  if (window.matchMedia("(hover: none) and (pointer: coarse)").matches) {
+    const bar = document.getElementById("hotbar")?.getBoundingClientRect();
+    // (a hotbar that is not shown has no size; never more than half the screen, whatever is measured)
+    if (bar && bar.height > 0 && bar.top < window.innerHeight) bottomCover = Math.max(0, Math.min(window.innerHeight / 2, window.innerHeight - bar.top));
+  }
+  return bottomCover;
+}
+
 function updateCamera(currentPlayer: any, deltaTime: number) {
   if (!getIsLoaded()) return;
 
@@ -132,11 +151,20 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
   if (tileEditor?.isActive && window.mapData) {
     // Free-pan editor camera: decoupled from player-follow and unclamped so the
     // user can pan anywhere, including into the infinite paint zone.
-    if (!editorCameraInitialized) {
+    if ((window as any).__resetEditorCamera) {
+      // The editor has opened again after a warp (socket.ts, LOAD_MAP): it looks at where the player arrives. Not
+      // at the camera, as below: the player's place on the new map comes in a later packet, so until then the
+      // camera is still where they stood on the map they left. USER REPORT 2026-10-06: "warping while tile editor is
+      // open, keeps the camera location of the previous location".
+      const arriveX = Number(window.mapData.spawnX), arriveY = Number(window.mapData.spawnY);
+      editorCameraX = Number.isFinite(arriveX) && arriveX !== 0 ? arriveX : cameraX;
+      editorCameraY = Number.isFinite(arriveY) && arriveY !== 0 ? arriveY : cameraY;
+      editorCameraInitialized = true;
+      (window as any).__resetEditorCamera = false;
+    } else if (!editorCameraInitialized) {
       editorCameraX = cameraX;
       editorCameraY = cameraY;
       editorCameraInitialized = true;
-      (window as any).__resetEditorCamera = false;
     }
     cameraX = editorCameraX;
     cameraY = editorCameraY;
@@ -164,7 +192,20 @@ function updateCamera(currentPlayer: any, deltaTime: number) {
     const halfViewportHeight = window.innerHeight / 2;
 
     cameraX = Math.max(halfViewportWidth, Math.min(mapWidth - halfViewportWidth, cameraX));
-    cameraY = Math.max(halfViewportHeight, Math.min(mapHeight - halfViewportHeight, cameraY));
+    // A map narrower than the screen is centred sideways by every draw and every click (mapCenterOffsetX), with the
+    // camera left where the line above puts it. None of them centres a map shorter than the screen, which stood at
+    // the top: the camera does that here, on the map's middle, and they all follow it (they add no offset of their
+    // own on this axis).
+    //
+    // On a touch screen the hotbar lies over the bottom of the screen, which is a sixth of a phone's height: the
+    // bottom of a map, where the way out of a room is, was under it. The map's bottom edge stops at the top of the
+    // hotbar there instead of at the bottom of the screen, and a map shorter than what is left is centred in what is
+    // left. USER REPORT 2026-10-07: "on mobile when entering a small level, I can't see the bottom of the level due
+    // to the hotbar being in the way".
+    const cover = coveredBottom();
+    cameraY = mapHeight < halfViewportHeight * 2 - cover
+      ? mapHeight / 2 + cover / 2
+      : Math.max(halfViewportHeight, Math.min(mapHeight - halfViewportHeight + cover, cameraY));
 
     smoothMapX = cameraX;
     smoothMapY = cameraY;
@@ -1044,6 +1085,7 @@ function animationLoop() {
   (window as any).updateChestInteraction?.(px, py, playerMap);
   (window as any).updateNpcInteraction?.(px, py, playerMap);
   (window as any).updateQuestFrameProximity?.(px, py);
+  (window as any).updateVendorProximity?.(px, py);
   // footsteps: the sound of the tile under the player's feet, a step at a time while walking
   updateTileSounds(currentPlayer);
 

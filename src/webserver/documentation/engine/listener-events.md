@@ -141,6 +141,11 @@ Every gameplay hook the engine emits. The `Area` column is there for the filter 
 | Social | `onPartyInvite` | `{ inviterUsername, invitedUsername }` | A party invitation was sent through the `INVITE_PARTY` packet |
 | Social | `onPartyChanged` | `{ type, username, kickedUsername, members }` | A party gained or lost a member, see the shapes below |
 | Social | `onGuildChanged` | `{ type, guildId, guildName, playerUsername, kickedUsername }` | A guild was created, joined, left or disbanded, or a member was kicked |
+| Social | `onVendorBuy` | `{ player, npcId, item, quantity, coins }` | A player bought from a vendor, or bought back something they sold. `coins` is the copper paid for all of it |
+| Social | `onVendorSell` | `{ player, npcId, item, quantity, coins }` | A player sold an item to a vendor. `coins` is the copper they were paid |
+| Social | `onItemUsed` | `{ player, item, health, stamina, home }` | A player used a consumable. `health` and `stamina` are what it gave back. For the home item both are 0 and `home` is where they arrived, `{ map, x, y }`: it fires once the cast has finished and they have been moved. Otherwise `home` is `null` |
+| Social | `onHomeSet` | `{ player, npcId, inn }` | A player made an innkeeper's inn their home. `inn` is the NPC's name |
+| Social | `onTradeCompleted` | `{ trade }` | Two players completed a trade. `trade` is the row written to `trade_log`: `{ id, player_a, player_b, a_gave, b_gave, created_at }`, where each `gave` is `{ items: [{ name, quantity }], coins }` |
 | Social | `onFriendAdded` | `{ type, playerUsername, friendUsername }` | A friend request was accepted. `type` is `"add"` |
 | Social | `onFriendRemoved` | `{ type, playerUsername, friendUsername }` | A friend was removed. `type` is `"remove"` |
 | Items | `onItemEquip` | `{ player, item, slot }` | An item was equipped |

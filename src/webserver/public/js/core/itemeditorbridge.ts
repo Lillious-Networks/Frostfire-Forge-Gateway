@@ -5,7 +5,7 @@
 // with the server.
 import { qualityOf } from "./itemframe.js";
 import { EditorShell, type ListRow, type RecordState } from "./tooleditor.js";
-import { FieldRenderer, setFieldError, type AssetOption, type Field } from "./toolfields.js";
+import { FieldRenderer, coinWords, setFieldError, type AssetOption, type Field } from "./toolfields.js";
 import { button, card, count, el, note, noticeDialog, shown, tag, thumb, toast, words } from "./toolkit.js";
 
 // Fallbacks so the dropdowns are never empty, even if the server's option lists
@@ -53,6 +53,9 @@ const PROBLEM_FIELDS: Array<[RegExp, string]> = [
   [/^Maximum damage /, "damage_max"],
   [/^Attack speed /, "attack_speed_ms"],
   [/^Weapon damage and speed only apply/, "equipment_slot"],
+  [/^Vendor sell price /, "sell_price"],
+  [/^(What a consumable restores|A consumable must restore)/, "restore_health"],
+  [/is already the home item/, "teleports_home"],
 ];
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -263,6 +266,7 @@ class ItemEditorBridge {
           { key: "quality", label: "Quality", type: "select", options: this.choices(this.data.qualities ?? [], DEFAULT_QUALITIES), rerender: true, hint: "Sets the colour of its name and icon frame." },
           { key: "icon", label: "Icon", type: "asset", assets: () => this.iconAssets(), fallback: "box" },
           ...(isEquipment ? [] : ([{ key: "level_requirement", label: "Level requirement", type: "number" }] as Field[])),
+          { key: "sell_price", label: "Vendor sell price", type: "money", hint: "What a vendor pays for one. Nothing at all means vendors will not buy it. Quest items are never bought." },
           { key: "description", label: "Description", type: "textarea", hint: "Shown in the item's tooltip." },
         ];
     }
@@ -288,6 +292,25 @@ class ItemEditorBridge {
     return null;
   }
 
+  /** What using a consumable does, shown in its own card under the item. */
+  private useFields(): Field[] | null {
+    if (this.tab !== "general" || this.draft?.type !== "consumable") return null;
+    return [
+      {
+        key: "teleports_home", label: "Home item", type: "switch", rerender: true,
+        hint: "Takes its player to their home inn after a 10 second cast, once an hour. It is never used up and cannot be deleted, traded or sold. Every player is given it, and only one item can be it.",
+      },
+      // The home item only takes its player home.
+      ...(this.draft.teleports_home
+        ? []
+        : ([
+            { key: "restore_health", label: "Restores health", type: "number", hint: "Given at once when it is used, up to the most the player can have." },
+            { key: "restore_stamina", label: "Restores stamina", type: "number" },
+          ] as Field[])),
+      { key: "no_combat", label: "Cannot be used in combat", type: "switch", hint: "For food and the like: players in a fight are told it cannot be used." },
+    ];
+  }
+
   private blank(): any {
     return {
       name: "New Item", quality: "common", type: "miscellaneous", description: "", icon: "",
@@ -295,6 +318,10 @@ class ItemEditorBridge {
       stat_health: null, stat_stamina: null, stat_avoidance: null, level_requirement: 1,
       equipable: false, equipment_slot: null, bag_slots: null,
       damage_min: null, damage_max: null, attack_speed_ms: null,
+      // What a vendor pays for one, in copper.
+      sell_price: 1,
+      // What using it does, when it is a consumable.
+      restore_health: null, restore_stamina: null, no_combat: false, teleports_home: false,
     };
   }
 
@@ -418,6 +445,12 @@ class ItemEditorBridge {
     const grid = this.section(main, title, lead);
     for (const field of this.tabFields()) grid.appendChild(this.field(field));
 
+    const use = this.useFields();
+    if (use) {
+      const useGrid = this.section(main, "Using it", "What happens when a player uses one from their bags or hotbar");
+      for (const field of use) useGrid.appendChild(this.field(field));
+    }
+
     const slot = this.slotFields();
     if (slot) {
       const slotGrid = this.section(main, slot.title, slot.lead);
@@ -508,6 +541,21 @@ class ItemEditorBridge {
       line(`${value > 0 ? "+" : "−"}${Math.abs(value)}${unit ?? ""} ${label}`, value > 0 ? "good" : "bad");
     }
     if (Number(d.level_requirement) > 1) line(`Requires level ${Number(d.level_requirement)}`, "faint");
+    // What a vendor pays: one copper when nothing is set, and nothing for a quest item or a price of none.
+    const price = d.sell_price === null || d.sell_price === undefined || d.sell_price === "" ? 1 : Math.max(0, Math.floor(Number(d.sell_price) || 0));
+    const isHome = d.type === "consumable" && !!d.teleports_home;
+    if (d.type === "consumable") {
+      const gives = [Number(d.restore_health) > 0 ? `${Number(d.restore_health)} health` : "", Number(d.restore_stamina) > 0 ? `${Number(d.restore_stamina)} stamina` : ""].filter(Boolean);
+      if (isHome) line("Use: returns its player to their home inn", "good");
+      else if (gives.length) line(`Use: restores ${gives.join(" and ")}`, "good");
+      else line("Does nothing when used yet", "bad");
+      if (d.no_combat) line("Cannot be used in combat", "faint");
+    }
+    line(
+      isHome ? "Stays with its player: it cannot be sold, traded or deleted"
+        : d.type === "quest" ? "Quest item: vendors do not buy it" : price > 0 ? `Sells to a vendor for ${coinWords(price)}` : "Vendors do not buy it",
+      "faint",
+    );
     if (String(d.description ?? "").trim()) box.appendChild(el("div", "tl-preview-text", String(d.description).trim()));
     body.appendChild(box);
   }
@@ -521,6 +569,8 @@ class ItemEditorBridge {
 
   private open(draft: any, originalName: string | null, dirty: boolean): void {
     this.originalName = originalName;
+    // The table keeps these two as 0 or 1: a switch is on or off.
+    for (const flag of ["no_combat", "teleports_home"]) draft[flag] = draft[flag] === true || Number(draft[flag]) === 1;
     this.draft = draft;
     this.dirty = dirty;
     this.refused = false;

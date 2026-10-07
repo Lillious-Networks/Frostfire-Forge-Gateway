@@ -316,3 +316,12 @@
   /* The scrubber takes a line of its own under the controls. */
   .an-transport { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* A phone held upright: the buttons of the top bar keep their pictures and lose their words, which are still read
+   out, so that all of them fit across it. */
+@media (max-width: 600px) {
+  .an-app .tl-topbar-actions { gap: var(--s-1); }
+  .an-app .tl-topbar-actions > .tl-btn { width: 36px; padding: 0; }
+  .an-app .tl-topbar-actions > .tl-btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .an-app .tl-topbar .tl-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+}

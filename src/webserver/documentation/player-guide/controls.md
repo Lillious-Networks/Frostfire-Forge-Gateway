@@ -48,7 +48,7 @@ Your target's name, level, health and mana appear in the target frame. A target 
 | K | Open or close the collectables window (your mounts) |
 | Enter | Open the chat box, press again to send |
 | Up and Down arrows | In the chat box: step through messages you sent earlier |
-| Esc | Close the world map, cancel ground targeting, cancel a spell you are casting, or open the menu |
+| Esc | Close the world map, cancel ground targeting, cancel a spell you are casting, close any open windows, or open the menu |
 | F2 | Show or hide the performance and debug readout, including the FPS counter |
 | Shift | Hold while pointing at an equipment item to compare it with what you are wearing |
 | Ctrl | Hold and drag a window to move it |
@@ -64,7 +64,8 @@ The keys are fixed. There is no key binding screen at the moment.
 1. If the world map is open, it closes the map.
 2. If you are choosing where to place a ground spell, it cancels that.
 3. If you are casting, it cancels the cast.
-4. Otherwise it opens or closes the menu.
+4. If any windows are open, such as your inventory, spellbook or character sheet, it closes all of them.
+5. Otherwise it opens or closes the menu.
 
 ## Mouse controls
 
@@ -111,6 +112,7 @@ On phones and tablets the game adds on-screen controls. Hold your device sideway
 | Tap the mount button | Mount or dismount |
 | Hold the mount button | Open the collectables window |
 | Tap the round menu button | Open the wheel of windows |
+| Tap the chat button under your frame | Open or hide the chat. See [Chat and Commands](#/player-guide/chat-and-commands). |
 | Tap a player or creature | Target it |
 | Tap the creature you already target | Start attacking it |
 | Tap a defeated creature that has loot for you | Open its loot window |
@@ -131,6 +133,8 @@ On touch devices your own name, health, mana and level are shown in a frame of t
 
 Opening one of the side windows closes the others, so only one is in the way at a time.
 
+To close a window, press its key again, select the **✕** at its top right corner, or press **Esc**, which closes every open window at once.
+
 | Window | Key | What it is for |
 |--------|-----|----------------|
 | Inventory | B | Your items, bags and coins. See [Inventory and Equipment](#/player-guide/inventory-and-equipment). |
@@ -142,6 +146,17 @@ Opening one of the side windows closes the others, so only one is in the way at 
 | Guild | G | Your guild, or the form to create one. See [Guilds](#/player-guide/guilds). |
 | Collectables | K | Your mounts. See [Mounts](#/player-guide/mounts). |
 | Menu | Esc | Settings, Manage Profile and Logout. |
+
+## Notifications
+
+Messages from the game appear at the bottom right of the screen, on top of everything else. On a phone or tablet they appear at the top of the screen in the middle instead, with the newest at the top, so they stay clear of your thumbs. They tell you things like why an item could not be used, or that your home was updated.
+
+- Each new one is added at the bottom and moves the earlier ones up (on a phone or tablet: at the top, moving the others down). Up to five are shown at once.
+- A notification closes by itself after a few seconds. Longer messages stay longer.
+- Select the **✕** beside one to close it straight away.
+- The same message arriving again while it is still shown does not stack. Its border flashes and its time starts again.
+
+A message about your connection, such as an attempt to reconnect, stays until it is replaced by the next one or you close it.
 
 ## Menu and settings
 

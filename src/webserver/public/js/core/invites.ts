@@ -59,6 +59,20 @@ export function createInvitationPopup(invitationData: any) {
       }
     }
     break;
+    // Accepting opens the trade window for both players.
+    case "TRADE_REQUEST": {
+      const heading = popup.querySelector("h2");
+      if (heading) heading.innerText = "Trade Request";
+      data = {
+        type: "INVITATION_RESPONSE",
+        data: {
+          authorization: invitationData.authorization,
+          originator: invitationData.originator,
+          action: "TRADE_REQUEST",
+        },
+      }
+    }
+    break;
   }
 
   if (!data) return;

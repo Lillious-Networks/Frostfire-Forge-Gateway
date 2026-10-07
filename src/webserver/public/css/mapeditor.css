@@ -115,3 +115,11 @@
   .me-pill-layer { max-width: 150px; }
   .me-legend { display: none; }
 }
+
+/* A phone held upright: the tools take as many lines as they need, and their keys (there is no keyboard to press
+   them on) make room for their names. */
+@media (max-width: 600px) {
+  .me-toolbar { flex-wrap: wrap; gap: var(--s-2); padding: var(--s-2) var(--s-4); }
+  .me-tools { flex-wrap: wrap; max-width: 100%; }
+  .me-tools .tl-kbd, .me-key { display: none; }
+}

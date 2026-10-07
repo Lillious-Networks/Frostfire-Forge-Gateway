@@ -3,7 +3,7 @@
 // own WebGL canvas placed in the page (#map-below / #map-above / #minimap-map)
 // at a whole-number scale, so there are no canvas->canvas copies.
 import { getGL, getSurfaceCanvas, beginCanvasPass } from "./context.js";
-import { getMapResources, getChunkTexture, sweepChunks, updateAnimations } from "./resources.js";
+import { getMapResources, getChunkTexture, chunkNeedsUpload, sweepChunks, updateAnimations } from "./resources.js";
 import { MAX_SLICES_PER_DRAW, MAX_BLUR_TAPS, MAX_OCCLUDERS } from "./shaders.js";
 
 export { setMap, invalidateChunk } from "./resources.js";
@@ -68,12 +68,32 @@ function useTileProgram(s: any, res: any, t: any, clip: any) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindVertexArray(s.quad);
 }
+// Puts one chunk on the GPU, and no more: of those given that are not there yet (or have changed), the one nearest
+// the middle of the view. The others wait for the passes after it, one each, and are not drawn until their turn
+// (one that has changed is drawn as it was). See getChunkTexture (resources.ts) for why: a row of new chunks
+// prepared in one frame was a stutter on a phone. Chunks are asked for a whole chunk beyond the screen's edge, so
+// walking finds them ready before they come into sight.
+function uploadOneChunk(s: any, chunks: any, centreX: any, centreY: any, chunkPixelSize: any) {
+  let next = null;
+  let nearest = Infinity;
+  for (const c of chunks) {
+    if (!chunkNeedsUpload(s, c.data))
+      continue;
+    const distance = Math.hypot((c.x + 0.5) * chunkPixelSize - centreX, (c.y + 0.5) * chunkPixelSize - centreY);
+    if (distance < nearest) {
+      nearest = distance;
+      next = c.data;
+    }
+  }
+  if (next)
+    getChunkTexture(s, next, true);
+}
 function drawChunkSlices(s: any, chunk: any, originX: any, originY: any, res: any, slices: any, alpha: any, silhouette: any) {
   if (slices.length === 0)
     return;
   const gl = s.gl;
   gl.activeTexture(gl.TEXTURE0);
-  const gpu = getChunkTexture(s, chunk);
+  const gpu = getChunkTexture(s, chunk, false);
   if (!gpu)
     return;
   const p = s.tile;
@@ -101,7 +121,7 @@ function drawYSortLayers(s: any, res: any, c: any, slices: any, mode: any, alpha
   let belowGPU = null;
   if (below) {
     gl.activeTexture(gl.TEXTURE3);
-    belowGPU = getChunkTexture(s, below);
+    belowGPU = getChunkTexture(s, below, false);
     if (belowGPU)
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, belowGPU.texture);
     gl.activeTexture(gl.TEXTURE0);
@@ -336,7 +356,7 @@ export function renderMapPass(opts: any) {
     flipY: -1
   };
   const ySortZ = playerCutIndex < cuts.length ? cuts[playerCutIndex].key + 0.5 : null;
-  const perChunkSegments = [];
+  const perChunkSegments: any = [];
   const perChunkYSort: any = [];
   for (const c of chunks) {
     const layers = c.data.layers || [];
@@ -364,6 +384,16 @@ export function renderMapPass(opts: any) {
     perChunkSegments.push(bySegment);
     perChunkYSort.push(ySorted);
   }
+  // Only chunks this pass draws something of are put on its GPU: a map with nothing over the players keeps none on
+  // the surface over them. (A shadow is drawn from layers of its own, not counted above: with one in this pass,
+  // every chunk is taken.)
+  let shadowInPass = false;
+  for (let segment = startSegment;segment <= endSegment && segment < cuts.length; segment++) {
+    if (cuts[segment].shadowZ !== null && opts.shadow)
+      shadowInPass = true;
+  }
+  uploadOneChunk(s, shadowInPass ? chunks : chunks.filter((_: any, ci: any) => perChunkSegments[ci].size > 0 || perChunkYSort[ci].length > 0),
+    (width / 2 - canvasT.translateX) / canvasT.scaleX, (height / 2 - canvasT.translateY) / canvasT.scaleY, chunkPixelSize);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   useTileProgram(s, res, canvasT, opts.clip);
@@ -440,6 +470,7 @@ export function renderMinimapMap(anchor: any, worldLeft: any, worldTop: any, wor
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   useTileProgram(s, res, t, clip);
+  const inView = [];
   for (const chunk of mapData.loadedChunks.values()) {
     const cx = chunk.chunkX * chunkPixelSize;
     const cy = chunk.chunkY * chunkPixelSize;
@@ -447,6 +478,12 @@ export function renderMinimapMap(anchor: any, worldLeft: any, worldTop: any, wor
     const ch = chunk.height * mapData.tileheight;
     if (cx + cw < worldLeft || cx > worldLeft + worldWidth || cy + ch < worldTop || cy > worldTop + worldHeight)
       continue;
+    inView.push({ data: chunk, x: chunk.chunkX, y: chunk.chunkY });
+  }
+  uploadOneChunk(s, inView, worldLeft + worldWidth / 2, worldTop + worldHeight / 2, chunkPixelSize);
+  for (const { data: chunk } of inView) {
+    const cx = chunk.chunkX * chunkPixelSize;
+    const cy = chunk.chunkY * chunkPixelSize;
     const layers = chunk.layers || [];
     const slices = [];
     for (const i of sortedLayerIndices(layers)) {

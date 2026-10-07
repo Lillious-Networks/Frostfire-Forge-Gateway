@@ -97,9 +97,11 @@ Every node name found in the engine source, and where it is checked.
 | `admin.mute` | `/mute` | Yes |
 | `admin.unmute` | `/unmute` | Yes |
 | `admin.reports` | `/reports`, the control panel's Reports page, and the notification when a report arrives | Yes |
+| `admin.trades` | `/trades`, and the Trades group on a player in the control panel | Yes |
 | `admin.kick` | `/kick`, `/disconnect` | No |
 | `admin.kill` | `/kill` | Yes |
 | `admin.revive` | `/revive` | Yes |
+| `admin.cooldowns` | `/cooldowns`, `/resetcooldowns` | Yes |
 | `admin.respawn` | `/respawn` | Yes |
 | `admin.summon` | `/summon`, `/goto`, `/teleport` | No |
 | `admin.summonadmins` | Needed on top of `admin.summon` to summon a player who is an admin | Yes |

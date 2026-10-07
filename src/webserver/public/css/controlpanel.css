@@ -114,6 +114,19 @@
 .cp-plot-tip time { color: var(--text-faint); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
 .cp-plot-empty { position: absolute; inset: 12px 14px 24px 46px; display: grid; place-items: center; padding: 0 var(--s-4); color: var(--text-muted); font-size: var(--t-sm); text-align: center; }
 
+/* The weather over the viewer's map now, at the head of the weather card: set off from the control under it. */
+.cp-weather-now { display: grid; gap: var(--s-3); margin-bottom: var(--s-4); padding-bottom: var(--s-4); border-bottom: 1px solid var(--border); }
+/* Its name on a line of its own, with what the world is set to beside it where that differs. (The name is kept in
+   small letters: "rainy" reads as a heading here.) */
+.cp-weather-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s-2); }
+.cp-weather-name .tl-fact-label { flex-basis: 100%; }
+.cp-weather-shown { color: var(--text-strong); font: 600 var(--t-xl)/1.2 var(--font-display); text-transform: capitalize; }
+/* Its readings side by side, as many across as fit: four on a full window, two by two on a phone. */
+.cp-weather-readings { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
+.cp-weather-readings[hidden] { display: none; }
+/* The readings under a world's weather in the table of worlds: they wrap, where a table's cells do not. */
+.cp-weather-line { white-space: normal; }
+
 /* A list that scrolls inside its card, as tall as the cards beside it and no taller. */
 .cp-activity { contain: size; min-height: 0; }
 .cp-activity.tl-span-4 { grid-row: span 2; }
@@ -287,6 +300,89 @@ button.cp-bar-row:hover .cp-bar-fill { filter: brightness(1.2); }
 /* Smaller than the panel is meant for: one column, so nothing is cut off. */
 @media (max-width: 899px) {
   .cp-activity { contain: none; max-height: 420px; }
-  .cp-players.has-detail { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .cp-status .cp-stat, .cp-updated { display: none; }
+  /* The rows of a loot table are six fields across, which a phone has no room for either way up: they keep their
+     size and are moved sideways under a finger, inside their own card, and the page stays as wide as the screen. */
+  .cp-lootrows { overflow-x: auto; padding-bottom: var(--s-1); -webkit-overflow-scrolling: touch; }
+  .cp-lootrow { min-width: max-content; }
+}
+
+/*
+ * The players page on a small window: a phone, upright or on its side. On a full window the page fills it, the list
+ * scrolls inside its card, and a player's details stand beside the list. A phone on its side is 360 px tall: under
+ * the bar, the lead and the search, the list was left a row and a half, and with a player picked, a tenth of a row
+ * (the list and the details split what was left between them). USER REPORT 2026-10-07: "The players tab in control
+ * panel is very hard to view on mobile".
+ *
+ * Here the page scrolls as a whole instead, so the list is as long as it is. Picking a player shows their details
+ * in place of the list, and closing them (the X at their head) brings the list back.
+ */
+@media (max-width: 899px), (max-height: 600px) {
+  .tl-page-fill { display: block; overflow-y: auto; padding-bottom: var(--s-8); }
+  .cp-players, .cp-players.has-detail { display: block; }
+  .cp-players .tl-table-card { overflow: visible; }
+  /* (sideways only, for a table wider than a phone held upright) */
+  .cp-players .tl-table-scroll { flex: none; overflow-x: auto; overflow-y: hidden; }
+  .cp-players .tl-table th { position: static; }
+  .cp-players.has-detail > .tl-table-card { display: none; }
+  .cp-players .tl-detail { overflow: visible; }
+}
+
+/*
+ * A phone held upright (USER REQUEST 2026-10-07: "Make the other control panel tabs work on mobile too - also get
+ * it to work in portrait mode as well"). The panel was laid out for a wide window: at 390 px, with the navigation
+ * beside it, a page has some 300 px, and whatever stood side by side there was squeezed to a few letters a line or
+ * ran off the edge. Under 600 px, things that stood side by side stand one over the other.
+ */
+@media (max-width: 600px) {
+  .tl-page { padding: var(--s-4) var(--s-4) var(--s-6); }
+
+  /* The bar across the top: a long page name gives way to the server's state, which is always whole. */
+  .tl-topbar { gap: var(--s-3); padding: 0 var(--s-4); }
+  .tl-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .cp-status { flex-shrink: 0; overflow: visible; }
+  .tl-topbar-end { padding-left: var(--s-3); }
+
+  /* The dashboard's tiles: two across, not three. */
+  .cp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* The heading of a section or of a card, with what stood beside it (a choice of range, a field and a button)
+     under it. */
+  .tl-sectionbar { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+  .tl-sectionbar .tl-seg { align-self: flex-start; max-width: 100%; }
+  .tl-card-head { flex-direction: column; align-items: stretch; gap: var(--s-2); }
+  .tl-card-tools { flex-wrap: wrap; }
+  .tl-card-tools .tl-seg { flex-wrap: wrap; max-width: 100%; }
+  .cp-loot-new { flex-wrap: wrap; }
+  .cp-loot-new .tl-input { flex: 1 1 140px; width: auto; }
+
+  /* A row of words with its controls: a switch stays beside its words, a field and a button go under them. */
+  .tl-row { flex-wrap: wrap; gap: var(--s-2) var(--s-4); }
+  .tl-row-words { flex: 1 1 150px; }
+  .tl-row-controls { flex-wrap: wrap; flex-shrink: 1; max-width: 100%; }
+  .tl-row-controls .tl-input { flex: 1 1 120px; width: auto; }
+
+  /* The list of players: their name and their state. The rest (level, map, time online) is in the details a tap
+     on the row opens. */
+  .cp-players .tl-table :is(th, td):is(:nth-child(2), :nth-child(3), :nth-child(5)) { display: none; }
+  .cp-players :is(.tl-table td, .tl-sort) { padding-left: var(--s-3); padding-right: var(--s-3); }
+  .cp-players .tl-table td { white-space: normal; }
+  .tl-toolbar { padding: var(--s-3); }
+  .tl-toolbar .tl-search { flex-basis: 100%; max-width: none; }
+
+  /* A line of what was done, and when: the time under the words, not beside them. */
+  .cp-act { grid-template-columns: 26px minmax(0, 1fr); }
+  .cp-act-when { grid-column: 2; padding-top: 0; }
+
+  /* The plain tables (the worlds and their weather) wrap their words to fit, where a table's cells otherwise keep
+     to one line and the table ran off the side. */
+  .tl-table-plain td { white-space: normal; overflow-wrap: anywhere; }
+  .tl-table-plain :is(th, td) { padding-left: var(--s-3); padding-right: var(--s-3); }
+  .tl-table-plain .cp-cell-player .tl-tag { margin: 2px 0 0; }
+}
+
+/* And less room given to the edges of the page, on a window that has little. */
+@media (max-height: 600px) {
+  .tl-page { padding: var(--s-3) var(--s-4) var(--s-6); }
+  .tl-topbar { height: 48px; padding: 0 var(--s-4); }
 }

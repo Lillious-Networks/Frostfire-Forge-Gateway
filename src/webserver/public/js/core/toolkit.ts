@@ -67,6 +67,8 @@
 //
 // Nothing here talks to the server or knows about any one tool.
 import { applyItemFrame } from "./itemframe.js";
+// On a touch screen, a way back to the game in every window built from this.
+import "./toolback.js";
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = ""): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);

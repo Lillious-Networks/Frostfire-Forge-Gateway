@@ -130,6 +130,18 @@ Shared behaviour:
 
 The Control Panel and the Map Editor have their own layouts, described on their pages.
 
+### On a phone or tablet
+
+Every tool window works on a phone, held sideways or upright. A few things differ from a full window:
+
+- **Back to game** is the first button in the top bar. It closes the tool and brings the game back.
+- **The side pane slides over the page** instead of standing beside it. The list button next to Back to game brings it out. In an editor it goes away when you pick a record or start a new one; a tap beside it puts it away too.
+- **The top bar is shorter.** The record's picture and second line are left out, and on an upright phone Save and Back to game show their icons only.
+- **Fields stand one over the other** on an upright phone, and a preview goes under the form.
+- **The window does not zoom** when you tap a field, double tap or pinch.
+
+In the Control Panel, the Players page shows a picked player's details in place of the list, and an open loot table's rows slide sideways inside their card.
+
 ## Where changes go
 
 Tools change the live game server. A saved spell, item, quest, weather or creature takes effect without a restart.

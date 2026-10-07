@@ -47,7 +47,7 @@ Before a cast starts, the game checks a few things. If one fails, the spell does
 | You do not have enough mana | The spell does not start |
 | The target is too far away | "Target is out of range" |
 | Something blocks the way to the target | "Target is not in line of sight" |
-| You or your target is in a no-PvP area | "You are not in a PvP area" |
+| You or your target is in a no-PvP area | Nothing happens |
 | You are stunned or locked out of casting | Nothing happens |
 
 A few more rules:
@@ -169,7 +169,7 @@ If the graveyard offer is in your way, select **Cancel**. It comes back when you
 
 You can attack other players, except in no-PvP areas.
 
-- If you or your target stands in a no-PvP area, harmful spells do not work. You see "You are not in a PvP area".
+- If you or your target stands in a no-PvP area, harmful spells do not work. Nothing is shown: the spell simply does not start.
 - You cannot place a harmful ground spell inside a no-PvP area. You see "You cannot cast that into a no-PvP area".
 - Area spells never hurt players who are standing in a no-PvP area.
 

@@ -15,6 +15,8 @@ The control panel is a dashboard for the admins of one game server. It shows how
 
 The panel opens in its own window at route `/control-panel`. Typing the command again closes it.
 
+On a phone or tablet, admins also have a **Control Panel** entry (the tools icon) on the round menu's wheel. It does the same as the command, and players who are not admins do not see it. The panel opens full screen there, with a **Back to game** button at the start of its top bar.
+
 :::note It only works from the game
 Opened straight from the address bar, the panel shows "This window opens from the game". Log in to the game as an admin and type `/cp`. See [Tools Overview](#/tools/overview/how-the-tool-windows-work).
 :::
@@ -38,6 +40,7 @@ Inside the panel, every control stands for one admin command and is checked with
 | Mute | `/mute` | `admin.mute` or `admin.*` |
 | Unmute | `/unmute` | `admin.unmute` or `admin.*` |
 | Reports page, Resolve | `/reports` | `admin.reports` or `admin.*` |
+| Trades group on a player | `/trades` | `admin.trades` or `admin.*` |
 | Make admin, Remove admin | `/admin` | `server.admin` or `server.*` |
 | Give item, Drop item, Spawn chest | `/give`, `/drop`, `/spawnchest` | `admin.items` or `admin.*` |
 | See, give, take, set and clear permissions | `/permission` | `admin.permission` or `admin.*`, plus `permission.list`, `permission.add` or `permission.remove` (or `permission.*`) for the part used |
@@ -107,7 +110,7 @@ A table of everyone online, with columns Player, Level, Map, Status and Online f
 - The Show filter switches between All, Admins and Guests. A second filter limits the table to one map.
 - Up and Down move through the rows. Enter or Space opens the player.
 
-Picking a player opens a side panel with their facts (level, map, time online, connection id, or account number when offline) and five groups of actions.
+Picking a player opens a side panel with their facts (level, map, time online, connection id, or account number when offline) and six groups.
 
 | Group | Actions |
 | --- | --- |
@@ -116,6 +119,7 @@ Picking a player opens a side panel with their facts (level, map, time online, c
 | Chat | Whether they are muted, until when, by whom and why. Mute with a reason and a length (10 minutes to 30 days, or until lifted), and Unmute. When open reports name the player, their count and a link to the Reports page. |
 | Account | Make admin or Remove admin, and Permissions |
 | Items | Give item: an item name with search, and an amount. It goes straight into their inventory, online or not. |
+| Trades | The player's latest 20 completed trades, newest first: who each was with, when, what they gave and what they got. Shown to admins who hold `admin.trades`. |
 
 Built in limits:
 
@@ -181,8 +185,10 @@ Things to know:
 
 | Card | Contents |
 | --- | --- |
-| Worlds | Every world, the weather it is showing, and how many players are in it. Your own world is marked. |
-| Weather | Changes the weather of the map you are on |
+| Worlds | Every world, the weather it has now with its readings, and how many players are in it. Your own world is marked. |
+| Weather | The weather over the map you are on now, with its temperature, humidity, wind and how much rain or snow falls, and a control to change it |
+
+What a world is set to is not always what it has. A world set to `random` shows whichever weather the server settled on, and a world set to `weather_api` shows the last reading of the real place it follows. Both name the weather they have now, with what it is set to beside it. Temperatures are in Fahrenheit and wind in miles an hour, as the weather table keeps them. A clear sky has no readings.
 | Reload a map | Reads a map again and sends it to everyone on it |
 | Your character | Warp to another map, plus the Noclip and Stealth switches |
 

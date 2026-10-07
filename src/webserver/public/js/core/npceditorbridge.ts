@@ -10,8 +10,8 @@
 // whenever it changes, and a save or a delete is known to have gone through
 // when the list that comes back shows it.
 import { EditorShell, type ListRow } from "./tooleditor.js";
-import { FieldRenderer, orderFields, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
-import { button, card, confirmDialog, count, el, listed, tag, thumb, toast, tooltip } from "./toolkit.js";
+import { FieldRenderer, coinWords, orderFields, sheetOptions, type AssetOption, type Field } from "./toolfields.js";
+import { button, card, confirmDialog, count, el, empty, iconButton, listed, tag, thumb, toast, tooltip } from "./toolkit.js";
 import { manyField, type Choice } from "./questnpcparts.js";
 import { Completer, GOSSIP_RULES, SCRIPT_RULES, type CompleterRules } from "./npceditorcomplete.js";
 
@@ -20,8 +20,13 @@ const TABS = [
   { id: "appearance", label: "Appearance" },
   { id: "content", label: "Dialogue" },
   { id: "quests", label: "Quests" },
+  { id: "vendor", label: "Vendor & Inn" },
   { id: "effects", label: "Effects" },
 ];
+/** How many different items one vendor stocks: the server's limit. */
+const STOCK_MAX = 40;
+/** What a newly stocked item costs, as a multiple of what vendors pay for it, until a price is set. */
+const MARKUP = 4;
 const FACINGS = ["down", "up", "left", "right"];
 const FACING_WORDS: Record<string, string> = { down: "Down", up: "Up", left: "Left", right: "Right" };
 const SPRITE_WORDS: Record<string, string> = { animated: "Animated", static: "Static", none: "None" };
@@ -56,12 +61,18 @@ interface Edit {
   given: number[];
   ended: number[];
   particles: string[];
+  /** What the NPC sells: each item's name, and what one costs there, in copper. */
+  stock: Array<{ item: string; price: number }>;
 }
+
+/** An item as the stock picker knows it. */
+interface StockChoice { name: string; icon: string | null; quality: string | null; sell_price: number }
 
 class NpcEditorBridge {
   private npcs: any[] = [];
   private availableParticles: string[] = [];
   private availableQuests: Array<{ id: number; name: string }> = [];
+  private availableItems: StockChoice[] = [];
   private spriteData: { spriteSheets: Record<string, Array<{ name: string; image: string | null }>>; icons: Array<{ name: string; image: string | null }> } = { spriteSheets: {}, icons: [] };
   private selectedNpcId: number | null = null;
   /**
@@ -70,7 +81,7 @@ class NpcEditorBridge {
    * on every refresh.
    */
   private draft: any = null;
-  private edit: Edit = { direction: "down", given: [], ended: [], particles: [] };
+  private edit: Edit = { direction: "down", given: [], ended: [], particles: [], stock: [] };
   /** The row the draft was copied from, as text: a refresh that brings the same row again changes nothing. */
   private source = "";
   /** Unsaved edits live in the draft; a refresh must not overwrite them. */
@@ -175,6 +186,7 @@ class NpcEditorBridge {
     this.npcs = msg.npcs || [];
     this.availableParticles = msg.particles || [];
     if (msg.quests) this.setAvailableQuests(msg.quests);
+    this.setAvailableItems(msg.items);
     this.storeSpriteData(msg);
     this.ready = true;
     this.shell.arrived();
@@ -205,6 +217,7 @@ class NpcEditorBridge {
     this.npcs = msg.npcs || [];
     this.settled = true;
     let redraw = msg.quests ? this.setAvailableQuests(msg.quests) : false;
+    redraw = this.setAvailableItems(msg.items) || redraw;
     redraw = this.storeSpriteData(msg) || redraw;
     const dropped = this.dropDeletedSelection();
     redraw = this.refreshDraftFromList() || redraw;
@@ -223,6 +236,7 @@ class NpcEditorBridge {
     const adopted = !!this.draft && this.selectedNpcId === null && this.saving?.id === null && msg.npc.id !== null;
     const another = !this.draft || (this.selectedNpcId !== msg.npc.id && !adopted);
     let redraw = msg.quests ? this.setAvailableQuests(msg.quests) : false;
+    redraw = this.setAvailableItems(msg.items) || redraw;
     redraw = this.storeSpriteData(msg) || redraw;
     // The answer to an NPC picked here is mostly the row it was opened from: then there is nothing to do.
     if (!another && !adopted && !this.dirty && JSON.stringify(msg.npc) === this.source) {
@@ -270,6 +284,8 @@ class NpcEditorBridge {
       given: ids(this.draft.questsGiven),
       ended: ids(this.draft.questsEnded),
       particles: this.normalizeParticleNames(this.draft.particles),
+      stock: (Array.isArray(this.draft.vendor_items) ? this.draft.vendor_items : [])
+        .map((entry: any) => ({ item: String(entry?.item ?? ""), price: Math.max(0, Math.floor(Number(entry?.price) || 0)) })),
     };
   }
 
@@ -302,6 +318,17 @@ class NpcEditorBridge {
     this.spriteSignature = signature;
     this.headThumb = null;
     return true;
+  }
+
+  /** The items there are, for the stock picker. Whether the list changed, so the page is only drawn again when it did. */
+  private setAvailableItems(items: unknown): boolean {
+    if (!Array.isArray(items)) return false;
+    const next: StockChoice[] = items
+      .filter((item: any) => item && typeof item.name === "string" && item.name)
+      .map((item: any) => ({ name: item.name, icon: item.icon ?? null, quality: item.quality ?? null, sell_price: Math.max(0, Math.floor(Number(item.sell_price ?? 1) || 0)) }));
+    const changed = JSON.stringify(next) !== JSON.stringify(this.availableItems);
+    this.availableItems = next;
+    return changed;
   }
 
   private setAvailableQuests(quests: any): boolean {
@@ -504,6 +531,7 @@ class NpcEditorBridge {
     if (this.tab === "appearance") this.renderAppearance(main);
     else if (this.tab === "content") this.renderContent(main);
     else if (this.tab === "quests") this.renderQuests(main);
+    else if (this.tab === "vendor") this.renderVendor(main);
     else if (this.tab === "effects") this.renderEffects(main);
     else this.renderGeneral(main);
 
@@ -625,6 +653,109 @@ class NpcEditorBridge {
     }));
   }
 
+  /** The items to stock, each with its icon in its quality's frame. */
+  private itemOptions(): AssetOption[] {
+    const images = new Map((this.spriteData.icons ?? []).map((entry) => [entry.name, entry.image]));
+    return this.availableItems.map((item) => ({
+      value: item.name, label: item.name, image: item.icon ? images.get(item.icon) ?? null : null, quality: item.quality,
+    }));
+  }
+
+  /** The item of that name, whatever its capitals: the server matches names that way too. */
+  private itemNamed(name: unknown): StockChoice | undefined {
+    const wanted = String(name ?? "").toLowerCase();
+    return wanted ? this.availableItems.find((item) => item.name.toLowerCase() === wanted) : undefined;
+  }
+
+  /** What a stocked item is sold for, under its card's title: its price, or why the price asked is not the one charged. */
+  private stockLine(entry: { item: string; price: number }): string {
+    const item = this.itemNamed(entry.item);
+    if (!entry.item) return "Pick the item this NPC sells.";
+    if (!item) return "This item no longer exists, so it is left out when the NPC is saved.";
+    if (entry.price < item.sell_price) return `Sold for ${coinWords(item.sell_price)}: never less than vendors pay for it.`;
+    return entry.price > 0 ? `Sold for ${coinWords(entry.price)}. Vendors pay ${coinWords(item.sell_price)} for it.` : "Given away for nothing.";
+  }
+
+  /**
+   * What the NPC sells. An NPC with anything in stock is a vendor: players
+   * buy from it, and it buys what they sell at each item's own sell price
+   * (set in the item editor).
+   */
+  private renderVendor(main: HTMLElement): void {
+    // An inn is one more service an NPC offers, with or without goods.
+    const inn = this.section(main, "Inn", "Where players set the home their home item returns them to");
+    inn.appendChild(this.field(
+      {
+        key: "innkeeper", label: "Innkeeper", type: "switch", wide: true,
+        hint: "Players who talk to this NPC can make its inn their home. Their home item then brings them back to where they stood when they did.",
+      },
+      this.draft, "innkeeper"
+    ));
+
+    const stock = this.edit.stock;
+    if (stock.length === 0) {
+      const none = card(main, "Vendor", "What this NPC sells to players");
+      empty(none.body, "coins", "Sells nothing", "Add an item below to make this NPC a vendor. A vendor also buys what players sell, for each item's own sell price.");
+    }
+
+    stock.forEach((entry, index) => {
+      const part = card(main, `Item ${index + 1} · ${entry.item || "No item picked"}`, this.stockLine(entry));
+      const lead = part.root.querySelector<HTMLElement>(".tl-card-lead");
+      const said = () => {
+        if (lead) lead.textContent = this.stockLine(entry);
+      };
+      const swap = (a: number, b: number) => {
+        [stock[a], stock[b]] = [stock[b], stock[a]];
+      };
+      const act = (name: "arrowUp" | "arrowDown" | "trash", label: string, enabled: boolean, change: () => void) => {
+        const btn = iconButton(name, label, () => {
+          change();
+          this.touched("vendor_items");
+          this.renderForm();
+        }, { danger: name === "trash", size: 15 });
+        btn.disabled = !enabled;
+        return btn;
+      };
+      part.tools.append(
+        act("arrowUp", `Move item ${index + 1} up`, index > 0, () => swap(index, index - 1)),
+        act("arrowDown", `Move item ${index + 1} down`, index < stock.length - 1, () => swap(index, index + 1)),
+        act("trash", `Remove item ${index + 1}`, true, () => stock.splice(index, 1)),
+      );
+
+      const grid = el("div", "tl-fields");
+      part.body.appendChild(grid);
+      grid.appendChild(this.fields.renderField(
+        { key: "item", label: "Item", type: "asset", assets: () => this.itemOptions(), searchFirst: true, fallback: "box", rerender: true, path: `vendor_items.${index}.item` },
+        entry,
+        () => {
+          // A newly picked item starts at a few times what vendors pay for it, rather than free.
+          const item = this.itemNamed(entry.item);
+          if (item && entry.price === 0) entry.price = item.sell_price * MARKUP;
+          this.touched("vendor_items");
+        }
+      ));
+      grid.appendChild(this.fields.renderField(
+        { key: "price", label: "Price", type: "money", hint: "What one costs to buy here. Never charged at less than vendors pay for the item.", path: `vendor_items.${index}.price` },
+        entry,
+        () => {
+          said();
+          this.touched("vendor_items");
+        }
+      ));
+    });
+
+    const add = button("Add item", () => {
+      stock.push({ item: "", price: 0 });
+      this.touched("vendor_items");
+      this.renderForm();
+    }, { icon: "plus" });
+    if (stock.length >= STOCK_MAX) {
+      add.disabled = true;
+      add.title = `A vendor stocks ${STOCK_MAX} items at most.`;
+    }
+    main.appendChild(add);
+  }
+
   private renderEffects(main: HTMLElement): void {
     const particles = this.section(main, "Particles", "Effects that play around the NPC");
     particles.appendChild(manyField<string>({
@@ -697,6 +828,10 @@ class NpcEditorBridge {
       say(`${does.charAt(0).toUpperCase()}${does.slice(1)}${d.quest_giver ? "." : ", but is not marked as a quest giver."}`);
     }
 
+    const stocked = this.edit.stock.filter((entry) => this.itemNamed(entry.item)).length;
+    if (stocked > 0) say(`A vendor: sells ${count(stocked, "item")}, and buys what players sell.`);
+    if (d.innkeeper) say("An innkeeper: players can make this inn their home.");
+
     if (this.edit.particles.length > 0) say(`Plays ${listed(this.edit.particles)} around it.`);
     if (String(d.script ?? "").trim()) say("Runs a script.");
     return out;
@@ -751,12 +886,17 @@ class NpcEditorBridge {
       position: { x: d ? (d.position?.x || 0) : 0, y: d ? (d.position?.y || 0) : 0, direction: this.edit.direction || "down" },
       hidden: !!d?.hidden,
       quest_giver: !!d?.quest_giver,
+      innkeeper: !!d?.innkeeper,
       name: text(d?.name),
       dialog: text(d?.dialog),
       gossip: text(d?.gossip),
       script: text(d?.script),
       questsGiven: quests(this.edit.given),
       questsEnded: quests(this.edit.ended),
+      // Only items that exist are sent, under their own names, each once.
+      vendor_items: this.edit.stock
+        .map((entry) => ({ item: this.itemNamed(entry.item)?.name ?? "", price: Math.max(0, Math.floor(Number(entry.price) || 0)) }))
+        .filter((entry, index, list) => entry.item && list.findIndex((other) => other.item === entry.item) === index),
       particles: this.edit.particles.slice(),
       sprite_type: d?.sprite_type || "none",
       sprite_body: d?.sprite_body ?? null,

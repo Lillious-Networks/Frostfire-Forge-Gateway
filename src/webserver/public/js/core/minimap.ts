@@ -8,6 +8,8 @@ import { renderMinimapMap } from "./glmap/index.js";
 import { renderMinimapMap as renderMinimapMapMobile } from "./glmap-mobile/index.js";
 import { MOBILE_RENDERER } from "./renderpath.js";
 import { bakedMap, mapDetailPiece, DETAIL_TILES } from "./bakedmap.js";
+import { drawMapPin, PIN_LIFT, PIN_RADIUS } from "./mappin.js";
+import { markerAt, markerIconUrl, markersOfKind } from "./mapmarkers.js";
 
 const cache = Cache.getInstance();
 
@@ -33,6 +35,11 @@ let zoomIndex = (() => {
 })();
 /** World px per minimap px this frame (the overlays' scale), from the zoom level and the map's tile size. */
 let minimapZoom = 16 / ZOOM_DEFAULT;
+
+/** The kinds of marker the minimap draws a pin for (mapmarkers.ts), the last drawn on top. Houses are the world map's. */
+const PINNED = ["cave", "merchant", "inn"];
+/** How far (minimap px) a merchant's pin stands to the side of an inn's on the same door, so both show. */
+const SHARED_DOOR_SHIFT = PIN_RADIUS + 3;
 
 const BUFFER_SCALE = 4;
 const BUFFER_SIZE = MINIMAP_SIZE * BUFFER_SCALE;
@@ -85,6 +92,8 @@ function createMinimap() {
   minimapContainer.addEventListener("wheel", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    // indoors the minimap stays zoomed all the way in (renderMinimap); the zoom chosen outside is kept for outside
+    if (window.mapData?.interior) return;
     // wheel up zooms in (more pixels per tile), down zooms out, one step per notch
     zoomIndex = Math.min(ZOOM_LEVELS.length - 1, Math.max(0, zoomIndex + (e.deltaY < 0 ? -1 : 1)));
     try { localStorage.setItem(ZOOM_STORE, String(ZOOM_LEVELS[zoomIndex])); } catch { /* not remembered */ }
@@ -116,7 +125,9 @@ function renderMinimap() {
   const playerY = currentPlayer.renderPosition?.y ?? currentPlayer.position.y;
 
   const tw = window.mapData.tilewidth || 16, th = window.mapData.tileheight || 16;
-  const pxPerTile = ZOOM_LEVELS[zoomIndex]!;
+  // USER REQUEST 2026-10-06 ("ensure the minimap is zoomed all the way in" indoors): the closest level, whatever
+  // was chosen outside
+  const pxPerTile = window.mapData.interior ? ZOOM_LEVELS[0]! : ZOOM_LEVELS[zoomIndex]!;
   const editing = !!(window as any).tileEditor?.isActive;
   // A world's image is several tiles to a pixel (bakedmap.ts scale): close in, the live render shows more than it
   // could, so that is drawn; zoomed out past what the live render reaches (LIVE_MAX_ZOOM), the image is drawn with
@@ -257,6 +268,23 @@ function renderMinimap() {
       ctx.beginPath();
       ctx.arc(px, py, size, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  // Inns and caves: a pin on each, over the player dots. The mark is the top of the house's door or the cave's
+  // mouth, where the pin's point stands, its head above. Markers of a map the player has since left are not drawn.
+  // USER FEEDBACK 2026-10-06 ("The house icon is barely visible"): an icon alone was lost on the ground, so each
+  // is drawn on a pale pin (mappin.ts).
+  const markedMap = (window as any).mapData?.name;
+  for (const kind of PINNED) {
+    for (const marker of markersOfKind(kind, markedMap)) {
+      // A house that is an inn and a shop: its two pins stand side by side, the inn's on the door.
+      const beside = kind === "merchant" && markerAt("inn", marker.x, marker.y, markedMap) ? SHARED_DOOR_SHIFT : 0;
+      const ix = halfSize + (marker.x - playerX) / minimapZoom + beside;
+      const iy = halfSize + (marker.y - playerY) / minimapZoom;
+      // Drawn whole or not at all: a pin whose head would cross the rim is left out.
+      if (!(Math.hypot(ix - halfSize, iy - PIN_LIFT - halfSize) <= radius - PIN_RADIUS - 2)) continue;
+      drawMapPin(ctx, getCachedImage(markerIconUrl(kind)), ix, iy);
     }
   }
 

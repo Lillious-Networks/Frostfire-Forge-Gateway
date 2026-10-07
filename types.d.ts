@@ -44,6 +44,10 @@ declare interface NPC {
   position: { x: number; y: number };
   dialog: string;
   gossip?: string | null;
+  /** Whether it sells things: a vendor can be talked to, though it has nothing to say. */
+  vendor?: boolean;
+  /** Whether it keeps an inn the player can make their home: a reason to talk to it too. */
+  innkeeper?: boolean;
   particles?: Particle[];
   hidden?: boolean;
   quest_giver?: boolean;
@@ -334,6 +338,15 @@ declare interface ControlPanelActivity {
 }
 
 /** What the control panel shows, as the server sends it every time the panel asks. */
+/** What a weather reads, as the control panel shows it: degrees Fahrenheit, percent, miles an hour, where the wind blows to on screen, and how much falls (0 to 100). */
+declare interface WeatherConditions {
+  temperature: number;
+  humidity: number;
+  wind_speed: number;
+  wind_direction: string;
+  precipitation: number;
+}
+
 declare interface ControlPanelData {
   /** The admin looking at the panel. */
   viewer: { id: string; username: string; map: string; isNoclip: boolean; isStealth: boolean };
@@ -351,7 +364,12 @@ declare interface ControlPanelData {
     creatures: Nullable<Record<string, any>>;
   };
   /** The viewer's map with its weather, and every world. `showing` is the weather a "random" world has settled on. */
-  world: { map: string; weather: string; showing: string; worlds: Array<{ name: string; weather: string; showing: string; players: number }> };
+  world: {
+    map: string; weather: string; showing: string;
+    /** The readings of the weather the viewer's map has now. Null under a clear sky, or when there is nothing to read. */
+    conditions: WeatherConditions | null;
+    worlds: Array<{ name: string; weather: string; showing: string; conditions: WeatherConditions | null; players: number }>;
+  };
   /** For a viewer who handles reports: how many are open. */
   reports?: { open: number };
   /** Sent when asked in full: which controls the viewer's permissions allow, by action. */

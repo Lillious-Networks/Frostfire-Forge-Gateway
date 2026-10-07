@@ -222,6 +222,8 @@ export class EditorShell {
   private bannerEl = document.getElementById("tl-banner")!;
   private tabsEl = document.getElementById("tl-tabs")!;
   private pageEl = document.getElementById("tl-page")!;
+  /** The whole window: where it is said that the list of records is out, on a window too small to have it beside the page. */
+  private appEl = document.querySelector<HTMLElement>(".tl-app-editor");
 
   private navEl = el("nav", "tl-nav");
   private navCounts = new Map<string, HTMLElement>();
@@ -266,6 +268,7 @@ export class EditorShell {
     this.setActions({ open: false });
     this.setTabs(null);
     this.setCount(null);
+    this.showList(true);
   }
 
   private get noun(): string {
@@ -427,7 +430,10 @@ export class EditorShell {
     const tools = el("div", "tl-side-tools");
     tools.append(head, search.root);
     if (opts.onNew) {
-      this.addBtn = button("New", () => opts.onNew?.(), { icon: "plus", block: true });
+      this.addBtn = button("New", () => {
+        opts.onNew?.();
+        this.showList(false);
+      }, { icon: "plus", block: true });
       this.addBtn.dataset.act = "new";
       tools.appendChild(this.addBtn);
     }
@@ -535,7 +541,10 @@ export class EditorShell {
         tags.append(...entry.tags);
         open.appendChild(tags);
       }
-      open.addEventListener("click", () => entry.onOpen());
+      open.addEventListener("click", () => {
+        entry.onOpen();
+        this.showList(false);
+      });
       row.appendChild(open);
       if (entry.actions?.length) {
         const actions = el("span", "tl-list-actions");
@@ -581,7 +590,26 @@ export class EditorShell {
       this.saveBtn.dataset.act = "save";
       actions.append(el("span", "tl-topbar-rule"), this.saveBtn);
     }
-    this.topEl.append(record, actions);
+    // On a small window (a phone, either way up) the list of records is not beside the page but slides over it
+    // (css/tools.css): this button brings it out, and a tap beside it, on a record or on New puts it away.
+    const toggle = iconButton("list", "Show the list", () => this.showList(true));
+    toggle.classList.add("tl-list-toggle");
+    this.topEl.append(toggle, record, actions);
+    const scrim = el("div", "tl-scrim");
+    scrim.addEventListener("click", () => this.showList(false));
+    this.appEl?.appendChild(scrim);
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.appEl?.classList.contains("is-list-open") && !document.querySelector("dialog[open]")) this.showList(false);
+    });
+  }
+
+  /**
+   * On a small window, where the list of records slides over the page: bring it out or put it away. It starts out,
+   * as there is nothing open to look at yet. On a full window the list is always beside the page and this changes
+   * nothing. USER REQUEST 2026-10-07: "Update other panels to work on mobile landscape and portrait".
+   */
+  showList(open: boolean): void {
+    this.appEl?.classList.toggle("is-list-open", open);
   }
 
   /** What is open, in the top bar and in the window's title. Null when nothing is. */

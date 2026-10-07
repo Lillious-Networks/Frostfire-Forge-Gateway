@@ -156,7 +156,14 @@ class TileEditor {
     await this.openEditor();
   }
 
+  /**
+   * Raised by every open and every close. An open waits for the server (waitForSyncReady): one that finds this
+   * changed when it is answered was closed, or closed and opened again, while it waited, and goes no further.
+   */
+  private openRun = 0;
+
   private async openEditor() {
+    const run = ++this.openRun;
     this.isActive = true;
     this.modifiedChunkKeys.clear();
 
@@ -180,6 +187,8 @@ class TileEditor {
     if (!this.editorWindow) {
       this.showNotification('Popup blocked! Please allow popups for this site.', 'error', 5000);
       this.isActive = false;
+      // It did not open: a warp's word to look at the arrival point is not kept for some later open.
+      (window as any).__resetEditorCamera = false;
       this.hideSyncNotification();
       return;
     }
@@ -191,6 +200,9 @@ class TileEditor {
     }, 500);
 
     await this.waitForSyncReady();
+    // Closed while it waited (the player walked into a warp, or shut the window): the close has put everything
+    // back, and a later open is its own.
+    if (run !== this.openRun || !this.isActive) return;
     this.hideSyncNotification();
 
     this.initialize();
@@ -198,8 +210,15 @@ class TileEditor {
     this.sendTilesetImages();
   }
 
+  /** The editor is closing: an open still waiting for the server is let go, and finds it is no longer wanted. */
+  private endOpen() {
+    this.openRun++;
+    this.releaseSyncWait();
+  }
+
   private async closeEditor() {
     this.isActive = false;
+    this.endOpen();
     this.selectedTilesPreview.invalidate();
     this.hideSyncNotification();
 
@@ -235,6 +254,7 @@ class TileEditor {
     this.editorWindow = null;
     this.bridgeReady = false;
     this.isActive = false;
+    this.endOpen();
     this.selectedTilesPreview.invalidate();
     this.hideSyncNotification();
 
@@ -290,16 +310,24 @@ class TileEditor {
   private syncReadyResolve: (() => void) | null = null;
 
   private waitForSyncReady(): Promise<void> {
+    // An earlier wait that was never answered is let go: its open sees it has been overtaken.
+    this.releaseSyncWait();
     return new Promise((resolve) => {
       this.syncReadyResolve = resolve;
     });
   }
 
-  public onSyncReady() {
+  /** Lets whatever is waiting for the server go on. */
+  private releaseSyncWait() {
     if (this.syncReadyResolve) {
       this.syncReadyResolve();
       this.syncReadyResolve = null;
     }
+  }
+
+  /** The server has sent the map's unsaved edits (EDITOR_SYNC_READY): the open that waits for them goes on. */
+  public onSyncReady() {
+    this.releaseSyncWait();
   }
 
   private showSyncNotification() {
@@ -409,6 +437,7 @@ class TileEditor {
           this.editorWindow = null;
           this.bridgeReady = false;
           this.isActive = false;
+          this.endOpen();
           this.hideSyncNotification();
           sendRequest({ type: 'EDITOR_CLOSE', data: null });
           this.restoreLayerSnapshot();

@@ -263,7 +263,18 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `ADD_SKELETON` | To client | Death | A skeleton appeared |
 | `REMOVE_SKELETON` | To client | Death | A skeleton is gone |
 | `NPC_INTERACT` | To server | Quests | Talk to an NPC |
-| `NPC_GOSSIP` | To client | Quests | An NPC's dialogue and its list of quests |
+| `NPC_GOSSIP` | To client | Quests | An NPC's dialogue and its list of quests. `vendor: true` when the NPC also sells things, `innkeeper: true` when it keeps an inn |
+| `USE_ITEM` | To server | Items | Use a consumable from the bags: `{ item }`. Answered with the player's bags and stats and an `ITEM_COOLDOWN`, or with a notification saying why not. The home item starts a cast instead (`CAST_SPELL` with the item's name) |
+| `ITEM_COOLDOWN` | To client | Items | `{ kind, remaining, total }` in milliseconds. `kind` is `consumable` (the cooldown all consumables share) or `home` (the home item's own). Sent when one starts, and what is left of each at login |
+| `COOLDOWNS_RESET` | To client | Items | Every cooldown of the player is over: spells, the spell lockout and both item cooldowns. No data. Sent by the `/cooldowns` admin command |
+| `MAP_MARKERS` | To client | Maps | `{ map, markers }`: what the map the player is on marks, each `{ kind, x, y, name }` in map pixels. `kind` is `inn`, `merchant`, `cave` or `house`. An inn or a merchant is marked on the warp that leads into the map its innkeeper or vendor is on (the middle of the warp's top edge), or where the NPC stands when it is in a world. A cave is a warp from one world into another. A house is a warp from a world into any other map. The minimap draws a pin for each inn, merchant and cave; the world map draws `house.png` on each house and `cave.png` on each cave. Sent on login and on entering a map, and to everyone when an innkeeper or a vendor is added, saved or deleted |
+| `SET_HOME` | To server | Items | Make an innkeeper's inn the player's home: `{ npcId }`. The player has to be alive and next to it |
+| `VENDOR_OPEN` | To server | Vendors | Ask to see what an NPC sells: `{ npcId }`. Talking to a vendor that has no quests for the player does the same |
+| `VENDOR_BUY` | To server | Vendors | Buy from the vendor's stock: `{ npcId, item, quantity }` |
+| `VENDOR_SELL` | To server | Vendors | Sell an item for its sell price: `{ npcId, item, quantity }`. No quantity sells all that is spare |
+| `VENDOR_BUYBACK` | To server | Vendors | Buy back one of the player's latest sales: `{ npcId, index }`, counted from 0 with the last sale first |
+| `VENDOR_STOCK` | To client | Vendors | `{ npcId, name, items, buyback }`: each stocked item with its details and its `price` in copper, and what the player can buy back. Opens the vendor window, and is sent again after every deal |
+| `VENDOR_CLOSED` | To client | Vendors | The player may no longer deal with the vendor: `{ message }` |
 | `QUEST_LOG` | To client | Quests | The whole quest log, sent at login |
 | `QUEST_LOG_ENTRY` | To client | Quests | One log entry was added or removed |
 | `QUEST_PROGRESS` | To client | Quests | Objective counts changed |
@@ -285,6 +296,12 @@ Direction is taken from the code: "To server" means the receiver has a handler f
 | `UNIGNORE_PLAYER` | To server | Social | Stop ignoring a player |
 | `UPDATE_IGNORES` | To client | Social | The names the player ignores, sent at login and after each change |
 | `REPORT_PLAYER` | To server | Social | Report a player to the admins, with a category and optional details |
+| `TRADE_REQUEST` | To server | Social | Ask a nearby player to trade, by the id of one in sight. They get an `INVITATION` with the action `TRADE_REQUEST` |
+| `TRADE_OFFER` | To server | Social | The sender's whole side of their trade: `{ items: [{ name, quantity }], coins: { gold, silver, copper } }` |
+| `TRADE_ACCEPT` | To server | Social | Accept the trade as it stands. When both have, the offers change hands |
+| `TRADE_CANCEL` | To server | Social | End the trade with nothing exchanged |
+| `TRADE_STATE` | To client | Social | The trade as it stands for this player: `{ partner, mine, theirs, accepted: { mine, theirs }, acceptIn }`. Sent to both after every change |
+| `TRADE_CLOSED` | To client | Social | The trade ended: `{ completed, message }` |
 | `UPDATE_ONLINE_STATUS` | To client | Social | A friend came online or went offline |
 | `INVITATION_RESPONSE` | To server | Social | Accept or decline a friend, party or guild invitation |
 | `INVITE_PARTY` | To server | Social | Invite a player to the party |
