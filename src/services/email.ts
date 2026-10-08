@@ -1,11 +1,14 @@
 import log from "../modules/logger";
 import nodemailer from "nodemailer";
 
+const EMAIL_PORT = parseInt(process.env.EMAIL_PORT || "") || 465;
+
 const transporter = nodemailer.createTransport({
   pool: true,
   host: process.env.EMAIL_SERVICE,
-  port: 587,
-  secure: false,
+  port: EMAIL_PORT,
+  // 465 is TLS from the first byte; any other port starts plain and upgrades with STARTTLS.
+  secure: EMAIL_PORT === 465,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,

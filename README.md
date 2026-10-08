@@ -231,6 +231,7 @@ ASSET_SERVER_AUTH_KEY=your-asset-server-key
 
 # Email (Optional but recommended)
 EMAIL_SERVICE=smtp.mailtrap.io
+EMAIL_PORT=465
 EMAIL_USER=your-email@example.com
 EMAIL_PASSWORD=your-email-password
 

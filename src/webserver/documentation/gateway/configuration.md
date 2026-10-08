@@ -49,6 +49,7 @@ DATABASE_PORT=3306
 SQL_SSL_MODE=DISABLED
 
 EMAIL_SERVICE=smtp.example.com
+EMAIL_PORT=465
 EMAIL_USER=no-reply@example.com
 EMAIL_PASSWORD=change-me
 
@@ -142,8 +143,9 @@ If `GATEWAY_AUTH_KEY` is not set, the gateway compares incoming keys against `nu
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `EMAIL_SERVICE` | none | SMTP host name, for example `smtp.example.com`. The gateway connects to it on port 587. |
-| `EMAIL_USER` | none | SMTP user name. Also the sender address. |
+| `EMAIL_SERVICE` | none | SMTP host name, for example `smtp.example.com`. |
+| `EMAIL_PORT` | `465` | SMTP port. `465` connects with TLS from the start. Any other port, such as `587`, connects plain and upgrades with STARTTLS. |
+| `EMAIL_USER` | none | Email address the gateway logs in to the SMTP server with. Also the sender address. |
 | `EMAIL_PASSWORD` | none | SMTP password. |
 
 :::warning Email is required for real accounts
