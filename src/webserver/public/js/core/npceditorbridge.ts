@@ -117,6 +117,8 @@ class NpcEditorBridge {
   /** The parts of the page that follow the fields, and the world, as they change. */
   private summaryEl: HTMLElement | null = null;
   private placeEl: HTMLElement | null = null;
+  /** The fields of where the open NPC stands, across and down: they follow it as it is moved in the world. */
+  private placeInputs: Array<HTMLInputElement | null> = [];
   private headThumb: { key: string; node: HTMLElement } | null = null;
   private completer = new Completer();
 
@@ -517,6 +519,7 @@ class NpcEditorBridge {
     this.completer.hide();
     this.chrome();
     this.summaryEl = this.placeEl = null;
+    this.placeInputs = [];
     if (!this.ready) return;
     if (!this.draft) {
       const box = this.shell.idle(
@@ -558,9 +561,20 @@ class NpcEditorBridge {
       return said;
     };
     fact("Map", d.map ? String(d.map) : "The map you are on", d.map ? "" : "Set when the NPC is saved.");
-    this.placeEl = fact("Position", this.placeOf(d), "Drag the NPC in the game window to move it.");
+    this.placeEl = fact("Position", this.placeOf(d), "Drag the NPC in the game window, type where it stands, or bring it to you.");
+    // Where it stands can be typed, and it can be brought to where the admin's character is: an NPC that has ended
+    // up off the map, or anywhere it cannot be reached, cannot be dragged back (USER REQUEST 2026-10-07: "Add a
+    // 'Bring to' button to NPCs and editable position fields"). Like a drag, neither is saved until Save is pressed.
+    if (!d.position) d.position = {};
+    const spot = el("div", "tl-fields ne-spot");
+    const across = this.field({ key: "x", label: "X", type: "number", unit: "px", hint: "Across the map, from its left edge." }, d.position, "position.x");
+    const down = this.field({ key: "y", label: "Y", type: "number", unit: "px", hint: "Down the map, from its top edge." }, d.position, "position.y");
+    this.placeInputs = [across.querySelector("input"), down.querySelector("input")];
+    const bring = el("div", "tl-field ne-bring");
+    bring.appendChild(button("Bring to me", () => this.send({ type: "bringNpc", id: this.selectedNpcId }), { icon: "pin", tip: "Puts the NPC where your character stands" }));
+    spot.append(across, down, bring);
     const grid = el("div", "tl-fields");
-    placement.body.append(facts, grid);
+    placement.body.append(facts, spot, grid);
     grid.appendChild(this.field(
       { key: "direction", label: "Facing", type: "segmented", options: () => FACINGS.map((value) => ({ value, label: FACING_WORDS[value] })) },
       this.edit, "direction"
@@ -841,6 +855,11 @@ class NpcEditorBridge {
   private paintLive(): void {
     if (!this.draft) return;
     if (this.placeEl) this.placeEl.textContent = this.placeOf(this.draft);
+    // The two fields follow the NPC as it is dragged or brought: not the one being typed in.
+    const at = [this.draft.position?.x, this.draft.position?.y];
+    this.placeInputs.forEach((input, i) => {
+      if (input && document.activeElement !== input) input.value = Number.isFinite(at[i]) ? String(Math.round(at[i])) : "";
+    });
     if (this.summaryEl) this.summaryEl.replaceChildren(...this.summary());
   }
 
@@ -919,7 +938,8 @@ class NpcEditorBridge {
     this.unsaved.add(this.selectedNpcId);
     this.unconfirmed.delete(this.selectedNpcId);
     const data = this.formData();
-    if (data) this.send({ type: "fieldUpdate", npc: data });
+    // (`moved`: where it stands was typed, so the game window puts the NPC there; any other field leaves it be)
+    if (data) this.send({ type: "fieldUpdate", npc: data, moved: path.startsWith("position.") });
     this.chrome();
     this.paintLive();
     // The list follows the name as it is typed, and marks the NPC as changed.

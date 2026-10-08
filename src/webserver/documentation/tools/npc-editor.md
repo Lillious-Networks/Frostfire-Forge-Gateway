@@ -51,7 +51,7 @@ The **At a glance** card beside the form shows the NPC as players find it.
 
 - **New NPC** places an NPC where your character stands. A banner reminds you that it is only kept once you save it.
 - **Click an NPC** in the game window to open it in the editor.
-- **Drag an NPC** in the game window to move it. The Position fact in the editor follows live. The new position is stored with the next save.
+- **Drag an NPC** in the game window to move it. The Position fact and the X and Y fields in the editor follow live. The new position is stored with the next save.
 - **Ctrl+Z** and **Ctrl+Y** in the game window undo and redo moves.
 - Field changes are sent to the game window as you type, so the NPC in the world previews your edits before you save.
 
@@ -68,9 +68,13 @@ The **At a glance** card beside the form shows the NPC as players find it.
 | Part | Notes |
 | --- | --- |
 | Map | The map the NPC is on. For a new NPC it is set when you save. |
-| Position | Read only here. Drag the NPC in the game window to move it. |
+| Position | Where the NPC stands, as it is being moved |
+| X, Y | The same place in pixels, across and down the map from its top left corner. Type a number to move the NPC there. |
+| Bring to me | Puts the NPC where your character stands |
 | Facing | Down, Up, Left or Right |
 | Hidden | Hidden NPCs are not shown to players |
+
+An NPC that has ended up off the map, or somewhere you cannot reach to drag it, can be put right with X and Y or with **Bring to me**. Both show the NPC in its new place at once, and like a drag, neither is kept until you save.
 
 ## Appearance tab
 

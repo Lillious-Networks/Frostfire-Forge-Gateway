@@ -842,6 +842,7 @@ function initializeConnection() {
 
   sessionActive = false;
   cachedPlayerId = null;
+  (window as any).cachedPlayerId = null;
 
   snapshotRevision = null;
   snapshotApplied = false;
@@ -2942,6 +2943,10 @@ async function dispatchMessage(type: string, data: any, bytes: Uint8Array, envel
         const chatDecryptionKey = envelope?.["chatDecryptionKey"];
         sessionStorage.setItem("connectionId", connectionId);
         cachedPlayerId = connectionId;
+        // Also where the modules that do not import this one look for it (tooltip.ts, npceditor.ts). It was read
+        // there and never set, so both found no player: an item's level was checked against level 1, and the NPC
+        // editor's "Bring to me" did nothing (USER REPORT 2026-10-07: "Bring to me button doesn't work").
+        (window as any).cachedPlayerId = connectionId;
         sessionActive = true;
 
         if (cache?.players) {

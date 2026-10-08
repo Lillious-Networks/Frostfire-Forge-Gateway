@@ -13,6 +13,12 @@
 /* Where it stands: read here, changed by dragging it in the game window. */
 .ne-place { margin-bottom: var(--s-4); padding-bottom: var(--s-4); border-bottom: 1px solid var(--border-soft); }
 .ne-place .tl-fact-value { font-size: var(--t-md); }
+/* Where it stands, to be typed, and the button that brings it to the admin: the button level with the two fields. */
+.ne-spot { margin-bottom: var(--s-4); }
+.ne-bring { padding-top: 24px; }
+@media (max-width: 600px) {
+  .ne-bring { padding-top: 0; }
+}
 
 /* A script is code: fixed-width, and a long line scrolls instead of wrapping. */
 .tl-textarea.ne-code { min-height: 132px; font: 400 var(--t-sm)/1.6 var(--font-mono); tab-size: 2; white-space: pre; overflow: auto; }

@@ -51,7 +51,6 @@ Your target's name, level, health and mana appear in the target frame. A target 
 | Esc | Close the world map, cancel ground targeting, cancel a spell you are casting, close any open windows, or open the menu |
 | F2 | Show or hide the performance and debug readout, including the FPS counter |
 | Shift | Hold while pointing at an equipment item to compare it with what you are wearing |
-| Ctrl | Hold and drag a window to move it |
 
 :::note Changing the keys
 The keys are fixed. There is no key binding screen at the moment.
@@ -88,7 +87,6 @@ The keys are fixed. There is no key binding screen at the moment.
 | Double-click an equipped item | Take it off |
 | Drag an item out of the inventory onto the world | Destroy it, after a confirmation |
 | Scroll over the minimap | Zoom the minimap |
-| Ctrl + drag a window | Move the window. Its position is remembered. |
 
 ### The player menu
 

@@ -235,6 +235,12 @@ class NpcEditor {
             liveNpc.hidden = msg.npc.hidden;
             if (msg.npc.position) {
               liveNpc.position.direction = msg.npc.position.direction;
+              // Where it stands was typed into the editor: the NPC is shown there at once, as when it is dragged.
+              // Only then: any other field sends the place too, as the editor has it, and that is not to move it.
+              if (msg.moved && Number.isFinite(msg.npc.position.x) && Number.isFinite(msg.npc.position.y)) {
+                liveNpc.position.x = msg.npc.position.x;
+                liveNpc.position.y = msg.npc.position.y;
+              }
             }
           }
           // Mutate in place: selectedNpc points at this object, and replacing it
@@ -252,6 +258,9 @@ class NpcEditor {
       }
       case 'saveNpc':
         this.handleBridgeSave(msg.npc);
+        break;
+      case 'bringNpc':
+        this.bringToPlayer(msg.id);
         break;
       case 'createNpc':
         this.createNewNpc();
@@ -311,6 +320,35 @@ class NpcEditor {
     }
 
     this.isDirty = false;
+  }
+
+  /**
+   * Puts an NPC where the admin's character stands (the editor's "Bring to me"): for one that has ended up off the
+   * map or somewhere it cannot be reached to be dragged back. As with a drag, the NPC is shown there at once and
+   * the editor is told, and nothing is saved until Save is pressed. USER REQUEST 2026-10-07: "Add a 'Bring to'
+   * button to NPCs and editable position fields so that admins can change their position if they are off map".
+   */
+  private bringToPlayer(id: any) {
+    const me: any = Array.from(cache.players as Iterable<any>).find((p) => p.id === (window as any).cachedPlayerId);
+    if (!me?.position) return;
+    const x = Math.round(me.position.x), y = Math.round(me.position.y);
+
+    const liveNpc = cache.npcs.find((n: any) => n.id === id);
+    if (liveNpc?.position) {
+      liveNpc.position.x = x;
+      liveNpc.position.y = y;
+    }
+    const dataIdx = this.npcs.findIndex((n) => n.id === id);
+    if (dataIdx >= 0) {
+      this.npcs[dataIdx] = { ...this.npcs[dataIdx], position: { ...this.npcs[dataIdx].position, x, y } };
+    }
+    if (this.selectedNpc && this.selectedNpc.id === id) {
+      this.selectedNpc.position = { ...this.selectedNpc.position, x, y };
+    }
+    this.markDirty();
+    this.savePositionHistory();
+    this.sendToEditor({ type: 'positionUpdate', id, x, y });
+    this.sendToEditor({ type: 'npcListUpdate', npcs: this.npcs });
   }
 
   private handleBridgeDelete(id: any) {
