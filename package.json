@@ -7,6 +7,8 @@
     "production": "bun --env-file=.env.production src/start.ts",
     "setup": "bun --env-file=.env.production ./src/utility/database_setup.ts",
     "setup-development": "bun --env-file=.env.development ./src/utility/database_setup.ts",
+    "create-admin": "bun --env-file=.env.production ./src/utility/create_admin.ts",
+    "create-admin-development": "bun --env-file=.env.development ./src/utility/create_admin.ts",
     "development": "bun --env-file=.env.development src/start.ts",
     "docker:dev": "docker compose -f src/docker/docker-compose.dev.yml up -d",
     "docker:dev:rebuild": "docker compose -f src/docker/docker-compose.dev.yml up -d --build --force-recreate",

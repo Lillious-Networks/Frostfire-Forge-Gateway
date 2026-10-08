@@ -106,11 +106,10 @@ Besides the tables, the scripts seed:
 - A default spell, a default mount and demo quests.
 - The weathers `clear`, `thunderstorm`, `darkness`, `rainy` and `snowy`.
 - The world `overworld` with the weather `rainy` (the SQLite script also adds a world named `default`).
-- A demo account named `demo_user` with stats, client settings and permissions.
 - Indexes.
 
-:::danger Change the demo account
-The seeded `demo_user` account has a publicly known default password and admin permissions. Change its password or remove it before you let anyone else reach the server. See [Quick start](#/getting-started/quick-start).
+:::note No accounts are seeded
+The scripts create no accounts. Make the first admin with the gateway's `bun create-admin <username> <email>`. See [Quick start](#/getting-started/quick-start).
 :::
 
 :::note The gateway shares this database

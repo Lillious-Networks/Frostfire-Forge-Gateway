@@ -238,8 +238,16 @@ bun production
 
 `bun production` starts the server with `--sql-preconnect`.
 
-:::danger Deal with the demo account
-The engine setup inserts an account named `demo_user` with a publicly documented password. Change its password or remove the account before you open the server to players.
+The engine setup creates no accounts. Make the first admin with the gateway's script, then open the link it prints to set the password:
+
+```bash title="In Frostfire-Forge-Gateway"
+bun create-admin <username> <email>
+```
+
+The link is built from `DOMAIN` and works once. The account is created verified, so the admin can log in before a mail server is configured.
+
+:::warning Databases set up before this change
+Earlier versions of the engine setup inserted an account named `demo_user` with a publicly documented password and admin permissions. Setup no longer creates it, but it does not remove one that already exists. Change its password or delete the account.
 :::
 
 ## Firewall

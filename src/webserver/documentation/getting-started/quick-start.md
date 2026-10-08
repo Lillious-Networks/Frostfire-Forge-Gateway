@@ -229,14 +229,15 @@ In the engine log you should see the map sync, `Successfully registered with gat
 
 ## 7. Log in
 
-Open `http://localhost` in a Chromium based browser. The engine setup created a demo account:
+The engine setup creates no accounts, so make your admin account first:
 
-```text title="Demo account"
-Username: demo_user
-Password: Changeme123!
+```bash title="In Frostfire-Forge-Gateway"
+bun create-admin-development <username> <email>
 ```
 
-Log in, pick the realm, and you are in the game. The gateway's monitoring dashboard is at `http://localhost:9999/dashboard`, see [Dashboard](#/gateway/dashboard).
+The script creates a verified account with the admin role and the `admin.*`, `server.*` and `permission.*` permissions, then prints a one-time link. Open the link in a Chromium based browser and set the password. No mail server is needed for this.
+
+Open `http://localhost`, log in, pick the realm, and you are in the game. The gateway's monitoring dashboard is at `http://localhost:9999/dashboard`, see [Dashboard](#/gateway/dashboard).
 
 ## Starting everything again later
 
