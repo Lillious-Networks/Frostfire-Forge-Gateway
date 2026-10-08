@@ -1,0 +1,69 @@
+# Build context rules for Dockerfile.prod only.
+# BuildKit uses this file instead of the root .dockerignore when it builds
+# Dockerfile.prod, so everything the root file lists is repeated here.
+# The production image is published to a registry: nothing secret or
+# specific to one installation may be copied into it.
+
+# Environment files (supplied at runtime through env_file)
+.env*
+
+# TLS certificates and private keys (mounted at runtime)
+src/certs/**
+!src/certs/**/.gitkeep
+
+# Config and logs (mounted at runtime). The root config.json is not read by any code.
+config
+config.json
+src/logs
+logs
+
+# Local databases
+**/*.sqlite
+**/*.sqlite-wal
+**/*.sqlite-shm
+
+# Node modules (will be installed in container)
+node_modules/
+bun.lockb
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Build artifacts
+dist/
+build/
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+.claude/
+.VSCodeCounter/
+*.swp
+*.swo
+*~
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+
+# Test files
+test/
+tests/
+*.test.ts
+*.spec.ts
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
