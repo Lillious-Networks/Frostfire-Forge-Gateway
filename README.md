@@ -412,6 +412,12 @@ The webserver hosts the full documentation at `/docs` (for example `http://local
   - One-time use tokens bound to specific game server
   - Prevents token replay across servers
 
+## License
+
+Free for noncommercial use under the [PolyForm Noncommercial License 1.0.0](LICENSE). Every commercial use needs a paid [commercial license](COMMERCIAL-LICENSE.md) from Lillious Networks. See [LICENSING.md](LICENSING.md) for which one applies to you.
+
+Contributions are welcome and need a signed [Contributor License Agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ---
 
 <p align="center">

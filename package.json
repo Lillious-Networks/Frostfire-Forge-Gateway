@@ -25,7 +25,7 @@
     "reverse-proxy"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN LICENSING.md",
   "devDependencies": {
     "@types/bun": "npm:bun-types@canary",
     "@types/eslint__js": "^9.14.0",
