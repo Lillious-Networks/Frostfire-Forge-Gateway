@@ -3,7 +3,8 @@ import log from "../modules/logger";
 import path from "path";
 import fs from "fs";
 import { w_ips, b_ips, blacklistAdd } from "../systems/security";
-import { startHttpsServers } from "../modules/https_servers";
+import { startHttpsServers, getInternalBaseUrl, serverFetch } from "../modules/https_servers";
+import { BRANDED_PAGES, BRAND_NAME, brandHtml } from "../modules/branding";
 
 const security = fs.existsSync(path.join(import.meta.dir, "./config/security.cfg"))
   ? fs.readFileSync(path.join(import.meta.dir, "./config/security.cfg"), "utf8").split("\n").map(line => line.trim()).filter(line => line !== "" && !line.startsWith("#"))
@@ -24,6 +25,43 @@ function tryParseURL(url: string): URL | null {
 }
 
 const domainHost = process.env.DOMAIN?.replace(/https?:\/\//, "") || "";
+
+// The webserver's pages are Bun HTML bundles that cannot be rewritten inside the
+// webserver, so with a custom product name (BRAND_NAME, see
+// modules/branding.ts) the proxy fetches the page itself, rewrites the name,
+// and answers with that. Without one it returns
+// null and the request takes the ordinary proxy path, unchanged.
+async function fetchBrandedPage(url: URL, req: Request, ip: string): Promise<Response | null> {
+  if (!BRAND_NAME) return null;
+
+  const internalUrl = getInternalBaseUrl(
+    parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080,
+    process.env.TLS_CERT_PATH,
+    process.env.TLS_KEY_PATH
+  );
+  const headers = new Headers(req.headers);
+  headers.set("X-Real-Client-IP", ip);
+  headers.set("X-Forwarded-For", ip);
+  headers.set("X-Forwarded-Proto", process.env.HTTP_USE_SSL === "true" ? "https" : "http");
+  headers.set("Accept-Encoding", "identity");
+  // A 304 for the unbranded page must not be answered to a branded request.
+  headers.delete("If-None-Match");
+  headers.delete("If-Modified-Since");
+
+  let upstream: Response;
+  try {
+    upstream = await serverFetch(`${internalUrl}${url.pathname}${url.search}`, { method: "GET", headers, redirect: "manual" });
+  } catch {
+    return null;
+  }
+
+  if (upstream.status !== 200 || !(upstream.headers.get("Content-Type") || "").includes("text/html")) return upstream;
+
+  const out = new Headers(upstream.headers);
+  for (const name of ["Content-Length", "Content-Encoding", "ETag", "Last-Modified"]) out.delete(name);
+  out.set("Cache-Control", "no-cache");
+  return new Response(brandHtml(upstream, BRAND_NAME).body, { status: 200, headers: out });
+}
 
 startHttpsServers({
   name: "Gateway Proxy",
@@ -85,6 +123,11 @@ startHttpsServers({
     if (!isLocalhost && domainHost && url.host !== domainHost) {
       log.debug(`Domain mismatch: expected "${domainHost}", got "${url.host}"`);
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
+    }
+
+    if (req.method === "GET" && BRANDED_PAGES.has(url.pathname)) {
+      const branded = await fetchBrandedPage(url, req, ip);
+      if (branded) return branded;
     }
 
     return null;

@@ -11,7 +11,7 @@
 // layer is selected, which layers are locked or have unsaved edits, and the
 // tiles picked up from the map. It does not answer a Save, a tool change or
 // the choice of an object layer, so what is shown here is only what it said.
-import { arrowKeys, button, count, el, empty, icon, iconButton, num, oneStop, pill, screen, segments, setIcon, toast, tooltip, type IconName } from "./toolkit.js";
+import { arrowKeys, brandName, button, count, el, empty, icon, iconButton, num, oneStop, pill, screen, segments, setIcon, toast, tooltip, type IconName } from "./toolkit.js";
 
 type Tool = "paint" | "erase" | "copy" | "paste";
 
@@ -209,7 +209,7 @@ class TileEditorBridge {
     const brandMark = el("span", "tl-brand-mark");
     brandMark.appendChild(icon("flame", 18));
     const name = el("span", "tl-brand-words");
-    name.append(el("span", "tl-brand-name", "Frostfire Forge"), el("span", "tl-brand-sub", "Map Editor"));
+    name.append(el("span", "tl-brand-name", brandName()), el("span", "tl-brand-sub", "Map Editor"));
     brand.append(brandMark, name);
 
     const part = (title: string, list: HTMLElement, className: string, tail?: HTMLElement) => {

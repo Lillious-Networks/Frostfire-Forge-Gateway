@@ -7,7 +7,8 @@
 //
 // Elements
 //   el(tag, className?, text?)                 an HTML element
-//   svg(tag, attrs?)                           an SVG element
+//   brandName()                                the product name for a title bar: "Frostfire Forge", or the gateway's BRAND_NAME
+//   svg(tag, attrs?)                         an SVG element
 //   icon(name, size = 16)                      one of ICONS as inline SVG, in the colour of the text around it
 //
 // Words and numbers
@@ -75,6 +76,15 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = ""
   if (className) node.className = className;
   if (text) node.textContent = text;
   return node;
+}
+
+/**
+ * The product name in the title bar of a tool window. A gateway with custom branding (BRAND_NAME) writes it on
+ * <html data-brand-name> before the page is sent; without one the name is Frostfire Forge. Always set it with
+ * textContent (el's text argument does), never into markup.
+ */
+export function brandName(): string {
+  return document.documentElement.dataset.brandName || "Frostfire Forge";
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";

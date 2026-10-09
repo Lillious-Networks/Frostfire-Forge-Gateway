@@ -7,7 +7,7 @@
 // drawn from as the server takes them.
 import { LineChart, barList, columns, meter, shares, sparkline, type Bar, type Point } from "./controlpanelcharts.js";
 import {
-  ago, arrowKeys, avatar, clock, confirmDialog, count, dayAndTime, duration, el, empty, forbid, icon, listed, memory, num, screen, segments, short, shown, subcard,
+  ago, arrowKeys, avatar, brandName, clock, confirmDialog, count, dayAndTime, duration, el, empty, forbid, icon, listed, memory, num, screen, segments, short, shown, subcard,
   tag, titleCount, toast, type IconName,
 } from "./toolkit.js";
 
@@ -113,6 +113,7 @@ const ACTION_LABELS: Record<string, string> = {
   "permission.add": "Give permission", "permission.remove": "Take permission away", "permission.set": "Set permissions", "permission.clear": "Clear permissions",
   "server.broadcast": "Message", "server.whitelist.add": "Add to whitelist", "server.whitelist.remove": "Remove from whitelist",
   "server.whitelist.on": "Turn whitelist on", "server.whitelist.off": "Turn whitelist off",
+  "server.subscription.lock": "Lock without subscription", "server.subscription.unlock": "Unlock without subscription",
   "server.restart": "Schedule restart", "server.restart.cancel": "Cancel restart", "server.shutdown": "Shut down",
   "world.reloadmap": "Reload map", "world.warp": "Warp", "world.weather": "Weather",
   "item.drop": "Drop item", "chest.spawn": "Spawn chest",
@@ -740,7 +741,7 @@ class ControlPanel {
     const mark = el("span", "tl-brand-mark");
     mark.appendChild(icon("flame", 18));
     const words = el("span", "tl-brand-words");
-    words.append(el("span", "tl-brand-name", "Frostfire Forge"), el("span", "tl-brand-sub", "Control Panel"));
+    words.append(el("span", "tl-brand-name", brandName()), el("span", "tl-brand-sub", "Control Panel"));
     brand.append(mark, words);
 
     const list = el("div", "tl-nav cp-nav-list");
@@ -2021,6 +2022,39 @@ class ControlPanel {
       if (!wl.enabled) for (const control of [username, ...controls]) forbid(control, "The whitelist is not turned on for this realm.");
       this.actions(whitelist.body, form, ...controls);
     }, () => `${this.data!.status.whitelist.enabled}:${this.pending?.requestId ?? ""}:${this.lost}`);
+
+    // Absent when the server is an engine without subscriptions.
+    if (this.data!.subscription) {
+      const subscriptionOrigin = "server.subscription";
+      const subscriptions = this.card(grid, "Subscriptions", "Switched on: needs a subscription.", subscriptionOrigin);
+      subscriptions.root.classList.add("tl-span-6");
+      this.follow(() => {
+        const s = this.data!.subscription;
+        subscriptions.body.replaceChildren();
+        if (!s) return;
+        if (!s.enabled) subscriptions.body.appendChild(el("p", "tl-card-lead", "Stripe is not set up."));
+        const rows = el("div", "tl-rows");
+        subscriptions.body.appendChild(rows);
+        for (const option of s.options) {
+          const locked = s.locks.includes(option.id);
+          const action = locked ? "server.subscription.unlock" : "server.subscription.lock";
+          const switchKey = `server.subscription.${option.id}`;
+          const toggle = el("button", "tl-switch");
+          toggle.type = "button";
+          toggle.dataset.fk = switchKey;
+          toggle.setAttribute("role", "switch");
+          toggle.setAttribute("aria-checked", String(locked));
+          toggle.setAttribute("aria-label", option.label);
+          toggle.appendChild(el("span", "tl-switch-knob"));
+          toggle.addEventListener("click", () => this.act(action, { id: option.id }, { key: subscriptionOrigin, fk: switchKey }));
+          if (!s.enabled) toggle.disabled = true;
+          else if (!this.can[action]) forbid(toggle, NOT_ALLOWED);
+          else if (this.lost) forbid(toggle, NOT_ANSWERING);
+          if (this.pending?.origin.fk === switchKey) this.busy(toggle);
+          this.row(rows, option.label, "", toggle);
+        }
+      }, () => `${this.data!.subscription?.enabled}:${this.data!.subscription?.locks.join(",")}:${this.pending?.requestId ?? ""}:${this.lost}`);
+    }
 
     const restartKey = "server.restart";
     // What happens after the server stops is up to whatever runs it, so the page says both cases.

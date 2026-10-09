@@ -134,10 +134,25 @@ If `GATEWAY_AUTH_KEY` is not set, the gateway compares incoming keys against `nu
 | --- | --- | --- |
 | `DOMAIN` | none | Public origin of the website, with scheme, for example `https://play.example.com`. Used for the reverse proxy host check, password reset links, guest email addresses and as the WebAuthn fallback host. |
 | `GAME_NAME` | `Frostfire Forge` | Shown in emails and used as the issuer name in authenticator apps and the relying party name for security keys. |
+| `BRAND_NAME` | none | Replaces "Frostfire Forge" in the page titles, brand headers, loading screen and editor title bars that players and admins see. Trimmed and cut to 40 characters. Empty or unset changes nothing. The documentation and the emails are not affected (emails use `GAME_NAME`). |
 | `GUEST_MODE_ENABLED` | off | `true` or `1` allows `POST /guest-login` and `POST /guest-bulk`. |
 | `LOG_LEVEL` | `info` | `debug` also writes debug lines, `trace` writes everything. |
 | `CACHE` | `memory` | `redis` switches the asset cache service to Redis. |
 | `NODE_ENV` | none | `development` only changes the banner printed at startup. |
+| `STRIPE_SECRET_KEY` | none | The secret key of your Stripe account (`sk_live_...` or `sk_test_...`). Player subscriptions are on only when this and the next two are all set. Never sent to a browser and never logged. |
+| `STRIPE_WEBHOOK_SECRET` | none | The signing secret of the webhook endpoint (`whsec_...`). |
+| `STRIPE_PRICE_ID` | none | The recurring price players subscribe to (`price_...`). |
+
+## Player subscriptions
+
+Players can pay a monthly subscription through your own Stripe account, and admins choose what a player without one may not do in the in-game Control Panel (Server, Subscriptions). With any of the three `STRIPE_` settings missing the feature is off and nobody is locked.
+
+1. In Stripe, create a product with one recurring price and put its id in `STRIPE_PRICE_ID`.
+2. Turn on the customer portal in Stripe (Settings, Billing, Customer portal) so the Manage button works.
+3. Add a webhook endpoint at `https://<DOMAIN>/api/stripe/webhook` (the same address players use) that sends `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+4. Put the secret key in `STRIPE_SECRET_KEY` and restart the gateway.
+
+The gateway adds the `accounts` columns (`subscribed`, `stripe_customer_id`, `subscription_ends`) and the `subscription_locks` and `subscription_status` tables when it starts, and `bun setup` does the same. If that fails it logs one warning and subscriptions stay off.
 
 ## Email
 

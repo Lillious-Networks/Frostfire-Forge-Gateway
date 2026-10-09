@@ -305,6 +305,16 @@
     margin-bottom: 14px;
 }
 
+/* A card with no description line: its actions sit under the header. */
+.card-header + .row-actions {
+    margin-top: 18px;
+}
+
+.subscription-ends {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;

@@ -90,7 +90,7 @@
 // The conversation with the game window is not changed by any of this: the
 // shell only wraps window.opener.postMessage and the "message" event, and it
 // ignores messages that do not come from the window that opened this one.
-import { button, confirmDialog, el, empty, icon, iconButton, leaveDialog, num, pill, screen, searchBox, setBusy, thumb, tooltip, type IconName } from "./toolkit.js";
+import { brandName, button, confirmDialog, el, empty, icon, iconButton, leaveDialog, num, pill, screen, searchBox, setBusy, thumb, tooltip, type IconName } from "./toolkit.js";
 
 export type RecordState = "saved" | "unsaved" | "new" | "saving" | "deleting" | "loading" | "error" | "unconfirmed" | "readonly";
 
@@ -385,7 +385,7 @@ export class EditorShell {
     const mark = el("span", "tl-brand-mark");
     mark.appendChild(icon("flame", 18));
     const name = el("span", "tl-brand-words");
-    name.append(el("span", "tl-brand-name", "Frostfire Forge"), el("span", "tl-brand-sub", opts.tool));
+    name.append(el("span", "tl-brand-name", brandName()), el("span", "tl-brand-sub", opts.tool));
     brand.append(mark, name);
 
     // The kinds of record, as the control panel lists its pages.

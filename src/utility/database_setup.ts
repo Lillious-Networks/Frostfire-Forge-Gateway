@@ -1,5 +1,6 @@
 import query from "../controllers/sqldatabase";
 import log from "../modules/logger";
+import { ensureSubscriptionSchema } from "../systems/subscription";
 const database = process.env.DATABASE_NAME || "TEMP_Mystika";
 // SQLite has no CREATE DATABASE or USE: its database is the file the worker opens.
 const sqlite = (process.env.DATABASE_ENGINE || "mysql") === "sqlite";
@@ -97,6 +98,9 @@ const setupDatabase = async () => {
     await createBlockedIpsTable();
     await insertLocalhost();
     await addTwoFactorColumns();
+    // Player subscriptions: the accounts columns and two tables. Logs a warning, never fails the setup,
+    // when accounts does not exist yet (the engine's setup creates it).
+    await ensureSubscriptionSchema();
 };
 
 try {

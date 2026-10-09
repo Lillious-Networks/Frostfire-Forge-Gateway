@@ -197,7 +197,37 @@ function renderServers(): void {
     });
 }
 
-function continueToGame(serverId: string | null): void {
+// When the realm's Log In lock needs a subscription and this account has none (and is not an admin), the
+// game would refuse it at login with no reason shown. Say it here instead.
+async function showSubscriptionNeeded(): Promise<boolean> {
+    const notice = document.getElementById('subscription-needed');
+    let needed = false;
+    let guest = false;
+    try {
+        const response = await fetch('/api/subscription', {
+            headers: { 'Authorization': `Bearer ${token}` },
+            cache: 'no-store'
+        });
+        if (response.ok) {
+            const info = await response.json();
+            needed = !!info.loginLocked;
+            guest = !!info.guest;
+        }
+    } catch {
+        // Not knowing is not a reason to keep a player out: the game decides.
+    }
+    notice?.classList.toggle('show', needed);
+    // A guest cannot subscribe, so there is nowhere for the button to lead.
+    document.getElementById('subscribe-button')?.classList.toggle('hidden', guest);
+    return needed;
+}
+
+document.getElementById('subscribe-button')?.addEventListener('click', () => {
+    window.location.href = '/manage-profile';
+});
+
+async function continueToGame(serverId: string | null): Promise<void> {
+    if (await showSubscriptionNeeded()) return;
     if (serverId) {
 
         localStorage.setItem('selectedServerId', serverId);
@@ -238,3 +268,4 @@ function startAutoRefresh(): void {
 updateRefreshTimestamp();
 loadServers();
 startAutoRefresh();
+if (token) void showSubscriptionNeeded();

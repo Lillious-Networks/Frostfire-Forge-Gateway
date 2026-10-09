@@ -1,6 +1,7 @@
 import { startHttpsServers, getInternalServerOptions, serverFetch } from "../modules/https_servers";
 import query from "../controllers/sqldatabase";
 import player from "../systems/player";
+import { brandHtmlText } from "../modules/branding";
 
 const httpPort = parseInt(process.env.GATEWAY_PORT || "9999");
 const httpsPort = parseInt(process.env.GATEWAY_PORTSSL || "9443");
@@ -477,14 +478,14 @@ const serverConfig: any = {
         return Response.redirect("/", 302);
       }
 
-      const dashboardHTML = await Bun.file(new URL("../webserver/public/dashboard.html", import.meta.url)).text();
+      const dashboardHTML = await brandHtmlText(await Bun.file(new URL("../webserver/public/dashboard.html", import.meta.url)).text());
       return new Response(dashboardHTML, {
         headers: { "Content-Type": "text/html" }
       });
     }
 
     if (url.pathname === "/" && req.method === "GET") {
-      const loginHTML = await Bun.file(new URL("../webserver/public/login.html", import.meta.url)).text();
+      const loginHTML = await brandHtmlText(await Bun.file(new URL("../webserver/public/login.html", import.meta.url)).text());
       return new Response(loginHTML, {
         headers: { "Content-Type": "text/html" }
       });

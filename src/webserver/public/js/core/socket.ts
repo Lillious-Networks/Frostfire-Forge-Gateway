@@ -637,11 +637,20 @@ function normalizeGameHost(host: string): string {
   return host;
 }
 
+// Set when the gateway refused the connection token because the realm needs a subscription.
+let subscriptionRequired = false;
+
 async function connectThroughGateway(): Promise<WebTransport | undefined> {
 
   try {
     const tokenResponse = await fetch('/api/gateway/connection-token');
     if (!tokenResponse.ok) {
+      // A realm that locks Log In to subscribers: realm selection says so.
+      if (tokenResponse.status === 403 && (await tokenResponse.json().catch(() => null))?.subscription) {
+        subscriptionRequired = true;
+        window.location.href = '/realm-selection';
+        return undefined;
+      }
       throw new Error('Failed to obtain connection token from gateway');
     }
     connectionToken = await tokenResponse.json();
@@ -772,7 +781,7 @@ async function initializeSocket() {
     if (!socket) {
       // Only bounce to the login/home screen on the initial connection.
       // During reconnection attempts the caller handles retries itself.
-      if (reconnectAttempts === 0) {
+      if (reconnectAttempts === 0 && !subscriptionRequired) {
         window.location.href = "/";
       }
       throw new Error('Failed to establish WebTransport connection');

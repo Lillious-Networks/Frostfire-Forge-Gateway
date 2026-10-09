@@ -376,6 +376,12 @@ declare interface ControlPanelData {
   can?: Record<string, boolean>;
   /** Sent when asked in full: what the map and weather controls pick from. */
   options?: { maps: string[]; weathers: string[] };
+  /**
+   * Player subscriptions. `enabled`: the locks bite (the Gateway has Stripe set up). `locks`: the ids a player
+   * without a subscription may not use. `options`: every id with its label, in the order to show them.
+   * Absent from an engine that does not have subscriptions.
+   */
+  subscription?: { enabled: boolean; locks: string[]; options: Array<{ id: string; label: string }> };
   /** Sent when asked in full: how many accounts there are, guests aside, and how many are banned. Null if that could not be read. */
   accounts?: Nullable<{ registered: number; banned: number }>;
   /**

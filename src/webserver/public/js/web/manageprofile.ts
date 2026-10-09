@@ -118,6 +118,7 @@ async function loadProfile() {
     }
 
     renderWebAuthnKeys(webauthnKeys);
+    void loadSubscription();
   } catch {
     window.Notify('error', 'Failed to load profile');
   }
@@ -1320,6 +1321,89 @@ document.getElementById('reveal-email-modal')?.addEventListener('click', (e) => 
     document.getElementById('reveal-email-modal')!.classList.add('hidden');
     (document.getElementById('reveal-password') as HTMLInputElement).value = '';
   }
+});
+
+// ========== Subscription ==========
+interface SubscriptionInfo {
+  enabled: boolean;
+  subscribed: boolean;
+  ends: number | null;
+  loginLocked: boolean;
+  guest: boolean;
+}
+
+async function fetchSubscription(): Promise<SubscriptionInfo | null> {
+  try {
+    const response = await fetch('/api/subscription', {
+      headers: { 'Authorization': `Bearer ${getToken()}` },
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function renderSubscription(info: SubscriptionInfo) {
+  // Drawn only for a signed-in account of a game that charges.
+  document.getElementById('subscription-grid')!.classList.toggle('hidden', !info.enabled || info.guest);
+
+  const badge = document.getElementById('subscription-badge')!;
+  badge.textContent = info.subscribed ? 'Subscribed' : 'Not subscribed';
+  badge.className = info.subscribed ? 'badge badge-on' : 'badge badge-off';
+  document.getElementById('subscribe-btn')!.classList.toggle('hidden', info.subscribed);
+  document.getElementById('manage-subscription-btn')!.classList.toggle('hidden', !info.subscribed);
+
+  const ends = document.getElementById('subscription-ends')!;
+  ends.textContent = info.subscribed && info.ends ? `Until ${new Date(info.ends).toLocaleDateString()}` : '';
+  ends.classList.toggle('hidden', !(info.subscribed && info.ends));
+}
+
+async function loadSubscription() {
+  const info = await fetchSubscription();
+  if (!info) return;
+  renderSubscription(info);
+
+  // Back from Stripe: the webhook can arrive a moment after the browser does.
+  if (new URL(window.location.href).searchParams.get('subscription') === 'success') {
+    window.history.replaceState(null, '', '/manage-profile');
+    let current = info;
+    for (let attempt = 0; attempt < 10 && !current.subscribed; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      current = (await fetchSubscription()) || current;
+    }
+    renderSubscription(current);
+    if (current.subscribed) window.Notify('success', 'Subscribed');
+  }
+}
+
+async function openSubscriptionPage(path: string, button: HTMLButtonElement) {
+  button.disabled = true;
+  try {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+      body: '{}',
+    });
+    const body = await response.json();
+    if (response.ok && body.url) {
+      window.location.href = body.url;
+      return;
+    }
+    window.Notify('error', body.message || 'Something went wrong');
+  } catch {
+    window.Notify('error', 'Something went wrong');
+  }
+  button.disabled = false;
+}
+
+document.getElementById('subscribe-btn')?.addEventListener('click', (e) => {
+  openSubscriptionPage('/api/subscription/checkout', e.currentTarget as HTMLButtonElement);
+});
+
+document.getElementById('manage-subscription-btn')?.addEventListener('click', (e) => {
+  openSubscriptionPage('/api/subscription/portal', e.currentTarget as HTMLButtonElement);
 });
 
 let profileEmailMasked = '';

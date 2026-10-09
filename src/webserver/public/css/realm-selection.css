@@ -219,6 +219,21 @@
     text-align: center;
 }
 
+/* Shown instead of entering the game when the Log In lock needs a subscription. */
+
+#subscription-needed.show {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#subscription-needed .btn-outline {
+    min-height: 40px;
+    font-size: 14px;
+}
+
 /* Details */
 
 .realm-details-wrapper {

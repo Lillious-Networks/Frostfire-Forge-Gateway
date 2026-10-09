@@ -10,6 +10,7 @@ import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verify
 import { generateQRDataUri } from "../services/qrcode";
 import { getInternalServerOptions, serverFetch, getInternalBaseUrl } from "../modules/https_servers";
 import { getDocsManifest, getDocsPage, getDocsSearchIndex } from "../services/docs";
+import { startSubscriptions, getSubscriptionInfo, createCheckout, createPortal, processStripeWebhook, type Reply } from "../systems/subscription";
 
 const settings = {
   guest_mode: {
@@ -328,6 +329,16 @@ const routes = {
               headers: { "Content-Type": "application/json" }
             });
           }
+          // The engine refuses this account at login too; this is the answer the page can show.
+          if ((await getSubscriptionInfo(username)).loginLocked) {
+            return new Response(JSON.stringify({
+              message: "A subscription is needed to play.",
+              subscription: true
+            }), {
+              status: 403,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
         }
 
         const token = crypto.randomBytes(32).toString("hex");
@@ -415,6 +426,18 @@ const routes = {
   "/api/profile/auth-webauthn": {
     POST: async (req: Request) => handleProfileWebAuthnAuth(req),
   },
+  "/api/subscription": {
+    GET: async (req: Request) => handleGetSubscription(req),
+  },
+  "/api/subscription/checkout": {
+    POST: async (req: Request) => handleSubscriptionCheckout(req),
+  },
+  "/api/subscription/portal": {
+    POST: async (req: Request) => handleSubscriptionPortal(req),
+  },
+  "/api/stripe/webhook": {
+    POST: async (req: Request) => handleStripeWebhook(req),
+  },
   "/api/2fa/status": {
     GET: async (req: Request) => handle2FAStatus(req),
   },
@@ -434,6 +457,9 @@ const routes = {
     POST: async (req: Request) => handleVerify2FAEmail(req),
   },
 } as Record<string, any>;
+
+// The subscription columns and tables must exist before a request reads them. Never fails the start.
+await startSubscriptions();
 
 const serverPort = parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080;
 
@@ -495,6 +521,10 @@ Bun.serve({
       "/api/profile/generate-password": routes["/api/profile/generate-password"],
       "/api/profile/2fa-requirements": routes["/api/profile/2fa-requirements"],
       "/api/profile/auth-webauthn": routes["/api/profile/auth-webauthn"],
+      "/api/subscription": routes["/api/subscription"],
+      "/api/subscription/checkout": routes["/api/subscription/checkout"],
+      "/api/subscription/portal": routes["/api/subscription/portal"],
+      "/api/stripe/webhook": routes["/api/stripe/webhook"],
       "/api/2fa/status": routes["/api/2fa/status"],
       "/api/2fa/verify-totp": routes["/api/2fa/verify-totp"],
       "/api/2fa/auth-webauthn": routes["/api/2fa/auth-webauthn"],
@@ -935,6 +965,36 @@ async function handleGetProfile(req: Request) {
     require_totp: profile.require_totp === 1,
     require_email_2fa: profile.require_email_2fa === 1,
   }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
+function subscriptionReply(reply: Reply): Response {
+  return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { "Content-Type": "application/json" } });
+}
+
+async function handleGetSubscription(req: Request) {
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  return subscriptionReply({ status: 200, body: { ...(await getSubscriptionInfo(auth.username)) } });
+}
+
+// requireAuth lets guests through, so these refuse them inside createCheckout / createPortal.
+async function handleSubscriptionCheckout(req: Request) {
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  return subscriptionReply(await createCheckout(auth.username));
+}
+
+async function handleSubscriptionPortal(req: Request) {
+  const auth = await requireAuth(req);
+  if (!('username' in auth)) return auth;
+  return subscriptionReply(await createPortal(auth.username));
+}
+
+// No cookie and no 2FA: Stripe signs the request. The body is read once, as text, because the
+// signature covers its exact bytes.
+async function handleStripeWebhook(req: Request) {
+  const raw = await req.text();
+  return subscriptionReply(await processStripeWebhook(raw, req.headers.get("Stripe-Signature")));
 }
 
 async function handleChangeEmail(req: Request) {
