@@ -27,7 +27,7 @@ query("SELECT * FROM allowed_ips", [])
   export const blacklistAdd = async (ip: string) => {
     const result = await query("INSERT INTO blocked_ips (ip) VALUES (?)", [ip]) as any;
 
-    if (result.affectedRows > 0) {
+    if ((result.affectedRows ?? result.count) > 0) {
       log.info(`Added ${ip} to the blacklist`);
       service.blacklistAdd(ip);
     }
@@ -36,7 +36,7 @@ query("SELECT * FROM allowed_ips", [])
   export const whitelistAdd = async (ip: string) => {
     const result = await query("INSERT INTO allowed_ips (ip) VALUES (?)", [ip]) as any;
 
-    if (result.affectedRows > 0) {
+    if ((result.affectedRows ?? result.count) > 0) {
       log.info(`Added ${ip} to the whitelist`);
       service.whitelistAdd(ip);
     }
@@ -45,7 +45,7 @@ query("SELECT * FROM allowed_ips", [])
   export const blacklistRemove = async (ip: string) => {
     const result = await query("DELETE FROM blocked_ips WHERE ip = ?", [ip]) as any;
 
-    if (result.affectedRows > 0) {
+    if ((result.affectedRows ?? result.count) > 0) {
       log.info(`Removed ${ip} from the blacklist`);
       service.blacklistRemove(ip);
     }
@@ -54,7 +54,7 @@ query("SELECT * FROM allowed_ips", [])
   export const whitelistRemove = async (ip: string) => {
     const result = await query("DELETE FROM allowed_ips WHERE ip = ?", [ip]) as any;
 
-    if (result.affectedRows > 0) {
+    if ((result.affectedRows ?? result.count) > 0) {
       log.info(`Removed ${ip} from the whitelist`);
       service.whitelistRemove(ip);
     }

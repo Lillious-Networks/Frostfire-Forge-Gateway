@@ -1,6 +1,8 @@
 import query from "../controllers/sqldatabase";
 import log from "../modules/logger";
 const database = process.env.DATABASE_NAME || "TEMP_Mystika";
+// SQLite has no CREATE DATABASE or USE: its database is the file the worker opens.
+const sqlite = (process.env.DATABASE_ENGINE || "mysql") === "sqlite";
 
 const createDatabase = async () => {
   log.info("Creating database...");
@@ -18,7 +20,7 @@ const createAllowedIpsTable = async () => {
   log.info("Creating allowed_ips table...");
   const sql = `
     CREATE TABLE IF NOT EXISTS allowed_ips (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        ${sqlite ? "id INTEGER PRIMARY KEY AUTOINCREMENT" : "id INT AUTO_INCREMENT PRIMARY KEY"},
         ip VARCHAR(45) NOT NULL UNIQUE
     )
   `;
@@ -29,7 +31,7 @@ const createBlockedIpsTable = async () => {
   log.info("Creating blocked_ips table...");
   const sql = `
     CREATE TABLE IF NOT EXISTS blocked_ips (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        ${sqlite ? "id INTEGER PRIMARY KEY AUTOINCREMENT" : "id INT AUTO_INCREMENT PRIMARY KEY"},
         ip VARCHAR(45) NOT NULL UNIQUE
     )
   `;
@@ -87,8 +89,10 @@ const insertLocalhost = async () => {
 };
 
 const setupDatabase = async () => {
-    await createDatabase();
-    await useDatabase();
+    if (!sqlite) {
+      await createDatabase();
+      await useDatabase();
+    }
     await createAllowedIpsTable();
     await createBlockedIpsTable();
     await insertLocalhost();
