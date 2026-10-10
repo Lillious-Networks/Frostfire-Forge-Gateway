@@ -14,9 +14,8 @@ A production-grade authentication and reverse proxy gateway for Frostfire Forge 
 
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/Lillious-Networks/Frostfire-Forge-Gateway/release.yml?branch=main&label=Docker&style=flat-square" alt="Docker">
-  <img src="https://img.shields.io/badge/status-Beta-yellow?style=flat-square&label=Status" alt="Work in Progress">
-  <img src="https://img.shields.io/github/license/Lillious-Networks/Frostfire-Forge-Gateway?style=flat-square&label=License" alt="License">
-  <img src="https://img.shields.io/github/stars/Lillious-Networks/Frostfire-Forge-Gateway?style=flat-square&label=Stars" alt="GitHub Stars">
+  <img src="https://img.shields.io/badge/status-Beta-blue?style=flat-square&label=Status" alt="Beta">
+  <img src="https://img.shields.io/github/stars/Lillious-Networks/Frostfire-Forge?style=flat-square&label=Stars&color=tomato" alt="GitHub Stars">
 </p>
 
 ---

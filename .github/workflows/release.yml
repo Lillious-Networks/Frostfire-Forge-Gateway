@@ -8,6 +8,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'Dockerfile.*'
+      - 'docker-compose*.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 concurrency:
