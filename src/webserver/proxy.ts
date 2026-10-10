@@ -5,6 +5,7 @@ import fs from "fs";
 import { w_ips, b_ips, blacklistAdd } from "../systems/security";
 import { startHttpsServers, getInternalBaseUrl, serverFetch } from "../modules/https_servers";
 import { BRANDED_PAGES, BRAND_NAME, brandHtml } from "../modules/branding";
+import { DOCS_ENABLED, docsNotFound, isDocsPath, withoutDocsLinks } from "../modules/docs_switch";
 
 const security = fs.existsSync(path.join(import.meta.dir, "./config/security.cfg"))
   ? fs.readFileSync(path.join(import.meta.dir, "./config/security.cfg"), "utf8").split("\n").map(line => line.trim()).filter(line => line !== "" && !line.startsWith("#"))
@@ -28,11 +29,12 @@ const domainHost = process.env.DOMAIN?.replace(/https?:\/\//, "") || "";
 
 // The webserver's pages are Bun HTML bundles that cannot be rewritten inside the
 // webserver, so with a custom product name (BRAND_NAME, see
-// modules/branding.ts) the proxy fetches the page itself, rewrites the name,
-// and answers with that. Without one it returns
-// null and the request takes the ordinary proxy path, unchanged.
+// modules/branding.ts) or with the documentation switched off (DOCS_ENABLED,
+// see modules/docs_switch.ts) the proxy fetches the page itself, rewrites the
+// name and takes out the Docs link, and answers with that. With neither it
+// returns null and the request takes the ordinary proxy path, unchanged.
 async function fetchBrandedPage(url: URL, req: Request, ip: string): Promise<Response | null> {
-  if (!BRAND_NAME) return null;
+  if (!BRAND_NAME && DOCS_ENABLED) return null;
 
   const internalUrl = getInternalBaseUrl(
     parseInt(process.env.WEBSRV_INTERNAL_PORT || "") || 8080,
@@ -60,7 +62,8 @@ async function fetchBrandedPage(url: URL, req: Request, ip: string): Promise<Res
   const out = new Headers(upstream.headers);
   for (const name of ["Content-Length", "Content-Encoding", "ETag", "Last-Modified"]) out.delete(name);
   out.set("Cache-Control", "no-cache");
-  return new Response(brandHtml(upstream, BRAND_NAME).body, { status: 200, headers: out });
+  const named = brandHtml(upstream, BRAND_NAME);
+  return new Response((DOCS_ENABLED ? named : withoutDocsLinks(named)).body, { status: 200, headers: out });
 }
 
 startHttpsServers({
@@ -124,6 +127,8 @@ startHttpsServers({
       log.debug(`Domain mismatch: expected "${domainHost}", got "${url.host}"`);
       return new Response(JSON.stringify({ message: "Invalid request" }), { status: 403 });
     }
+
+    if (!DOCS_ENABLED && isDocsPath(url.pathname)) return docsNotFound();
 
     if (req.method === "GET" && BRANDED_PAGES.has(url.pathname)) {
       const branded = await fetchBrandedPage(url, req, ip);

@@ -10,6 +10,7 @@ import { generateChallenge, encodeBase64Url, generateRegistrationOptions, verify
 import { generateQRDataUri } from "../services/qrcode";
 import { getInternalServerOptions, serverFetch, getInternalBaseUrl } from "../modules/https_servers";
 import { getDocsManifest, getDocsPage, getDocsSearchIndex } from "../services/docs";
+import { DOCS_ENABLED, docsNotFound } from "../modules/docs_switch";
 import { startSubscriptions, getSubscriptionInfo, createCheckout, createPortal, processStripeWebhook, type Reply } from "../systems/subscription";
 
 const settings = {
@@ -200,6 +201,8 @@ async function handleDocs(req: Request) {
 
   const params = tryParseURL(req.url)?.searchParams;
   const pageId = params?.get("page");
+  // The documentation is switched off (DOCS_ENABLED=false, modules/docs_switch.ts).
+  if (!DOCS_ENABLED) return docsNotFound();
   let docs;
   if (pageId) {
     const page = getDocsPage(pageId, authenticated);
@@ -382,7 +385,7 @@ const routes = {
   "/realm-selection": realmselection_html,
   "/manage-profile": manageprofile_html,
   "/2fa-challenge": twofachallenge_html,
-  "/docs": docs_html,
+  "/docs": DOCS_ENABLED ? docs_html : () => docsNotFound(),
   "/gateway": (req: Request) => redirectToGateway(req),
   "/api/docs": {
     GET: async (req: Request) => handleDocs(req),

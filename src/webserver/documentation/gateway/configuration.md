@@ -178,6 +178,7 @@ These values are baked into the browser client when the gateway starts. `src/uti
 | `ASSET_SERVER_URL` | `http://localhost:8000` | Public URL of the asset server. The client loads icons, sprites and maps from it. See [Asset Server](#/assets/overview). |
 | `GAME_WT_CERT_HASH` | empty | Pins the game server certificate. Empty fetches the hash from the game server, `off` disables pinning. See [TLS](#/gateway/tls/webtransport-certificate-pinning). |
 | `PLAYER_Z_INDEX` | `4` | Draw order of the player relative to map layers. |
+| `DOCS_ENABLED` | on | `false` stops serving this documentation: `/docs` and `/api/docs` answer 404 and the Docs link is taken out of the pages. |
 | `VERSION` | empty | Version string made available to the client. |
 
 :::note Variables in the example file that the gateway does not read
